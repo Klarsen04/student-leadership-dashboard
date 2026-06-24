@@ -13,20 +13,18 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const start = searchParams.get("start");
   const end = searchParams.get("end");
-  const category = searchParams.get("category");
+  const role = searchParams.get("role");
 
   const where: Record<string, unknown> = { userId: session.user.id };
   if (start && end) {
     where.startTime = { gte: new Date(start) };
     where.endTime = { lte: new Date(end) };
   }
-  if (category) {
-    where.category = category;
-  }
+  if (role) where.role = role;
 
   const events = await prisma.event.findMany({
     where,
-    include: { role: true, interactions: true },
+    include: { interactions: true },
     orderBy: { startTime: "asc" },
   });
 
@@ -43,19 +41,13 @@ export async function POST(req: NextRequest) {
 
   if (body.action === "sync") {
     const start = body.start || new Date().toISOString();
-    const end =
-      body.end ||
-      new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const end = body.end || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const outlookEvents = await fetchCalendarEvents(
-      session.user.id,
-      start,
-      end
-    );
-
+    const outlookEvents = await fetchCalendarEvents(session.user.id, start, end);
     const synced = [];
+
     for (const event of outlookEvents) {
-      const category = categorizeEvent(event.subject, event.bodyPreview);
+      const { category, role } = categorizeEvent(event.subject, event.bodyPreview);
       const upserted = await prisma.event.upsert({
         where: { outlookId: event.id },
         update: {
@@ -63,7 +55,6 @@ export async function POST(req: NextRequest) {
           startTime: new Date(event.start.dateTime + "Z"),
           endTime: new Date(event.end.dateTime + "Z"),
           location: event.location?.displayName,
-          category,
         },
         create: {
           title: event.subject,
@@ -71,6 +62,7 @@ export async function POST(req: NextRequest) {
           endTime: new Date(event.end.dateTime + "Z"),
           location: event.location?.displayName,
           category,
+          role,
           outlookId: event.id,
           userId: session.user.id,
         },
@@ -88,10 +80,10 @@ export async function POST(req: NextRequest) {
       startTime: new Date(body.startTime),
       endTime: new Date(body.endTime),
       category: body.category || "Personal",
+      role: body.role || "Student",
       location: body.location,
       isLed: body.isLed || false,
       userId: session.user.id,
-      roleId: body.roleId,
     },
   });
 
@@ -109,11 +101,26 @@ export async function PATCH(req: NextRequest) {
     where: { id: body.id, userId: session.user.id },
     data: {
       category: body.category,
+      role: body.role,
       isLed: body.isLed,
+      attended: body.attended,
       actualMinutes: body.actualMinutes,
-      roleId: body.roleId,
     },
   });
 
   return NextResponse.json(event);
+}
+
+export async function DELETE(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
+
+  await prisma.event.delete({ where: { id, userId: session.user.id } });
+  return NextResponse.json({ success: true });
 }

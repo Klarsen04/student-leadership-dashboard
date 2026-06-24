@@ -1,186 +1,329 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Users, UserPlus, Clock, AlertCircle } from "lucide-react";
-import { PersonCard } from "@/components/relationships/PersonCard";
-import { AddPersonModal } from "@/components/relationships/AddPersonModal";
-import { CONTEXTS } from "@/lib/utils";
+import { useSession } from "next-auth/react";
+import { format, isToday, isPast } from "date-fns";
+import {
+  Calendar,
+  Users,
+  AlertCircle,
+  CheckSquare,
+  Clock,
+  RefreshCw,
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ROLE_BADGE_VARIANTS } from "@/lib/utils";
+import Link from "next/link";
+
+interface Event {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  category: string;
+  role: string;
+  location: string | null;
+}
 
 interface Person {
   id: string;
   name: string;
-  context: string;
-  lastContactDate: string | null;
+  category: string;
   followUpDate: string | null;
-  notes: string | null;
-  prayerRequests: string | null;
-  interactions: { id: string; type: string; date: string; notes: string | null }[];
+  lastContactDate: string | null;
+}
+
+interface Task {
+  id: string;
+  title: string;
+  dueDate: string | null;
+  priority: string;
+  role: string;
+  status: string;
 }
 
 export default function DashboardPage() {
-  const [people, setPeople] = useState<Person[]>([]);
+  const { data: session } = useSession();
+  const [events, setEvents] = useState<Event[]>([]);
+  const [followUps, setFollowUps] = useState<Person[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [filterContext, setFilterContext] = useState<string>("");
 
-  const fetchPeople = async () => {
-    const params = new URLSearchParams();
-    if (filterContext) params.set("context", filterContext);
-    const res = await fetch(`/api/people?${params}`);
-    if (res.ok) setPeople(await res.json());
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(today);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const [evRes, pplRes, taskRes] = await Promise.all([
+      fetch(`/api/calendar?start=${today.toISOString()}&end=${endOfDay.toISOString()}`),
+      fetch("/api/people?needsFollowUp=true"),
+      fetch("/api/tasks?status=todo"),
+    ]);
+
+    if (evRes.ok) setEvents(await evRes.json());
+    if (pplRes.ok) setFollowUps(await pplRes.json());
+    if (taskRes.ok) setTasks(await taskRes.json());
     setLoading(false);
   };
 
-  useEffect(() => {
-    fetchPeople();
-  }, [filterContext]);
+  const syncOutlook = async () => {
+    setSyncing(true);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const endOfWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+    await fetch("/api/calendar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "sync",
+        start: today.toISOString(),
+        end: endOfWeek.toISOString(),
+      }),
+    });
+    await fetchData();
+    setSyncing(false);
+  };
 
-  const needsFollowUp = people.filter(
-    (p) => p.followUpDate && new Date(p.followUpDate) <= new Date()
+  const overdueTasks = tasks.filter(
+    (t) => t.dueDate && isPast(new Date(t.dueDate))
   );
+  const upcomingTasks = tasks
+    .filter((t) => !t.dueDate || !isPast(new Date(t.dueDate)))
+    .slice(0, 5);
 
-  const noRecentContact = people.filter((p) => {
-    if (!p.lastContactDate) return true;
-    const daysSince = Math.floor(
-      (Date.now() - new Date(p.lastContactDate).getTime()) / (1000 * 60 * 60 * 24)
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-pulse text-muted-foreground">Loading dashboard...</div>
+      </div>
     );
-    return daysSince > 14;
-  });
+  }
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-8">
+    <div className="max-w-6xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">People Dashboard</h1>
-          <p className="text-gray-600 mt-1">
-            Your relationships across campus roles
+          <h1 className="text-2xl font-bold">
+            Good {getTimeOfDay()}, {session?.user?.name?.split(" ")[0]}
+          </h1>
+          <p className="text-muted-foreground">
+            {format(new Date(), "EEEE, MMMM d")}
           </p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2.5 rounded-lg hover:bg-primary-700 transition-colors"
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={syncOutlook}
+          disabled={syncing}
         >
-          <UserPlus className="w-4 h-4" />
-          Add Person
-        </button>
+          <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
+          Sync Outlook
+        </Button>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <StatCard
-          icon={<Users className="w-5 h-5 text-primary-600" />}
-          label="Total People"
-          value={people.length}
-        />
-        <StatCard
-          icon={<AlertCircle className="w-5 h-5 text-orange-500" />}
-          label="Follow-ups Due"
-          value={needsFollowUp.length}
-        />
-        <StatCard
-          icon={<Clock className="w-5 h-5 text-yellow-600" />}
-          label="No Contact (14d+)"
-          value={noRecentContact.length}
-        />
-        <StatCard
-          icon={<UserPlus className="w-5 h-5 text-green-600" />}
-          label="This Week"
-          value={
-            people.filter(
-              (p) =>
-                new Date(p.interactions[0]?.date || 0) >
-                new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-            ).length
-          }
-        />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Today's Schedule - takes 2 columns */}
+        <Card className="lg:col-span-2">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-primary" />
+                Today&apos;s Schedule
+              </CardTitle>
+              <Link href="/calendar">
+                <Button variant="ghost" size="sm">View all</Button>
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {events.length === 0 ? (
+              <p className="text-muted-foreground text-sm py-4">
+                No events today. Sync Outlook or add events manually.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {events.map((event) => (
+                  <div
+                    key={event.id}
+                    className="flex items-center gap-4 p-3 rounded-lg border bg-background hover:bg-accent/50 transition-colors"
+                  >
+                    <div className="text-sm text-muted-foreground w-20 shrink-0">
+                      {format(new Date(event.startTime), "h:mm a")}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{event.title}</p>
+                      {event.location && (
+                        <p className="text-xs text-muted-foreground truncate">
+                          {event.location}
+                        </p>
+                      )}
+                    </div>
+                    <Badge variant={(ROLE_BADGE_VARIANTS[event.role] || "secondary") as any}>
+                      {event.role}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Follow-ups Due */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-orange-500" />
+                Follow-ups
+              </CardTitle>
+              <Link href="/people">
+                <Button variant="ghost" size="sm">View all</Button>
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {followUps.length === 0 ? (
+              <p className="text-muted-foreground text-sm py-4">
+                No follow-ups due. Nice work!
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {followUps.slice(0, 6).map((person) => (
+                  <div
+                    key={person.id}
+                    className="flex items-center justify-between p-2 rounded-md hover:bg-accent/50"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">{person.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {person.category}
+                      </p>
+                    </div>
+                    {person.followUpDate && (
+                      <span className="text-xs text-orange-600">
+                        {format(new Date(person.followUpDate), "MMM d")}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Follow-ups Section */}
-      {needsFollowUp.length > 0 && (
-        <div className="mb-8">
-          <h2 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <AlertCircle className="w-5 h-5 text-orange-500" />
-            Follow-ups Due
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {needsFollowUp.map((person) => (
-              <PersonCard key={person.id} person={person} onUpdate={fetchPeople} />
-            ))}
-          </div>
-        </div>
-      )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Priority Tasks */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <CheckSquare className="w-5 h-5 text-primary" />
+                Priority Tasks
+              </CardTitle>
+              <Link href="/tasks">
+                <Button variant="ghost" size="sm">View all</Button>
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {overdueTasks.length > 0 && (
+              <div className="mb-4">
+                <p className="text-xs font-semibold text-destructive uppercase mb-2">
+                  Overdue
+                </p>
+                {overdueTasks.slice(0, 3).map((task) => (
+                  <TaskRow key={task.id} task={task} overdue />
+                ))}
+              </div>
+            )}
+            {upcomingTasks.length > 0 ? (
+              <div>
+                {overdueTasks.length > 0 && (
+                  <p className="text-xs font-semibold text-muted-foreground uppercase mb-2">
+                    Upcoming
+                  </p>
+                )}
+                {upcomingTasks.map((task) => (
+                  <TaskRow key={task.id} task={task} />
+                ))}
+              </div>
+            ) : overdueTasks.length === 0 ? (
+              <p className="text-muted-foreground text-sm py-4">
+                No pending tasks. Add some from the Tasks page.
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
 
-      {/* Filter Bar */}
-      <div className="flex gap-2 mb-6 flex-wrap">
-        <button
-          onClick={() => setFilterContext("")}
-          className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-            !filterContext
-              ? "bg-primary-100 text-primary-700"
-              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-          }`}
-        >
-          All
-        </button>
-        {CONTEXTS.map((ctx) => (
-          <button
-            key={ctx}
-            onClick={() => setFilterContext(ctx)}
-            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-              filterContext === ctx
-                ? "bg-primary-100 text-primary-700"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            }`}
-          >
-            {ctx}
-          </button>
-        ))}
+        {/* Weekly Commitments */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-primary" />
+              Quick Stats
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3">
+              <StatBox label="Today's Events" value={events.length} />
+              <StatBox label="Follow-ups Due" value={followUps.length} />
+              <StatBox label="Pending Tasks" value={tasks.length} />
+              <StatBox label="Overdue" value={overdueTasks.length} />
+            </div>
+          </CardContent>
+        </Card>
       </div>
+    </div>
+  );
+}
 
-      {/* People Grid */}
-      {loading ? (
-        <div className="text-center text-gray-500 py-12">Loading...</div>
-      ) : people.length === 0 ? (
-        <div className="text-center py-12">
-          <Users className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-500">No people yet. Add someone to get started.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {people.map((person) => (
-            <PersonCard key={person.id} person={person} onUpdate={fetchPeople} />
-          ))}
-        </div>
-      )}
+function TaskRow({ task, overdue }: { task: any; overdue?: boolean }) {
+  const priorityColors: Record<string, string> = {
+    urgent: "bg-red-500",
+    high: "bg-orange-500",
+    medium: "bg-yellow-500",
+    low: "bg-gray-400",
+  };
 
-      {showAddModal && (
-        <AddPersonModal
-          onClose={() => setShowAddModal(false)}
-          onAdded={fetchPeople}
-        />
+  return (
+    <div className="flex items-center gap-3 py-2">
+      <div className={`w-2 h-2 rounded-full ${priorityColors[task.priority]}`} />
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm truncate ${overdue ? "text-destructive" : ""}`}>
+          {task.title}
+        </p>
+      </div>
+      {task.dueDate && (
+        <span className={`text-xs ${overdue ? "text-destructive" : "text-muted-foreground"}`}>
+          {format(new Date(task.dueDate), "MMM d")}
+        </span>
       )}
     </div>
   );
 }
 
-function StatCard({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number;
-}) {
+function StatBox({ label, value }: { label: string; value: number }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <div className="flex items-center gap-3">
-        {icon}
-        <div>
-          <p className="text-2xl font-bold text-gray-900">{value}</p>
-          <p className="text-sm text-gray-500">{label}</p>
-        </div>
-      </div>
+    <div className="p-3 rounded-lg border bg-background">
+      <p className="text-2xl font-bold">{value}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
     </div>
   );
+}
+
+function getTimeOfDay() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "morning";
+  if (hour < 17) return "afternoon";
+  return "evening";
 }

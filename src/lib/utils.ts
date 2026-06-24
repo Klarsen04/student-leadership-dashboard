@@ -5,29 +5,57 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatDuration(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  if (hours === 0) return `${mins}m`;
-  if (mins === 0) return `${hours}h`;
-  return `${hours}h ${mins}m`;
-}
-
-export const CATEGORIES = [
-  { value: "Academics", color: "bg-blue-500", label: "Academics" },
-  { value: "RA", color: "bg-green-500", label: "RA" },
-  { value: "PSG", color: "bg-purple-500", label: "PSG" },
-  { value: "PHE", color: "bg-orange-500", label: "PHE" },
-  { value: "Ministry", color: "bg-yellow-500", label: "Ministry" },
-  { value: "Personal", color: "bg-gray-500", label: "Personal" },
-] as const;
-
-export const CONTEXTS = [
-  "Resident",
-  "PSG Student",
-  "PHE Contact",
+export const ROLES = [
+  "Student",
+  "RA",
+  "PSG",
+  "PHE",
   "InterVarsity",
-  "Classmate",
-  "Staff",
-  "Other",
+  "Career",
+  "Personal",
 ] as const;
+
+export const ROLE_COLORS: Record<string, string> = {
+  Student: "bg-blue-500",
+  RA: "bg-green-500",
+  PSG: "bg-purple-500",
+  PHE: "bg-orange-500",
+  InterVarsity: "bg-yellow-500",
+  Career: "bg-cyan-500",
+  Personal: "bg-gray-500",
+};
+
+export const ROLE_BADGE_VARIANTS: Record<string, string> = {
+  Student: "info",
+  RA: "success",
+  PSG: "purple",
+  PHE: "orange",
+  InterVarsity: "warning",
+  Career: "secondary",
+  Personal: "outline",
+};
+
+export const PERSON_CATEGORIES = [
+  "Resident",
+  "Student",
+  "PSG Connection",
+  "PHE Connection",
+  "Bible Study",
+  "InterVarsity",
+  "Friend",
+  "Mentor",
+  "Faculty",
+] as const;
+
+export const GOAL_CATEGORIES = [
+  "Academic",
+  "Leadership",
+  "Ministry",
+  "Career",
+  "Health",
+  "Personal",
+] as const;
+
+export const TASK_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
+
+export type Role = (typeof ROLES)[number];

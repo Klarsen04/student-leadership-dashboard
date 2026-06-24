@@ -1,34 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  BarChart3,
-  TrendingUp,
-  Clock,
-  Users,
-  Heart,
-  AlertTriangle,
-} from "lucide-react";
-import { CATEGORIES } from "@/lib/utils";
+import { format } from "date-fns";
+import { BarChart3, Clock, Users, CheckSquare, TrendingUp } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { ROLES, ROLE_COLORS } from "@/lib/utils";
 
 interface AnalyticsData {
   totalHours: number;
-  hoursByCategory: Record<string, number>;
+  hoursByRole: Record<string, number>;
   eventsAttended: number;
   eventsLed: number;
-  interactions: number;
+  totalInteractions: number;
+  followUpsDue: number;
   newPeopleMet: number;
-  burnout: {
-    score: number;
-    factors: string[];
-    recommendation: string;
-  };
-  balance: {
-    academics: number;
-    leadership: number;
-    ministry: number;
-    personal: number;
-  };
+  tasksCompleted: number;
+  wellness: { date: string; energy: number; stress: number; mood: number; sleep: number | null }[];
 }
 
 export default function AnalyticsPage() {
@@ -48,199 +36,164 @@ export default function AnalyticsPage() {
 
   if (loading || !data) {
     return (
-      <div className="max-w-6xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-900 mb-8">Analytics</h1>
-        <div className="text-center text-gray-500 py-12">Loading...</div>
+      <div className="max-w-5xl mx-auto">
+        <h1 className="text-2xl font-bold mb-8">Analytics</h1>
+        <div className="text-center text-muted-foreground py-12">Loading...</div>
       </div>
     );
   }
 
-  const burnoutColor =
-    data.burnout.score >= 75
-      ? "text-red-600"
-      : data.burnout.score >= 50
-      ? "text-orange-500"
-      : "text-green-600";
+  const maxHours = Math.max(...Object.values(data.hoursByRole), 1);
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-8">
+    <div className="max-w-5xl mx-auto space-y-6">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
-          <p className="text-gray-600 mt-1">Your leadership impact at a glance</p>
+          <h1 className="text-2xl font-bold">Analytics</h1>
+          <p className="text-muted-foreground text-sm">
+            Track your leadership impact
+          </p>
         </div>
-        <div className="flex bg-white border border-gray-200 rounded-lg p-1">
-          <button
+        <div className="flex border rounded-lg p-1">
+          <Button
+            variant={period === "week" ? "default" : "ghost"}
+            size="sm"
             onClick={() => setPeriod("week")}
-            className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
-              period === "week"
-                ? "bg-primary-100 text-primary-700"
-                : "text-gray-600 hover:text-gray-900"
-            }`}
           >
-            This Week
-          </button>
-          <button
+            Week
+          </Button>
+          <Button
+            variant={period === "month" ? "default" : "ghost"}
+            size="sm"
             onClick={() => setPeriod("month")}
-            className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
-              period === "month"
-                ? "bg-primary-100 text-primary-700"
-                : "text-gray-600 hover:text-gray-900"
-            }`}
           >
-            This Month
-          </button>
+            Month
+          </Button>
         </div>
       </div>
 
       {/* Key Metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <MetricCard
-          icon={<Clock className="w-5 h-5 text-primary-600" />}
-          label="Total Hours"
-          value={`${data.totalHours}h`}
-        />
-        <MetricCard
-          icon={<BarChart3 className="w-5 h-5 text-blue-600" />}
-          label="Events Attended"
-          value={data.eventsAttended.toString()}
-        />
-        <MetricCard
-          icon={<TrendingUp className="w-5 h-5 text-green-600" />}
-          label="Events Led"
-          value={data.eventsLed.toString()}
-        />
-        <MetricCard
-          icon={<Users className="w-5 h-5 text-purple-600" />}
-          label="Interactions"
-          value={data.interactions.toString()}
-        />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <MetricCard icon={<Clock className="w-5 h-5" />} label="Total Hours" value={`${data.totalHours}h`} />
+        <MetricCard icon={<BarChart3 className="w-5 h-5" />} label="Events" value={`${data.eventsAttended}`} />
+        <MetricCard icon={<Users className="w-5 h-5" />} label="Interactions" value={`${data.totalInteractions}`} />
+        <MetricCard icon={<CheckSquare className="w-5 h-5" />} label="Tasks Done" value={`${data.tasksCompleted}`} />
       </div>
 
-      {/* Time Allocation */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Hours by Category
-          </h2>
-          <div className="space-y-3">
-            {CATEGORIES.map((cat) => {
-              const hours = data.hoursByCategory[cat.value] || 0;
-              const maxHours = Math.max(...Object.values(data.hoursByCategory), 1);
-              const pct = (hours / maxHours) * 100;
-              return (
-                <div key={cat.value}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-gray-700">
-                      {cat.label}
-                    </span>
-                    <span className="text-sm text-gray-500">{hours}h</span>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Time by Role */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Time Allocation</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {ROLES.map((role) => {
+                const hours = data.hoursByRole[role] || 0;
+                const pct = (hours / maxHours) * 100;
+                return (
+                  <div key={role}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium">{role}</span>
+                      <span className="text-sm text-muted-foreground">{hours}h</span>
+                    </div>
+                    <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${ROLE_COLORS[role]}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${cat.color}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
 
-        {/* Balance Wheel */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Life Balance
-          </h2>
-          <div className="space-y-4">
-            {[
-              { label: "Academics", value: data.balance.academics, color: "bg-blue-500" },
-              { label: "Leadership", value: data.balance.leadership, color: "bg-green-500" },
-              { label: "Ministry", value: data.balance.ministry, color: "bg-yellow-500" },
-              { label: "Personal", value: data.balance.personal, color: "bg-gray-500" },
-            ].map((item) => (
-              <div key={item.label}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium text-gray-700">
-                    {item.label}
-                  </span>
-                  <span className="text-sm text-gray-500">{item.value}%</span>
-                </div>
-                <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${item.color}`}
-                    style={{ width: `${item.value}%` }}
-                  />
-                </div>
+        {/* Relationship Impact */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Relationship Impact</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-3 rounded-lg border text-center">
+                <p className="text-2xl font-bold">{data.totalInteractions}</p>
+                <p className="text-xs text-muted-foreground">Follow-ups Done</p>
               </div>
-            ))}
-          </div>
-        </div>
+              <div className="p-3 rounded-lg border text-center">
+                <p className="text-2xl font-bold">{data.newPeopleMet}</p>
+                <p className="text-xs text-muted-foreground">New People Met</p>
+              </div>
+              <div className="p-3 rounded-lg border text-center">
+                <p className="text-2xl font-bold">{data.eventsLed}</p>
+                <p className="text-xs text-muted-foreground">Events Led</p>
+              </div>
+              <div className="p-3 rounded-lg border text-center">
+                <p className="text-2xl font-bold text-orange-600">{data.followUpsDue}</p>
+                <p className="text-xs text-muted-foreground">Follow-ups Due</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Burnout Indicator */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex items-start gap-4">
-          <div
-            className={`p-3 rounded-xl ${
-              data.burnout.score >= 75
-                ? "bg-red-50"
-                : data.burnout.score >= 50
-                ? "bg-orange-50"
-                : "bg-green-50"
-            }`}
-          >
-            {data.burnout.score >= 50 ? (
-              <AlertTriangle className={`w-6 h-6 ${burnoutColor}`} />
-            ) : (
-              <Heart className={`w-6 h-6 ${burnoutColor}`} />
-            )}
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-1">
-              Burnout Risk:{" "}
-              <span className={burnoutColor}>{data.burnout.score}%</span>
-            </h2>
-            <p className="text-gray-600 mb-3">{data.burnout.recommendation}</p>
-            {data.burnout.factors.length > 0 && (
-              <ul className="space-y-1">
-                {data.burnout.factors.map((factor) => (
-                  <li
-                    key={factor}
-                    className="text-sm text-gray-500 flex items-center gap-2"
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
-                    {factor}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      </div>
+      {/* Wellness Trends */}
+      {data.wellness.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5" />
+              Wellness Trends
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {data.wellness.map((day) => (
+                <div key={day.date} className="flex items-center gap-4 text-sm">
+                  <span className="text-muted-foreground w-16">
+                    {format(new Date(day.date), "MMM d")}
+                  </span>
+                  <div className="flex-1 flex items-center gap-6">
+                    <WellnessBar label="Energy" value={day.energy} color="bg-green-500" />
+                    <WellnessBar label="Stress" value={day.stress} color="bg-red-500" />
+                    <WellnessBar label="Mood" value={day.mood} color="bg-blue-500" />
+                    {day.sleep && (
+                      <span className="text-xs text-muted-foreground">{day.sleep}h sleep</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
 
-function MetricCard({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-}) {
+function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <div className="flex items-center gap-3">
-        {icon}
+    <Card>
+      <CardContent className="p-4 flex items-center gap-3">
+        <div className="text-primary">{icon}</div>
         <div>
-          <p className="text-2xl font-bold text-gray-900">{value}</p>
-          <p className="text-sm text-gray-500">{label}</p>
+          <p className="text-xl font-bold">{value}</p>
+          <p className="text-xs text-muted-foreground">{label}</p>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function WellnessBar({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-xs text-muted-foreground w-12">{label}</span>
+      <div className="w-16 h-2 bg-secondary rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${value * 10}%` }} />
       </div>
+      <span className="text-xs font-medium w-4">{value}</span>
     </div>
   );
 }

@@ -11,25 +11,19 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const category = searchParams.get("category");
-  const needsFollowUp = searchParams.get("needsFollowUp");
-  const search = searchParams.get("search");
+  const status = searchParams.get("status");
 
   const where: Record<string, unknown> = { userId: session.user.id };
   if (category) where.category = category;
-  if (needsFollowUp === "true") {
-    where.followUpDate = { lte: new Date() };
-  }
-  if (search) {
-    where.name = { contains: search };
-  }
+  if (status) where.status = status;
 
-  const people = await prisma.person.findMany({
+  const goals = await prisma.goal.findMany({
     where,
-    include: { interactions: { orderBy: { date: "desc" }, take: 5 } },
-    orderBy: { updatedAt: "desc" },
+    include: { tasks: { orderBy: { createdAt: "desc" } } },
+    orderBy: { createdAt: "desc" },
   });
 
-  return NextResponse.json(people);
+  return NextResponse.json(goals);
 }
 
 export async function POST(req: NextRequest) {
@@ -39,23 +33,17 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const person = await prisma.person.create({
+  const goal = await prisma.goal.create({
     data: {
-      name: body.name,
+      title: body.title,
+      description: body.description || null,
       category: body.category,
-      email: body.email || null,
-      phone: body.phone || null,
-      dateMet: body.dateMet ? new Date(body.dateMet) : new Date(),
-      notes: body.notes || null,
-      prayerRequests: body.prayerRequests || null,
-      goals: body.goals || null,
-      tags: body.tags || null,
-      followUpDate: body.followUpDate ? new Date(body.followUpDate) : null,
+      targetDate: body.targetDate ? new Date(body.targetDate) : null,
       userId: session.user.id,
     },
   });
 
-  return NextResponse.json(person, { status: 201 });
+  return NextResponse.json(goal, { status: 201 });
 }
 
 export async function PATCH(req: NextRequest) {
@@ -66,23 +54,19 @@ export async function PATCH(req: NextRequest) {
 
   const body = await req.json();
   const data: Record<string, unknown> = {};
-  if (body.name !== undefined) data.name = body.name;
+  if (body.title !== undefined) data.title = body.title;
+  if (body.description !== undefined) data.description = body.description;
   if (body.category !== undefined) data.category = body.category;
-  if (body.email !== undefined) data.email = body.email;
-  if (body.phone !== undefined) data.phone = body.phone;
-  if (body.notes !== undefined) data.notes = body.notes;
-  if (body.prayerRequests !== undefined) data.prayerRequests = body.prayerRequests;
-  if (body.goals !== undefined) data.goals = body.goals;
-  if (body.tags !== undefined) data.tags = body.tags;
-  if (body.followUpDate !== undefined) data.followUpDate = body.followUpDate ? new Date(body.followUpDate) : null;
-  if (body.lastContactDate !== undefined) data.lastContactDate = new Date(body.lastContactDate);
+  if (body.targetDate !== undefined) data.targetDate = body.targetDate ? new Date(body.targetDate) : null;
+  if (body.progress !== undefined) data.progress = body.progress;
+  if (body.status !== undefined) data.status = body.status;
 
-  const person = await prisma.person.update({
+  const goal = await prisma.goal.update({
     where: { id: body.id, userId: session.user.id },
     data,
   });
 
-  return NextResponse.json(person);
+  return NextResponse.json(goal);
 }
 
 export async function DELETE(req: NextRequest) {
@@ -95,6 +79,6 @@ export async function DELETE(req: NextRequest) {
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
 
-  await prisma.person.delete({ where: { id, userId: session.user.id } });
+  await prisma.goal.delete({ where: { id, userId: session.user.id } });
   return NextResponse.json({ success: true });
 }

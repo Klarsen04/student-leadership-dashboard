@@ -23,82 +23,64 @@ export async function GET(req: NextRequest) {
     end = endOfWeek(now, { weekStartsOn: 1 });
   }
 
-  const events = await prisma.event.findMany({
-    where: {
-      userId: session.user.id,
-      startTime: { gte: start },
-      endTime: { lte: end },
-    },
-    include: { interactions: true },
-  });
+  const [events, people, interactions, tasks, checkIns] = await Promise.all([
+    prisma.event.findMany({
+      where: { userId: session.user.id, startTime: { gte: start }, endTime: { lte: end } },
+    }),
+    prisma.person.findMany({
+      where: { userId: session.user.id },
+    }),
+    prisma.interaction.findMany({
+      where: { person: { userId: session.user.id }, date: { gte: start, lte: end } },
+    }),
+    prisma.task.findMany({
+      where: { userId: session.user.id, status: "done", updatedAt: { gte: start, lte: end } },
+    }),
+    prisma.dailyCheckIn.findMany({
+      where: { userId: session.user.id, date: { gte: start, lte: end } },
+      orderBy: { date: "asc" },
+    }),
+  ]);
 
-  const hoursByCategory: Record<string, number> = {};
+  const hoursByRole: Record<string, number> = {};
   let totalMinutes = 0;
   let eventsLed = 0;
-  let totalInteractions = 0;
 
   for (const event of events) {
-    const minutes = event.actualMinutes || differenceInMinutes(event.endTime, event.startTime);
-    totalMinutes += minutes;
-    hoursByCategory[event.category] = (hoursByCategory[event.category] || 0) + minutes;
+    const mins = event.actualMinutes || differenceInMinutes(event.endTime, event.startTime);
+    totalMinutes += mins;
+    hoursByRole[event.role] = (hoursByRole[event.role] || 0) + mins;
     if (event.isLed) eventsLed++;
-    totalInteractions += event.interactions.length;
   }
 
   const hoursFormatted: Record<string, number> = {};
-  for (const [key, mins] of Object.entries(hoursByCategory)) {
+  for (const [key, mins] of Object.entries(hoursByRole)) {
     hoursFormatted[key] = Math.round((mins / 60) * 10) / 10;
   }
 
-  const newPeople = await prisma.person.count({
-    where: {
-      userId: session.user.id,
-      createdAt: { gte: start, lte: end },
-    },
-  });
+  const followUpsDue = people.filter(
+    (p) => p.followUpDate && new Date(p.followUpDate) <= now
+  ).length;
 
-  const academicMinutes = hoursByCategory["Academics"] || 0;
-  const leadershipMinutes =
-    (hoursByCategory["RA"] || 0) +
-    (hoursByCategory["PSG"] || 0) +
-    (hoursByCategory["PHE"] || 0);
-  const ministryMinutes = hoursByCategory["Ministry"] || 0;
-  const personalMinutes = hoursByCategory["Personal"] || 0;
-
-  const burnoutFactors: string[] = [];
-  if (totalMinutes > (period === "month" ? 10000 : 2500))
-    burnoutFactors.push("Overscheduled");
-  if (personalMinutes < totalMinutes * 0.1)
-    burnoutFactors.push("Low personal time");
-  if (leadershipMinutes > academicMinutes * 1.5)
-    burnoutFactors.push("Leadership outpacing academics");
-  if (ministryMinutes < totalMinutes * 0.05)
-    burnoutFactors.push("Neglecting spiritual life");
-
-  const burnoutScore = Math.min(burnoutFactors.length * 25, 100);
+  const newPeople = people.filter(
+    (p) => p.createdAt >= start && p.createdAt <= end
+  ).length;
 
   return NextResponse.json({
     totalHours: Math.round((totalMinutes / 60) * 10) / 10,
-    hoursByCategory: hoursFormatted,
-    eventsAttended: events.length,
+    hoursByRole: hoursFormatted,
+    eventsAttended: events.filter((e) => e.attended).length,
     eventsLed,
-    interactions: totalInteractions,
+    totalInteractions: interactions.length,
+    followUpsDue,
     newPeopleMet: newPeople,
-    burnout: {
-      score: burnoutScore,
-      factors: burnoutFactors,
-      recommendation:
-        burnoutScore >= 75
-          ? "Consider dropping a commitment this week. Your schedule is unsustainable."
-          : burnoutScore >= 50
-          ? "You're running warm. Protect your rest time."
-          : "Your balance looks healthy. Keep it up!",
-    },
-    balance: {
-      academics: Math.round((academicMinutes / (totalMinutes || 1)) * 100),
-      leadership: Math.round((leadershipMinutes / (totalMinutes || 1)) * 100),
-      ministry: Math.round((ministryMinutes / (totalMinutes || 1)) * 100),
-      personal: Math.round((personalMinutes / (totalMinutes || 1)) * 100),
-    },
+    tasksCompleted: tasks.length,
+    wellness: checkIns.map((c) => ({
+      date: c.date,
+      energy: c.energy,
+      stress: c.stress,
+      mood: c.mood,
+      sleep: c.sleep,
+    })),
   });
 }

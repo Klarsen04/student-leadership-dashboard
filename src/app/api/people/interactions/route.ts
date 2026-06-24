@@ -21,10 +21,10 @@ export async function POST(req: NextRequest) {
   const interaction = await prisma.interaction.create({
     data: {
       type: body.type,
-      notes: body.notes,
+      notes: body.notes || null,
       date: body.date ? new Date(body.date) : new Date(),
       personId: body.personId,
-      eventId: body.eventId,
+      eventId: body.eventId || null,
     },
   });
 

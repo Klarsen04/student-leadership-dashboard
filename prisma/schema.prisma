@@ -45,7 +45,9 @@ model User {
   events        Event[]
   people        Person[]
   reflections   Reflection[]
-  roles         Role[]
+  goals         Goal[]
+  tasks         Task[]
+  checkIns      DailyCheckIn[]
 }
 
 model VerificationToken {
@@ -56,27 +58,18 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-model Role {
-  id     String @id @default(cuid())
-  name   String
-  active Boolean @default(true)
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  events Event[]
-}
-
 model Event {
   id            String   @id @default(cuid())
   title         String
   description   String?
   startTime     DateTime
   endTime       DateTime
-  category      String
-  roleId        String?
-  role          Role?    @relation(fields: [roleId], references: [id])
+  category      String   @default("Personal")
+  role          String   @default("Student")
   outlookId     String?  @unique
   location      String?
   isLed         Boolean  @default(false)
+  attended      Boolean  @default(true)
   actualMinutes Int?
   userId        String
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -86,21 +79,23 @@ model Event {
 }
 
 model Person {
-  id           String   @id @default(cuid())
-  name         String
-  context      String
-  email        String?
-  phone        String?
-  dateMet      DateTime?
-  notes        String?
-  prayerRequests String?
-  followUpDate DateTime?
+  id              String   @id @default(cuid())
+  name            String
+  category        String
+  email           String?
+  phone           String?
+  dateMet         DateTime?
+  notes           String?
+  prayerRequests  String?
+  goals           String?
+  tags            String?
+  followUpDate    DateTime?
   lastContactDate DateTime?
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  interactions Interaction[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interactions    Interaction[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model Interaction {
@@ -113,6 +108,52 @@ model Interaction {
   eventId   String?
   event     Event?   @relation(fields: [eventId], references: [id])
   createdAt DateTime @default(now())
+}
+
+model Goal {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  category    String
+  targetDate  DateTime?
+  progress    Int      @default(0)
+  status      String   @default("active")
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks       Task[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Task {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  dueDate     DateTime?
+  priority    String    @default("medium")
+  status      String    @default("todo")
+  role        String    @default("Student")
+  goalId      String?
+  goal        Goal?     @relation(fields: [goalId], references: [id])
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model DailyCheckIn {
+  id        String   @id @default(cuid())
+  date      DateTime
+  energy    Int
+  stress    Int
+  mood      Int
+  sleep     Float?
+  notes     String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, date])
 }
 
 model Reflection {
