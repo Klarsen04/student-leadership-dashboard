@@ -1,0 +1,119 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { fetchCalendarEvents, categorizeEvent } from "@/lib/microsoft-graph";
+
+export async function GET(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(req.url);
+  const start = searchParams.get("start");
+  const end = searchParams.get("end");
+  const category = searchParams.get("category");
+
+  const where: Record<string, unknown> = { userId: session.user.id };
+  if (start && end) {
+    where.startTime = { gte: new Date(start) };
+    where.endTime = { lte: new Date(end) };
+  }
+  if (category) {
+    where.category = category;
+  }
+
+  const events = await prisma.event.findMany({
+    where,
+    include: { role: true, interactions: true },
+    orderBy: { startTime: "asc" },
+  });
+
+  return NextResponse.json(events);
+}
+
+export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await req.json();
+
+  if (body.action === "sync") {
+    const start = body.start || new Date().toISOString();
+    const end =
+      body.end ||
+      new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const outlookEvents = await fetchCalendarEvents(
+      session.user.id,
+      start,
+      end
+    );
+
+    const synced = [];
+    for (const event of outlookEvents) {
+      const category = categorizeEvent(event.subject, event.bodyPreview);
+      const upserted = await prisma.event.upsert({
+        where: { outlookId: event.id },
+        update: {
+          title: event.subject,
+          startTime: new Date(event.start.dateTime + "Z"),
+          endTime: new Date(event.end.dateTime + "Z"),
+          location: event.location?.displayName,
+          category,
+        },
+        create: {
+          title: event.subject,
+          startTime: new Date(event.start.dateTime + "Z"),
+          endTime: new Date(event.end.dateTime + "Z"),
+          location: event.location?.displayName,
+          category,
+          outlookId: event.id,
+          userId: session.user.id,
+        },
+      });
+      synced.push(upserted);
+    }
+
+    return NextResponse.json({ synced: synced.length, events: synced });
+  }
+
+  const event = await prisma.event.create({
+    data: {
+      title: body.title,
+      description: body.description,
+      startTime: new Date(body.startTime),
+      endTime: new Date(body.endTime),
+      category: body.category || "Personal",
+      location: body.location,
+      isLed: body.isLed || false,
+      userId: session.user.id,
+      roleId: body.roleId,
+    },
+  });
+
+  return NextResponse.json(event, { status: 201 });
+}
+
+export async function PATCH(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await req.json();
+  const event = await prisma.event.update({
+    where: { id: body.id, userId: session.user.id },
+    data: {
+      category: body.category,
+      isLed: body.isLed,
+      actualMinutes: body.actualMinutes,
+      roleId: body.roleId,
+    },
+  });
+
+  return NextResponse.json(event);
+}
