@@ -1,6 +1,7 @@
 import { NextAuthOptions } from "next-auth";
 import AzureADProvider from "next-auth/providers/azure-ad";
 import GoogleProvider from "next-auth/providers/google";
+import { prisma } from "./prisma";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -21,7 +22,30 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, account }) {
+    async signIn({ user, account }) {
+      if (!account) return true;
+      const userId = account.providerAccountId;
+      try {
+        await prisma.user.upsert({
+          where: { id: userId },
+          update: {
+            name: user.name,
+            email: user.email,
+            image: user.image,
+          },
+          create: {
+            id: userId,
+            name: user.name,
+            email: user.email,
+            image: user.image,
+          },
+        });
+      } catch (e) {
+        console.error("Failed to upsert user:", e);
+      }
+      return true;
+    },
+    async jwt({ token, account, user }) {
       if (account) {
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
