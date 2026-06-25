@@ -16,7 +16,8 @@ import {
 } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PriorityDot } from "@/components/PriorityDot";
-import { ROLES, TASK_PRIORITIES } from "@/lib/utils";
+import { TASK_PRIORITIES } from "@/lib/utils";
+import { useRoles } from "@/lib/useRoles";
 
 interface Task {
   id: string;
@@ -53,6 +54,7 @@ export default function TasksPage() {
   const [focusElapsed, setFocusElapsed] = useState(0);
   const [dailyNote, setDailyNote] = useState("");
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const { roles } = useRoles();
 
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
   const selectedDate = addDays(weekStart, selectedDay);
@@ -365,6 +367,7 @@ export default function TasksPage() {
           </DialogHeader>
           <AddTaskForm
             defaultDate={format(selectedDate, "yyyy-MM-dd")}
+            roles={roles}
             onSaved={() => {
               setShowFullAdd(false);
               fetchTasks();
@@ -545,7 +548,7 @@ function TaskCard({
   );
 }
 
-function AddTaskForm({ onSaved, defaultDate }: { onSaved: () => void; defaultDate: string }) {
+function AddTaskForm({ onSaved, defaultDate, roles }: { onSaved: () => void; defaultDate: string; roles: string[] }) {
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -636,7 +639,7 @@ function AddTaskForm({ onSaved, defaultDate }: { onSaved: () => void; defaultDat
             onChange={(e) => setForm({ ...form, role: e.target.value })}
             className="w-full h-10 border rounded-md px-3 text-sm bg-background"
           >
-            {ROLES.map((r) => (
+            {roles.map((r) => (
               <option key={r} value={r}>{r}</option>
             ))}
           </select>

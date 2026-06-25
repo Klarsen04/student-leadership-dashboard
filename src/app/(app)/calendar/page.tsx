@@ -24,7 +24,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { ROLES, ROLE_COLORS, ROLE_BADGE_VARIANTS } from "@/lib/utils";
+import { ROLE_BADGE_VARIANTS } from "@/lib/utils";
+import { useRoles, getRoleColor } from "@/lib/useRoles";
 
 interface CalendarEvent {
   id: string;
@@ -48,6 +49,8 @@ export default function CalendarPage() {
   const [view, setView] = useState<View>("week");
   const [showAdd, setShowAdd] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [activeRoles, setActiveRoles] = useState<Set<string>>(new Set());
+  const { roles } = useRoles();
 
   const fetchEvents = async () => {
     let start: Date, end: Date;
@@ -108,6 +111,22 @@ export default function CalendarPage() {
     else setCurrentDate(addDays(currentDate, dir * 30));
   };
 
+  const toggleRoleFilter = (role: string) => {
+    setActiveRoles((prev) => {
+      const next = new Set(prev);
+      if (next.has(role)) {
+        next.delete(role);
+      } else {
+        next.add(role);
+      }
+      return next;
+    });
+  };
+
+  const filteredEvents = activeRoles.size === 0
+    ? events
+    : events.filter((e) => activeRoles.has(e.role));
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -138,6 +157,7 @@ export default function CalendarPage() {
                 <DialogTitle>Add Event</DialogTitle>
               </DialogHeader>
               <AddEventForm
+                roles={roles}
                 onSaved={() => {
                   setShowAdd(false);
                   fetchEvents();
@@ -175,25 +195,47 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* Role legend */}
-      <div className="flex gap-3 flex-wrap">
-        {ROLES.map((role) => (
-          <div key={role} className="flex items-center gap-1.5">
-            <div className={`w-2.5 h-2.5 rounded-full ${ROLE_COLORS[role]}`} />
-            <span className="text-xs text-muted-foreground">{role}</span>
-          </div>
-        ))}
+      {/* Role Filters */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <button
+          onClick={() => setActiveRoles(new Set())}
+          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+            activeRoles.size === 0
+              ? "bg-foreground text-background"
+              : "bg-muted text-muted-foreground hover:bg-accent"
+          }`}
+        >
+          All
+        </button>
+        {roles.map((role) => {
+          const isActive = activeRoles.has(role);
+          const color = getRoleColor(role);
+          return (
+            <button
+              key={role}
+              onClick={() => toggleRoleFilter(role)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+                isActive
+                  ? "ring-2 ring-offset-1 ring-foreground/20 bg-accent text-foreground"
+                  : "bg-muted/50 text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              <div className={`w-2 h-2 rounded-full ${color}`} />
+              {role}
+            </button>
+          );
+        })}
       </div>
 
       {/* Calendar View */}
       {loading ? (
         <div className="text-center text-muted-foreground py-12">Loading...</div>
       ) : view === "week" ? (
-        <WeekView events={events} currentDate={currentDate} onEventClick={setSelectedEvent} />
+        <WeekView events={filteredEvents} currentDate={currentDate} onEventClick={setSelectedEvent} />
       ) : view === "day" ? (
-        <DayView events={events} currentDate={currentDate} onEventClick={setSelectedEvent} />
+        <DayView events={filteredEvents} currentDate={currentDate} onEventClick={setSelectedEvent} />
       ) : (
-        <MonthView events={events} currentDate={currentDate} onEventClick={setSelectedEvent} />
+        <MonthView events={filteredEvents} currentDate={currentDate} onEventClick={setSelectedEvent} />
       )}
 
       {/* Event Detail Dialog */}
@@ -284,7 +326,7 @@ function WeekView({ events, currentDate, onEventClick }: { events: CalendarEvent
                   className="w-full text-left p-1.5 rounded text-[11px] bg-accent/50 border leading-tight hover:bg-accent transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-1">
-                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${ROLE_COLORS[ev.role] || "bg-gray-400"}`} />
+                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${getRoleColor(ev.role)}`} />
                     <span className="font-medium truncate">{ev.title}</span>
                   </div>
                   <p className="text-muted-foreground ml-2.5">
@@ -334,7 +376,7 @@ function DayView({ events, currentDate, onEventClick }: { events: CalendarEvent[
                   height: `${height}px`,
                   backgroundColor: `var(--accent)`,
                   borderLeftWidth: "3px",
-                  borderLeftColor: ROLE_COLORS[ev.role]?.includes("bg-")
+                  borderLeftColor: getRoleColor(ev.role)?.includes("bg-")
                     ? undefined
                     : "#6b7280",
                 }}
@@ -392,7 +434,7 @@ function MonthView({ events, currentDate, onEventClick }: { events: CalendarEven
                     onClick={() => onEventClick(ev)}
                     className="flex items-center gap-0.5 w-full text-left hover:bg-accent/50 rounded px-0.5 cursor-pointer"
                   >
-                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${ROLE_COLORS[ev.role] || "bg-gray-400"}`} />
+                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${getRoleColor(ev.role)}`} />
                     <span className="text-[9px] truncate">{ev.title}</span>
                   </button>
                 ))}
@@ -410,12 +452,12 @@ function MonthView({ events, currentDate, onEventClick }: { events: CalendarEven
   );
 }
 
-function AddEventForm({ onSaved }: { onSaved: () => void }) {
+function AddEventForm({ roles, onSaved }: { roles: string[]; onSaved: () => void }) {
   const [form, setForm] = useState({
     title: "",
     startTime: "",
     endTime: "",
-    role: "Student",
+    role: roles[0] || "Student",
     category: "",
     location: "",
   });
@@ -471,7 +513,7 @@ function AddEventForm({ onSaved }: { onSaved: () => void }) {
             onChange={(e) => setForm({ ...form, role: e.target.value })}
             className="w-full h-10 border rounded-md px-3 text-sm bg-background"
           >
-            {ROLES.map((r) => (
+            {roles.map((r) => (
               <option key={r} value={r}>{r}</option>
             ))}
           </select>

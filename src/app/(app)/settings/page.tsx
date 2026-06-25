@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Download, FileJson, FileSpreadsheet } from "lucide-react";
+import { Download, FileJson, FileSpreadsheet, Plus, X, Tag } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
+import { useRoles, getRoleColor } from "@/lib/useRoles";
 
 const EXPORT_TYPES = [
   { value: "all", label: "Everything" },
@@ -17,6 +20,8 @@ const EXPORT_TYPES = [
 export default function SettingsPage() {
   const [exportType, setExportType] = useState("all");
   const [exporting, setExporting] = useState(false);
+  const [newRole, setNewRole] = useState("");
+  const { roles, addRole, deleteRole } = useRoles();
 
   const handleExport = async (format: "json" | "csv") => {
     setExporting(true);
@@ -38,6 +43,23 @@ export default function SettingsPage() {
     }
   };
 
+  const handleAddRole = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRole.trim()) return;
+    const success = addRole(newRole.trim());
+    if (success) {
+      toast.success(`Added "${newRole.trim()}" role`);
+      setNewRole("");
+    } else {
+      toast.error("Role already exists");
+    }
+  };
+
+  const handleDeleteRole = (role: string) => {
+    deleteRole(role);
+    toast.success(`Removed "${role}" role`);
+  };
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div>
@@ -45,6 +67,55 @@ export default function SettingsPage() {
         <p className="text-muted-foreground text-sm">Manage your data and preferences</p>
       </div>
 
+      {/* Roles Management */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Tag className="w-5 h-5" />
+            Manage Roles
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Roles are used to categorize your calendar events and tasks. Add new ones or remove roles you no longer need.
+          </p>
+
+          {/* Current Roles */}
+          <div className="flex flex-wrap gap-2">
+            {roles.map((role) => (
+              <div
+                key={role}
+                className="flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-full border bg-background text-sm"
+              >
+                <div className={`w-2.5 h-2.5 rounded-full ${getRoleColor(role)}`} />
+                <span className="font-medium">{role}</span>
+                <button
+                  onClick={() => handleDeleteRole(role)}
+                  className="ml-0.5 p-0.5 rounded-full hover:bg-destructive/10 hover:text-destructive transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Add New Role */}
+          <form onSubmit={handleAddRole} className="flex gap-2">
+            <Input
+              value={newRole}
+              onChange={(e) => setNewRole(e.target.value)}
+              placeholder="New role name..."
+              className="flex-1"
+            />
+            <Button type="submit" size="sm" disabled={!newRole.trim()}>
+              <Plus className="w-4 h-4 mr-1" />
+              Add
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Export Data */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

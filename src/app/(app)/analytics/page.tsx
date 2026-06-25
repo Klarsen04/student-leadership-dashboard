@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import { BarChart3, Clock, CheckSquare, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ROLES, ROLE_COLORS } from "@/lib/utils";
+import { useRoles, getRoleColor } from "@/lib/useRoles";
 
 interface AnalyticsData {
   totalHours: number;
@@ -20,6 +20,7 @@ export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [period, setPeriod] = useState<"week" | "month">("week");
   const [loading, setLoading] = useState(true);
+  const { roles } = useRoles();
 
   useEffect(() => {
     setLoading(true);
@@ -85,7 +86,7 @@ export default function AnalyticsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {ROLES.map((role) => {
+              {roles.map((role) => {
                 const hours = data.hoursByRole[role] || 0;
                 const pct = (hours / maxHours) * 100;
                 return (
@@ -96,7 +97,7 @@ export default function AnalyticsPage() {
                     </div>
                     <div className="h-2 bg-secondary rounded-full overflow-hidden">
                       <div
-                        className={`h-full rounded-full ${ROLE_COLORS[role]}`}
+                        className={`h-full rounded-full ${getRoleColor(role)}`}
                         style={{ width: `${pct}%` }}
                       />
                     </div>
