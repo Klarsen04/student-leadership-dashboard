@@ -96,9 +96,19 @@ export default function TasksPage() {
   }, [focusRunning, focusTime]);
 
   const selectedDateStr = format(selectedDate, "yyyy-MM-dd");
+  const today = format(new Date(), "yyyy-MM-dd");
+
+  const overdueTasks = tasks.filter((t) => {
+    if (t.status === "done") return false;
+    if (!t.dueDate) return false;
+    const taskDate = t.dueDate.slice(0, 10);
+    return taskDate < today;
+  });
+
   const dayTasks = tasks.filter((t) => {
     if (!t.dueDate) return true;
     const taskDate = t.dueDate.slice(0, 10);
+    if (taskDate < today && t.status !== "done") return false;
     return taskDate === selectedDateStr;
   });
 
@@ -234,6 +244,45 @@ export default function TasksPage() {
           <span className="text-[10px] ml-0.5 uppercase tracking-wider">complete</span>
         </span>
       </div>
+
+      {/* Overdue Tasks */}
+      {overdueTasks.length > 0 && (
+        <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-destructive">
+              Overdue
+            </h3>
+            <span className="text-xs text-destructive/70">· {overdueTasks.length}</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+            {overdueTasks.map((task) => (
+              <div
+                key={task.id}
+                className="flex items-center gap-2.5 rounded-xl border border-destructive/20 bg-background p-3"
+              >
+                <button
+                  onClick={() => updateTaskStatus(task, "done")}
+                  className="w-4 h-4 rounded-full border-2 border-destructive/40 hover:border-destructive shrink-0 transition-colors"
+                  style={{ width: 18, height: 18 }}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium leading-tight truncate">{task.title}</p>
+                  <p className="text-[10px] text-destructive/70">
+                    Due {task.dueDate ? format(new Date(task.dueDate), "MMM d") : ""}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setDeleteTarget(task)}
+                  className="p-1 text-muted-foreground hover:text-destructive transition-colors"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Kanban Columns */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

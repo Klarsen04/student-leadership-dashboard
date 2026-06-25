@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
         ? `Due ${t.dueDate < now ? "overdue" : "today"}`
         : "No due date",
       time: t.dueDate || now,
-      url: "/tasks",
+      url: "/calendar",
     })),
   ].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
 
