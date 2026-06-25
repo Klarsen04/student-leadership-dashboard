@@ -110,15 +110,23 @@ export async function PATCH(req: NextRequest) {
   }
 
   const body = await req.json();
+  const { id, ...fields } = body;
+  if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
+
+  const data: Record<string, unknown> = {};
+  if (fields.title !== undefined) data.title = fields.title;
+  if (fields.startTime !== undefined) data.startTime = new Date(fields.startTime);
+  if (fields.endTime !== undefined) data.endTime = new Date(fields.endTime);
+  if (fields.location !== undefined) data.location = fields.location || null;
+  if (fields.category !== undefined) data.category = fields.category;
+  if (fields.role !== undefined) data.role = fields.role;
+  if (fields.isLed !== undefined) data.isLed = fields.isLed;
+  if (fields.attended !== undefined) data.attended = fields.attended;
+  if (fields.actualMinutes !== undefined) data.actualMinutes = fields.actualMinutes;
+
   const event = await prisma.event.update({
-    where: { id: body.id, userId: session.user.id },
-    data: {
-      category: body.category,
-      role: body.role,
-      isLed: body.isLed,
-      attended: body.attended,
-      actualMinutes: body.actualMinutes,
-    },
+    where: { id, userId: session.user.id },
+    data,
   });
 
   return NextResponse.json(event);

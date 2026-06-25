@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Download, FileJson, FileSpreadsheet, Plus, X, Tag } from "lucide-react";
+import { Download, FileJson, FileSpreadsheet, Plus, X, Tag, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useRoles, getRoleColor } from "@/lib/useRoles";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 const EXPORT_TYPES = [
   { value: "all", label: "Everything" },
@@ -21,6 +22,8 @@ export default function SettingsPage() {
   const [exportType, setExportType] = useState("all");
   const [exporting, setExporting] = useState(false);
   const [newRole, setNewRole] = useState("");
+  const [roleToDelete, setRoleToDelete] = useState<string | null>(null);
+  const [roleUsageCount, setRoleUsageCount] = useState(0);
   const { roles, addRole, deleteRole } = useRoles();
 
   const handleExport = async (format: "json" | "csv") => {
@@ -55,9 +58,35 @@ export default function SettingsPage() {
     }
   };
 
-  const handleDeleteRole = (role: string) => {
-    deleteRole(role);
-    toast.success(`Removed "${role}" role`);
+  const handleDeleteRole = async (role: string) => {
+    try {
+      const [tasksRes, eventsRes] = await Promise.all([
+        fetch(`/api/tasks?role=${encodeURIComponent(role)}&limit=1`),
+        fetch(`/api/calendar?role=${encodeURIComponent(role)}`),
+      ]);
+      let count = 0;
+      if (tasksRes.ok) {
+        const data = await tasksRes.json();
+        count += data.total || (data.tasks || data).length || 0;
+      }
+      if (eventsRes.ok) {
+        const events = await eventsRes.json();
+        count += Array.isArray(events) ? events.length : 0;
+      }
+      setRoleUsageCount(count);
+      setRoleToDelete(role);
+    } catch {
+      setRoleUsageCount(0);
+      setRoleToDelete(role);
+    }
+  };
+
+  const confirmDeleteRole = () => {
+    if (roleToDelete) {
+      deleteRole(roleToDelete);
+      toast.success(`Removed "${roleToDelete}" role`);
+      setRoleToDelete(null);
+    }
   };
 
   return (
@@ -163,6 +192,18 @@ export default function SettingsPage() {
           </p>
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={!!roleToDelete}
+        onOpenChange={(open) => !open && setRoleToDelete(null)}
+        title={`Delete "${roleToDelete}" role?`}
+        description={
+          roleUsageCount > 0
+            ? `This role is used by ${roleUsageCount} task${roleUsageCount > 1 ? "s" : ""}/event${roleUsageCount > 1 ? "s" : ""}. They will keep their current role label but it won't appear in filters anymore.`
+            : "This role is not used by any tasks or events. Safe to delete."
+        }
+        onConfirm={confirmDeleteRole}
+      />
     </div>
   );
 }
