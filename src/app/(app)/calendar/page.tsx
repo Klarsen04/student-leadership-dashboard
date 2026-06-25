@@ -13,7 +13,7 @@ import {
   isWithinInterval,
   differenceInDays,
 } from "date-fns";
-import { RefreshCw, Plus, ChevronLeft, ChevronRight, Trash2, Pencil } from "lucide-react";
+import { RefreshCw, Plus, ChevronLeft, ChevronRight, Trash2, Pencil, X } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { ROLE_BADGE_VARIANTS } from "@/lib/utils";
 import { useRoles, getRoleColor } from "@/lib/useRoles";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 interface CalendarEvent {
   id: string;
@@ -53,7 +54,11 @@ export default function CalendarPage() {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [editingEvent, setEditingEvent] = useState(false);
   const [activeRoles, setActiveRoles] = useState<Set<string>>(new Set());
-  const { roles } = useRoles();
+  const [showAddRole, setShowAddRole] = useState(false);
+  const [newRoleName, setNewRoleName] = useState("");
+  const [roleToDelete, setRoleToDelete] = useState<string | null>(null);
+  const [roleUsageCount, setRoleUsageCount] = useState(0);
+  const { roles, addRole, deleteRole } = useRoles();
 
   const fetchEvents = async () => {
     let start: Date, end: Date;
@@ -121,6 +126,49 @@ export default function CalendarPage() {
       else next.add(role);
       return next;
     });
+  };
+
+  const handleAddRole = () => {
+    if (!newRoleName.trim()) return;
+    const success = addRole(newRoleName.trim());
+    if (success) {
+      toast.success(`Added "${newRoleName.trim()}" filter`);
+      setNewRoleName("");
+      setShowAddRole(false);
+    } else {
+      toast.error("Role already exists");
+    }
+  };
+
+  const handleDeleteRole = async (role: string) => {
+    try {
+      const res = await fetch(`/api/calendar?role=${encodeURIComponent(role)}`);
+      let count = 0;
+      if (res.ok) {
+        const evts = await res.json();
+        count = Array.isArray(evts) ? evts.length : 0;
+      }
+      const taskRes = await fetch(`/api/tasks?role=${encodeURIComponent(role)}&limit=1`);
+      if (taskRes.ok) {
+        const data = await taskRes.json();
+        count += data.total || 0;
+      }
+      setRoleUsageCount(count);
+      setRoleToDelete(role);
+    } catch {
+      setRoleUsageCount(0);
+      setRoleToDelete(role);
+    }
+  };
+
+  const confirmDeleteRole = () => {
+    if (roleToDelete) {
+      deleteRole(roleToDelete);
+      activeRoles.delete(roleToDelete);
+      setActiveRoles(new Set(activeRoles));
+      toast.success(`Removed "${roleToDelete}" filter`);
+      setRoleToDelete(null);
+    }
   };
 
   const filteredEvents = activeRoles.size === 0
@@ -207,20 +255,56 @@ export default function CalendarPage() {
           const isActive = activeRoles.has(role);
           const color = getRoleColor(role);
           return (
-            <button
-              key={role}
-              onClick={() => toggleRoleFilter(role)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
-                isActive
-                  ? "ring-2 ring-offset-1 ring-foreground/20 bg-accent text-foreground"
-                  : "bg-muted/50 text-muted-foreground hover:bg-muted"
-              }`}
-            >
-              <div className={`w-2 h-2 rounded-full ${color}`} />
-              {role}
-            </button>
+            <div key={role} className="group relative flex items-center">
+              <button
+                onClick={() => toggleRoleFilter(role)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+                  isActive
+                    ? "ring-2 ring-offset-1 ring-foreground/20 bg-accent text-foreground"
+                    : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                <div className={`w-2 h-2 rounded-full ${color}`} />
+                {role}
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleDeleteRole(role); }}
+                className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-destructive/80 text-white items-center justify-center text-[8px] hidden group-hover:flex hover:bg-destructive transition-colors"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </div>
           );
         })}
+        {showAddRole ? (
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleAddRole(); }}
+            className="flex items-center gap-1"
+          >
+            <input
+              autoFocus
+              value={newRoleName}
+              onChange={(e) => setNewRoleName(e.target.value)}
+              placeholder="Role name..."
+              className="h-6 w-24 px-2 text-xs border rounded-full bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+              onBlur={() => { if (!newRoleName) setShowAddRole(false); }}
+            />
+            <button
+              type="submit"
+              disabled={!newRoleName.trim()}
+              className="h-6 w-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs disabled:opacity-50"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+          </form>
+        ) : (
+          <button
+            onClick={() => setShowAddRole(true)}
+            className="w-6 h-6 rounded-full border border-dashed border-muted-foreground/40 flex items-center justify-center hover:border-foreground hover:text-foreground text-muted-foreground transition-colors"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+        )}
       </div>
 
       {/* Calendar View */}
@@ -312,6 +396,18 @@ export default function CalendarPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!roleToDelete}
+        onOpenChange={(open) => !open && setRoleToDelete(null)}
+        title={`Delete "${roleToDelete}" filter?`}
+        description={
+          roleUsageCount > 0
+            ? `This role is used by ${roleUsageCount} task${roleUsageCount !== 1 ? "s" : ""}/event${roleUsageCount !== 1 ? "s" : ""}. They will keep their label but this filter will be removed.`
+            : "No tasks or events use this role. Safe to delete."
+        }
+        onConfirm={confirmDeleteRole}
+      />
     </div>
   );
 }

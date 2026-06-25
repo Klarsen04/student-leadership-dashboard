@@ -19,8 +19,8 @@ export async function GET(req: NextRequest) {
 
   const where: Record<string, unknown> = { userId: session.user.id };
   if (start && end) {
-    where.startTime = { gte: new Date(start) };
-    where.endTime = { lte: new Date(end) };
+    where.startTime = { lte: new Date(end) };
+    where.endTime = { gte: new Date(start) };
   }
   if (role) where.role = role;
 
