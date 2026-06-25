@@ -7,12 +7,13 @@ export interface SubCalendar {
   name: string;
   color: string;
   visible: boolean;
+  tags: string[];
 }
 
 const STORAGE_KEY = "leadership-os-calendars";
 
 const DEFAULT_CALENDARS: SubCalendar[] = [
-  { id: "default", name: "Personal", color: "bg-blue-500", visible: true },
+  { id: "default", name: "Personal", color: "bg-blue-500", visible: true, tags: ["Personal"] },
 ];
 
 const COLOR_OPTIONS = [
@@ -36,7 +37,9 @@ function getStoredCalendars(): SubCalendar[] {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((c: any) => ({ ...c, tags: c.tags || [] }));
+      }
     }
   } catch {}
   return DEFAULT_CALENDARS;
@@ -57,7 +60,7 @@ export function useCalendars() {
   const addCalendar = useCallback((name: string, color: string) => {
     const current = getStoredCalendars();
     const id = `cal_${Date.now().toString(36)}`;
-    const newCal: SubCalendar = { id, name, color, visible: true };
+    const newCal: SubCalendar = { id, name, color, visible: true, tags: [] };
     save([...current, newCal]);
     return newCal;
   }, [save]);
@@ -77,11 +80,40 @@ export function useCalendars() {
     save(current.map((c) => c.id === id ? { ...c, ...updates } : c));
   }, [save]);
 
+  const addTag = useCallback((calendarId: string, tag: string) => {
+    const current = getStoredCalendars();
+    const cal = current.find((c) => c.id === calendarId);
+    if (!cal) return false;
+    if (cal.tags.some((t) => t.toLowerCase() === tag.toLowerCase())) return false;
+    save(current.map((c) => c.id === calendarId ? { ...c, tags: [...c.tags, tag] } : c));
+    return true;
+  }, [save]);
+
+  const deleteTag = useCallback((calendarId: string, tag: string) => {
+    const current = getStoredCalendars();
+    save(current.map((c) => c.id === calendarId ? { ...c, tags: c.tags.filter((t) => t !== tag) } : c));
+  }, [save]);
+
   const getCalendarColor = useCallback((categoryName: string): string => {
     const current = getStoredCalendars();
     const cal = current.find((c) => c.name === categoryName);
     return cal?.color || "bg-gray-400";
   }, []);
 
-  return { calendars, addCalendar, deleteCalendar, toggleVisibility, updateCalendar, getCalendarColor, COLOR_OPTIONS };
+  const getTagsForCalendar = useCallback((calendarName: string | null): string[] => {
+    const current = getStoredCalendars();
+    if (!calendarName) {
+      const allTags = new Set<string>();
+      current.forEach((c) => c.tags.forEach((t) => allTags.add(t)));
+      return Array.from(allTags);
+    }
+    const cal = current.find((c) => c.name === calendarName);
+    return cal?.tags || [];
+  }, []);
+
+  const getCalendarByName = useCallback((name: string): SubCalendar | undefined => {
+    return getStoredCalendars().find((c) => c.name === name);
+  }, []);
+
+  return { calendars, addCalendar, deleteCalendar, toggleVisibility, updateCalendar, addTag, deleteTag, getCalendarColor, getTagsForCalendar, getCalendarByName, COLOR_OPTIONS };
 }

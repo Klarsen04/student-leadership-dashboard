@@ -27,8 +27,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { ROLE_BADGE_VARIANTS } from "@/lib/utils";
-import { useRoles, getRoleColor } from "@/lib/useRoles";
-import { useCalendars } from "@/lib/useCalendars";
+import { useCalendars, SubCalendar } from "@/lib/useCalendars";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 interface CalendarEvent {
@@ -54,18 +53,16 @@ export default function CalendarPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [editingEvent, setEditingEvent] = useState(false);
-  const [activeRoles, setActiveRoles] = useState<Set<string>>(new Set());
-  const [showAddRole, setShowAddRole] = useState(false);
-  const [newRoleName, setNewRoleName] = useState("");
-  const [roleToDelete, setRoleToDelete] = useState<string | null>(null);
-  const [roleUsageCount, setRoleUsageCount] = useState(0);
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [showAddTag, setShowAddTag] = useState(false);
+  const [newTagName, setNewTagName] = useState("");
+  const [tagToDelete, setTagToDelete] = useState<string | null>(null);
   const [showAddCalendar, setShowAddCalendar] = useState(false);
   const [newCalName, setNewCalName] = useState("");
   const [newCalColor, setNewCalColor] = useState("bg-blue-500");
   const [selectedCalendar, setSelectedCalendar] = useState<string | null>(null);
   const [calendarToDelete, setCalendarToDelete] = useState<string | null>(null);
-  const { roles, addRole, deleteRole } = useRoles();
-  const { calendars, addCalendar, deleteCalendar, getCalendarColor, COLOR_OPTIONS } = useCalendars();
+  const { calendars, addCalendar, deleteCalendar, addTag, deleteTag, getCalendarColor, getTagsForCalendar, getCalendarByName, COLOR_OPTIONS } = useCalendars();
 
   const fetchEvents = async () => {
     let start: Date, end: Date;
@@ -126,61 +123,43 @@ export default function CalendarPage() {
     else setCurrentDate(addDays(currentDate, dir * 30));
   };
 
-  const toggleRoleFilter = (role: string) => {
-    setActiveRoles((prev) => {
-      const next = new Set(prev);
-      if (next.has(role)) next.delete(role);
-      else next.add(role);
-      return next;
-    });
-  };
+  const currentTags = getTagsForCalendar(selectedCalendar);
 
-  const handleAddRole = () => {
-    if (!newRoleName.trim()) return;
-    const success = addRole(newRoleName.trim());
+  const handleAddTag = () => {
+    if (!newTagName.trim()) return;
+    const cal = selectedCalendar
+      ? calendars.find((c) => c.name === selectedCalendar)
+      : calendars[0];
+    if (!cal) return;
+    const success = addTag(cal.id, newTagName.trim());
     if (success) {
-      toast.success(`Added "${newRoleName.trim()}" filter`);
-      setNewRoleName("");
-      setShowAddRole(false);
+      toast.success(`Added "${newTagName.trim()}" tag`);
+      setNewTagName("");
+      setShowAddTag(false);
     } else {
-      toast.error("Role already exists");
+      toast.error("Tag already exists in this calendar");
     }
   };
 
-  const handleDeleteRole = async (role: string) => {
-    try {
-      const res = await fetch(`/api/calendar?role=${encodeURIComponent(role)}`);
-      let count = 0;
-      if (res.ok) {
-        const evts = await res.json();
-        count = Array.isArray(evts) ? evts.length : 0;
-      }
-      const taskRes = await fetch(`/api/tasks?role=${encodeURIComponent(role)}&limit=1`);
-      if (taskRes.ok) {
-        const data = await taskRes.json();
-        count += data.total || 0;
-      }
-      setRoleUsageCount(count);
-      setRoleToDelete(role);
-    } catch {
-      setRoleUsageCount(0);
-      setRoleToDelete(role);
-    }
+  const handleDeleteTag = (tag: string) => {
+    setTagToDelete(tag);
   };
 
-  const confirmDeleteRole = () => {
-    if (roleToDelete) {
-      deleteRole(roleToDelete);
-      activeRoles.delete(roleToDelete);
-      setActiveRoles(new Set(activeRoles));
-      toast.success(`Removed "${roleToDelete}" filter`);
-      setRoleToDelete(null);
+  const confirmDeleteTag = () => {
+    if (tagToDelete) {
+      const cal = selectedCalendar
+        ? calendars.find((c) => c.name === selectedCalendar)
+        : calendars.find((c) => c.tags.includes(tagToDelete!));
+      if (cal) deleteTag(cal.id, tagToDelete);
+      if (activeTag === tagToDelete) setActiveTag(null);
+      toast.success(`Removed "${tagToDelete}" tag`);
+      setTagToDelete(null);
     }
   };
 
   const filteredEvents = events.filter((e) => {
     if (selectedCalendar && e.category !== selectedCalendar) return false;
-    if (activeRoles.size > 0 && !activeRoles.has(e.role)) return false;
+    if (activeTag && e.role !== activeTag) return false;
     return true;
   });
 
@@ -248,73 +227,71 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* Role Filters */}
-      <div className="flex gap-2 flex-wrap items-center">
-        <button
-          onClick={() => setActiveRoles(new Set())}
-          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-            activeRoles.size === 0
-              ? "bg-foreground text-background"
-              : "bg-muted text-muted-foreground hover:bg-accent"
-          }`}
-        >
-          All
-        </button>
-        {roles.map((role) => {
-          const isActive = activeRoles.has(role);
-          const color = getRoleColor(role);
-          return (
-            <div key={role} className="group relative flex items-center">
+      {/* Tags (per-calendar) */}
+      {currentTags.length > 0 || selectedCalendar ? (
+        <div className="flex gap-2 flex-wrap items-center">
+          <button
+            onClick={() => setActiveTag(null)}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+              activeTag === null
+                ? "bg-foreground text-background"
+                : "bg-muted text-muted-foreground hover:bg-accent"
+            }`}
+          >
+            All Tags
+          </button>
+          {currentTags.map((tag) => (
+            <div key={tag} className="group relative flex items-center">
               <button
-                onClick={() => toggleRoleFilter(role)}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
-                  isActive
+                onClick={() => setActiveTag(activeTag === tag ? null : tag)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+                  activeTag === tag
                     ? "ring-2 ring-offset-1 ring-foreground/20 bg-accent text-foreground"
                     : "bg-muted/50 text-muted-foreground hover:bg-muted"
                 }`}
               >
-                <div className={`w-2 h-2 rounded-full ${color}`} />
-                {role}
+                {tag}
               </button>
               <button
-                onClick={(e) => { e.stopPropagation(); handleDeleteRole(role); }}
+                onClick={(e) => { e.stopPropagation(); handleDeleteTag(tag); }}
                 className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-destructive/80 text-white items-center justify-center text-[8px] hidden group-hover:flex hover:bg-destructive transition-colors"
               >
                 <X className="w-2.5 h-2.5" />
               </button>
             </div>
-          );
-        })}
-        {showAddRole ? (
-          <form
-            onSubmit={(e) => { e.preventDefault(); handleAddRole(); }}
-            className="flex items-center gap-1"
-          >
-            <input
-              autoFocus
-              value={newRoleName}
-              onChange={(e) => setNewRoleName(e.target.value)}
-              placeholder="Role name..."
-              className="h-6 w-24 px-2 text-xs border rounded-full bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-              onBlur={() => { if (!newRoleName) setShowAddRole(false); }}
-            />
+          ))}
+          {showAddTag ? (
+            <form
+              onSubmit={(e) => { e.preventDefault(); handleAddTag(); }}
+              className="flex items-center gap-1"
+            >
+              <input
+                autoFocus
+                value={newTagName}
+                onChange={(e) => setNewTagName(e.target.value)}
+                placeholder="Tag name..."
+                className="h-6 w-24 px-2 text-xs border rounded-full bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                onBlur={() => { if (!newTagName) setShowAddTag(false); }}
+              />
+              <button
+                type="submit"
+                disabled={!newTagName.trim()}
+                className="h-6 w-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs disabled:opacity-50"
+              >
+                <Plus className="w-3 h-3" />
+              </button>
+            </form>
+          ) : (
             <button
-              type="submit"
-              disabled={!newRoleName.trim()}
-              className="h-6 w-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs disabled:opacity-50"
+              onClick={() => setShowAddTag(true)}
+              className="w-6 h-6 rounded-full border border-dashed border-muted-foreground/40 flex items-center justify-center hover:border-foreground hover:text-foreground text-muted-foreground transition-colors"
+              title="Add tag"
             >
               <Plus className="w-3 h-3" />
             </button>
-          </form>
-        ) : (
-          <button
-            onClick={() => setShowAddRole(true)}
-            className="w-6 h-6 rounded-full border border-dashed border-muted-foreground/40 flex items-center justify-center hover:border-foreground hover:text-foreground text-muted-foreground transition-colors"
-          >
-            <Plus className="w-3 h-3" />
-          </button>
-        )}
-      </div>
+          )}
+        </div>
+      ) : null}
 
       {/* My Calendars */}
       <div className="flex gap-2 flex-wrap items-center">
@@ -426,7 +403,6 @@ export default function CalendarPage() {
             <DialogDescription>Create a new calendar event</DialogDescription>
           </DialogHeader>
           <EventForm
-            roles={roles}
             calendars={calendars}
             onSaved={() => { setShowAdd(false); fetchEvents(); }}
             onCancel={() => setShowAdd(false)}
@@ -489,7 +465,6 @@ export default function CalendarPage() {
           )}
           {selectedEvent && editingEvent && (
             <EventForm
-              roles={roles}
               calendars={calendars}
               event={selectedEvent}
               onSaved={() => { setSelectedEvent(null); setEditingEvent(false); fetchEvents(); }}
@@ -500,15 +475,11 @@ export default function CalendarPage() {
       </Dialog>
 
       <ConfirmDialog
-        open={!!roleToDelete}
-        onOpenChange={(open) => !open && setRoleToDelete(null)}
-        title={`Delete "${roleToDelete}" filter?`}
-        description={
-          roleUsageCount > 0
-            ? `This role is used by ${roleUsageCount} task${roleUsageCount !== 1 ? "s" : ""}/event${roleUsageCount !== 1 ? "s" : ""}. They will keep their label but this filter will be removed.`
-            : "No tasks or events use this role. Safe to delete."
-        }
-        onConfirm={confirmDeleteRole}
+        open={!!tagToDelete}
+        onOpenChange={(open) => !open && setTagToDelete(null)}
+        title={`Delete "${tagToDelete}" tag?`}
+        description="Events with this tag will keep their label, but the tag filter will be removed from this calendar."
+        onConfirm={confirmDeleteTag}
       />
 
       <ConfirmDialog
@@ -814,14 +785,12 @@ function MonthView({ events, currentDate, onEventClick, getColor }: { events: Ca
 }
 
 function EventForm({
-  roles,
   calendars,
   event,
   onSaved,
   onCancel,
 }: {
-  roles: string[];
-  calendars: { id: string; name: string; color: string; visible: boolean }[];
+  calendars: SubCalendar[];
   event?: CalendarEvent;
   onSaved: () => void;
   onCancel: () => void;
@@ -830,7 +799,7 @@ function EventForm({
     title: event?.title || "",
     startTime: event ? format(new Date(event.startTime), "yyyy-MM-dd'T'HH:mm") : "",
     endTime: event ? format(new Date(event.endTime), "yyyy-MM-dd'T'HH:mm") : "",
-    role: event?.role || roles[0] || "Student",
+    role: event?.role || "",
     category: event?.category || calendars[0]?.name || "",
     location: event?.location || "",
   });
@@ -897,14 +866,15 @@ function EventForm({
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="text-sm font-medium">Role</label>
+          <label className="text-sm font-medium">Tag</label>
           <select
             value={form.role}
             onChange={(e) => setForm({ ...form, role: e.target.value })}
             className="w-full h-10 border rounded-md px-3 text-sm bg-background"
           >
-            {roles.map((r) => (
-              <option key={r} value={r}>{r}</option>
+            <option value="">No tag</option>
+            {(calendars.find((c) => c.name === form.category)?.tags || []).map((t) => (
+              <option key={t} value={t}>{t}</option>
             ))}
           </select>
         </div>
