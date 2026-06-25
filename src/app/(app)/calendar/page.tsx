@@ -415,14 +415,13 @@ export default function CalendarPage() {
 function WeekView({ events, currentDate, onEventClick }: { events: CalendarEvent[]; currentDate: Date; onEventClick: (e: CalendarEvent) => void }) {
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const MAX_VISIBLE_SPANS = 3;
 
-  const getMultiDayEvents = () => {
-    return events.filter((e) => {
-      const start = new Date(e.startTime);
-      const end = new Date(e.endTime);
-      return !isSameDay(start, end);
-    });
-  };
+  const multiDayEvents = events.filter((e) => {
+    const start = new Date(e.startTime);
+    const end = new Date(e.endTime);
+    return !isSameDay(start, end);
+  });
 
   const getSingleDayEvents = (day: Date) => {
     return events.filter((e) => {
@@ -432,14 +431,19 @@ function WeekView({ events, currentDate, onEventClick }: { events: CalendarEvent
     });
   };
 
-  const multiDayEvents = getMultiDayEvents();
+  const [showAllSpans, setShowAllSpans] = useState(false);
+  const visibleSpans = showAllSpans ? multiDayEvents : multiDayEvents.slice(0, MAX_VISIBLE_SPANS);
+  const hiddenCount = multiDayEvents.length - MAX_VISIBLE_SPANS;
 
   return (
     <div className="space-y-2">
       {/* Multi-day event spans */}
       {multiDayEvents.length > 0 && (
-        <div className="space-y-1 mb-2">
-          {multiDayEvents.map((ev) => {
+        <div className="rounded-lg border bg-card/50 p-2 space-y-1">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-1">
+            Multi-day events
+          </p>
+          {visibleSpans.map((ev) => {
             const evStart = new Date(ev.startTime);
             const evEnd = new Date(ev.endTime);
             const startIdx = days.findIndex((d) => isSameDay(d, evStart) || d > evStart);
@@ -460,17 +464,33 @@ function WeekView({ events, currentDate, onEventClick }: { events: CalendarEvent
                 }}
               >
                 <div
-                  className={`rounded-md px-2 py-1 text-[11px] font-medium text-white ${getRoleColor(ev.role)} truncate`}
+                  className={`rounded px-2 py-0.5 text-[10px] font-medium text-white ${getRoleColor(ev.role)} truncate`}
                   style={{
                     gridColumnStart: colStart + 1,
                     gridColumnEnd: colEnd + 1,
                   }}
                 >
-                  {ev.title} · {format(evStart, "MMM d")} – {format(evEnd, "MMM d")}
+                  {ev.title}
                 </div>
               </button>
             );
           })}
+          {!showAllSpans && hiddenCount > 0 && (
+            <button
+              onClick={() => setShowAllSpans(true)}
+              className="text-[10px] text-muted-foreground hover:text-foreground px-1 transition-colors"
+            >
+              +{hiddenCount} more
+            </button>
+          )}
+          {showAllSpans && hiddenCount > 0 && (
+            <button
+              onClick={() => setShowAllSpans(false)}
+              className="text-[10px] text-muted-foreground hover:text-foreground px-1 transition-colors"
+            >
+              Show less
+            </button>
+          )}
         </div>
       )}
 
