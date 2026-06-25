@@ -23,16 +23,9 @@ export async function GET(req: NextRequest) {
     end = endOfWeek(now, { weekStartsOn: 1 });
   }
 
-  const [events, people, interactions, tasks, checkIns] = await Promise.all([
+  const [events, tasks, checkIns] = await Promise.all([
     prisma.event.findMany({
       where: { userId: session.user.id, startTime: { gte: start }, endTime: { lte: end } },
-    }),
-    prisma.person.findMany({
-      where: { userId: session.user.id },
-      select: { id: true, followUpDate: true, createdAt: true },
-    }),
-    prisma.interaction.findMany({
-      where: { person: { userId: session.user.id }, date: { gte: start, lte: end } },
     }),
     prisma.task.findMany({
       where: { userId: session.user.id, status: "done", updatedAt: { gte: start, lte: end } },
@@ -59,22 +52,11 @@ export async function GET(req: NextRequest) {
     hoursFormatted[key] = Math.round((mins / 60) * 10) / 10;
   }
 
-  const followUpsDue = people.filter(
-    (p) => p.followUpDate && new Date(p.followUpDate) <= now
-  ).length;
-
-  const newPeople = people.filter(
-    (p) => p.createdAt >= start && p.createdAt <= end
-  ).length;
-
   return NextResponse.json({
     totalHours: Math.round((totalMinutes / 60) * 10) / 10,
     hoursByRole: hoursFormatted,
     eventsAttended: events.filter((e) => e.attended).length,
     eventsLed,
-    totalInteractions: interactions.length,
-    followUpsDue,
-    newPeopleMet: newPeople,
     tasksCompleted: tasks.length,
     wellness: checkIns.map((c) => ({
       date: c.date,

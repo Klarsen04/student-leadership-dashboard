@@ -10,7 +10,6 @@ const EXPORT_TYPES = [
   { value: "events", label: "Calendar Events" },
   { value: "tasks", label: "Tasks" },
   { value: "goals", label: "Goals" },
-  { value: "people", label: "People" },
   { value: "reflections", label: "Reflections" },
   { value: "checkins", label: "Check-ins" },
 ];

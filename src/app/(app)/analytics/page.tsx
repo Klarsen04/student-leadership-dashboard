@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
-import { BarChart3, Clock, Users, CheckSquare, TrendingUp } from "lucide-react";
+import { BarChart3, Clock, CheckSquare, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ROLES, ROLE_COLORS } from "@/lib/utils";
@@ -12,9 +12,6 @@ interface AnalyticsData {
   hoursByRole: Record<string, number>;
   eventsAttended: number;
   eventsLed: number;
-  totalInteractions: number;
-  followUpsDue: number;
-  newPeopleMet: number;
   tasksCompleted: number;
   wellness: { date: string; energy: number; stress: number; mood: number; sleep: number | null }[];
 }
@@ -76,8 +73,8 @@ export default function AnalyticsPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <MetricCard icon={<Clock className="w-5 h-5" />} label="Total Hours" value={`${data.totalHours}h`} />
         <MetricCard icon={<BarChart3 className="w-5 h-5" />} label="Events" value={`${data.eventsAttended}`} />
-        <MetricCard icon={<Users className="w-5 h-5" />} label="Interactions" value={`${data.totalInteractions}`} />
         <MetricCard icon={<CheckSquare className="w-5 h-5" />} label="Tasks Done" value={`${data.tasksCompleted}`} />
+        <MetricCard icon={<TrendingUp className="w-5 h-5" />} label="Events Led" value={`${data.eventsLed}`} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -110,28 +107,28 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
 
-        {/* Relationship Impact */}
+        {/* Leadership Impact */}
         <Card>
           <CardHeader>
-            <CardTitle>Relationship Impact</CardTitle>
+            <CardTitle>Leadership Impact</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-4">
               <div className="p-3 rounded-lg border text-center">
-                <p className="text-2xl font-bold">{data.totalInteractions}</p>
-                <p className="text-xs text-muted-foreground">Follow-ups Done</p>
-              </div>
-              <div className="p-3 rounded-lg border text-center">
-                <p className="text-2xl font-bold">{data.newPeopleMet}</p>
-                <p className="text-xs text-muted-foreground">New People Met</p>
+                <p className="text-2xl font-bold">{data.eventsAttended}</p>
+                <p className="text-xs text-muted-foreground">Events Attended</p>
               </div>
               <div className="p-3 rounded-lg border text-center">
                 <p className="text-2xl font-bold">{data.eventsLed}</p>
                 <p className="text-xs text-muted-foreground">Events Led</p>
               </div>
               <div className="p-3 rounded-lg border text-center">
-                <p className="text-2xl font-bold text-orange-600">{data.followUpsDue}</p>
-                <p className="text-xs text-muted-foreground">Follow-ups Due</p>
+                <p className="text-2xl font-bold">{data.tasksCompleted}</p>
+                <p className="text-xs text-muted-foreground">Tasks Completed</p>
+              </div>
+              <div className="p-3 rounded-lg border text-center">
+                <p className="text-2xl font-bold">{data.totalHours}h</p>
+                <p className="text-xs text-muted-foreground">Total Hours</p>
               </div>
             </div>
           </CardContent>

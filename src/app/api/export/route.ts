@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-type ExportType = "events" | "tasks" | "goals" | "people" | "reflections" | "checkins" | "all";
+type ExportType = "events" | "tasks" | "goals" | "reflections" | "checkins" | "all";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -27,9 +27,6 @@ export async function GET(req: NextRequest) {
   }
   if (type === "all" || type === "goals") {
     data.goals = await prisma.goal.findMany({ where: { userId }, orderBy: { createdAt: "desc" } });
-  }
-  if (type === "all" || type === "people") {
-    data.people = await prisma.person.findMany({ where: { userId }, orderBy: { name: "asc" } });
   }
   if (type === "all" || type === "reflections") {
     data.reflections = await prisma.reflection.findMany({ where: { userId }, orderBy: { date: "desc" } });

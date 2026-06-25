@@ -5,7 +5,6 @@ import { useSession } from "next-auth/react";
 import { format, isToday, isPast } from "date-fns";
 import {
   Calendar,
-  Users,
   CheckSquare,
   Clock,
   RefreshCw,
@@ -28,13 +27,6 @@ interface Event {
   location: string | null;
 }
 
-interface Person {
-  id: string;
-  name: string;
-  category: string;
-  followUpDate: string | null;
-  lastContactDate: string | null;
-}
 
 interface Task {
   id: string;
@@ -48,7 +40,6 @@ interface Task {
 export default function DashboardPage() {
   const { data: session } = useSession();
   const [events, setEvents] = useState<Event[]>([]);
-  const [followUps, setFollowUps] = useState<Person[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -63,17 +54,12 @@ export default function DashboardPage() {
     const endOfDay = new Date(today);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const [evRes, pplRes, taskRes] = await Promise.all([
+    const [evRes, taskRes] = await Promise.all([
       fetch(`/api/calendar?start=${today.toISOString()}&end=${endOfDay.toISOString()}`),
-      fetch("/api/people?needsFollowUp=true"),
       fetch("/api/tasks?status=todo"),
     ]);
 
     if (evRes.ok) setEvents(await evRes.json());
-    if (pplRes.ok) {
-      const data = await pplRes.json();
-      setFollowUps(data.people || data);
-    }
     if (taskRes.ok) {
       const data = await taskRes.json();
       setTasks(data.tasks || data);
@@ -145,9 +131,9 @@ export default function DashboardPage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Today's Schedule - takes 2 columns */}
-        <Card className="lg:col-span-2">
+      <div className="grid grid-cols-1 gap-6">
+        {/* Today's Schedule */}
+        <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2">
@@ -192,48 +178,6 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Follow-ups Due */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Users className="w-5 h-5 text-orange-500" />
-                Follow-ups
-              </CardTitle>
-              <Link href="/people">
-                <Button variant="ghost" size="sm">View all</Button>
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {followUps.length === 0 ? (
-              <p className="text-muted-foreground text-sm py-4">
-                No follow-ups due. Nice work!
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {followUps.slice(0, 6).map((person) => (
-                  <div
-                    key={person.id}
-                    className="flex items-center justify-between p-2 rounded-md hover:bg-accent/50"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{person.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {person.category}
-                      </p>
-                    </div>
-                    {person.followUpDate && (
-                      <span className="text-xs text-orange-600">
-                        {format(new Date(person.followUpDate), "MMM d")}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -289,9 +233,8 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <StatBox label="Today's Events" value={events.length} />
-              <StatBox label="Follow-ups Due" value={followUps.length} />
               <StatBox label="Pending Tasks" value={tasks.length} />
               <StatBox label="Overdue" value={overdueTasks.length} />
             </div>
