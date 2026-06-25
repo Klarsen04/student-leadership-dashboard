@@ -63,7 +63,7 @@ export default function CalendarPage() {
   const [newCalName, setNewCalName] = useState("");
   const [newCalColor, setNewCalColor] = useState("bg-blue-500");
   const { roles, addRole, deleteRole } = useRoles();
-  const { calendars, addCalendar, deleteCalendar, toggleVisibility, COLOR_OPTIONS } = useCalendars();
+  const { calendars, addCalendar, deleteCalendar, toggleVisibility, getCalendarColor, COLOR_OPTIONS } = useCalendars();
 
   const fetchEvents = async () => {
     let start: Date, end: Date;
@@ -389,11 +389,11 @@ export default function CalendarPage() {
       {loading ? (
         <div className="text-center text-muted-foreground py-12">Loading...</div>
       ) : view === "week" ? (
-        <WeekView events={filteredEvents} currentDate={currentDate} onEventClick={setSelectedEvent} />
+        <WeekView events={filteredEvents} currentDate={currentDate} onEventClick={setSelectedEvent} getColor={getCalendarColor} />
       ) : view === "day" ? (
-        <DayView events={filteredEvents} currentDate={currentDate} onEventClick={setSelectedEvent} />
+        <DayView events={filteredEvents} currentDate={currentDate} onEventClick={setSelectedEvent} getColor={getCalendarColor} />
       ) : (
-        <MonthView events={filteredEvents} currentDate={currentDate} onEventClick={setSelectedEvent} />
+        <MonthView events={filteredEvents} currentDate={currentDate} onEventClick={setSelectedEvent} getColor={getCalendarColor} />
       )}
 
       {/* Add Event Dialog */}
@@ -492,7 +492,7 @@ export default function CalendarPage() {
   );
 }
 
-function WeekView({ events, currentDate, onEventClick }: { events: CalendarEvent[]; currentDate: Date; onEventClick: (e: CalendarEvent) => void }) {
+function WeekView({ events, currentDate, onEventClick, getColor }: { events: CalendarEvent[]; currentDate: Date; onEventClick: (e: CalendarEvent) => void; getColor: (category: string) => string }) {
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const MAX_VISIBLE_SPANS = 3;
@@ -544,7 +544,7 @@ function WeekView({ events, currentDate, onEventClick }: { events: CalendarEvent
                 }}
               >
                 <div
-                  className={`rounded px-2 py-0.5 text-[10px] font-medium text-white ${getRoleColor(ev.role)} truncate`}
+                  className={`rounded px-2 py-0.5 text-[10px] font-medium text-white ${getColor(ev.category)} truncate`}
                   style={{
                     gridColumnStart: colStart + 1,
                     gridColumnEnd: colEnd + 1,
@@ -600,7 +600,7 @@ function WeekView({ events, currentDate, onEventClick }: { events: CalendarEvent
                     className="w-full text-left p-1.5 rounded text-[11px] bg-accent/50 border leading-tight hover:bg-accent transition-colors cursor-pointer"
                   >
                     <div className="flex items-center gap-1">
-                      <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${getRoleColor(ev.role)}`} />
+                      <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${getColor(ev.category)}`} />
                       <span className="font-medium truncate">{ev.title}</span>
                     </div>
                     <p className="text-muted-foreground ml-2.5">
@@ -617,7 +617,7 @@ function WeekView({ events, currentDate, onEventClick }: { events: CalendarEvent
   );
 }
 
-function DayView({ events, currentDate, onEventClick }: { events: CalendarEvent[]; currentDate: Date; onEventClick: (e: CalendarEvent) => void }) {
+function DayView({ events, currentDate, onEventClick, getColor }: { events: CalendarEvent[]; currentDate: Date; onEventClick: (e: CalendarEvent) => void; getColor: (category: string) => string }) {
   const dayEvents = events.filter((e) => {
     const start = new Date(e.startTime);
     const end = new Date(e.endTime);
@@ -653,7 +653,7 @@ function DayView({ events, currentDate, onEventClick }: { events: CalendarEvent[
                   onClick={() => onEventClick(ev)}
                   className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent/50 transition-colors cursor-pointer"
                 >
-                  <div className={`w-2 h-2 rounded-full shrink-0 ${getRoleColor(ev.role)}`} />
+                  <div className={`w-2 h-2 rounded-full shrink-0 ${getColor(ev.category)}`} />
                   <span className="text-sm font-medium truncate">{ev.title}</span>
                   <span className="text-[10px] text-muted-foreground ml-auto shrink-0">
                     {format(new Date(ev.startTime), "MMM d")} – {format(new Date(ev.endTime), "MMM d")}
@@ -695,7 +695,7 @@ function DayView({ events, currentDate, onEventClick }: { events: CalendarEvent[
                     height: `${height}px`,
                   }}
                 >
-                  <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-md ${getRoleColor(ev.role)}`} />
+                  <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-md ${getColor(ev.category)}`} />
                   <p className="text-xs font-medium truncate ml-1">{ev.title}</p>
                   <p className="text-[10px] text-muted-foreground ml-1">
                     {format(start, "h:mm a")} - {format(end, "h:mm a")}
@@ -713,7 +713,7 @@ function DayView({ events, currentDate, onEventClick }: { events: CalendarEvent[
   );
 }
 
-function MonthView({ events, currentDate, onEventClick }: { events: CalendarEvent[]; currentDate: Date; onEventClick: (e: CalendarEvent) => void }) {
+function MonthView({ events, currentDate, onEventClick, getColor }: { events: CalendarEvent[]; currentDate: Date; onEventClick: (e: CalendarEvent) => void; getColor: (category: string) => string }) {
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
@@ -755,7 +755,7 @@ function MonthView({ events, currentDate, onEventClick }: { events: CalendarEven
                     onClick={() => onEventClick(ev)}
                     className="flex items-center gap-0.5 w-full text-left hover:bg-accent/50 rounded px-0.5 cursor-pointer"
                   >
-                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${getRoleColor(ev.role)}`} />
+                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${getColor(ev.category)}`} />
                     <span className="text-[9px] truncate">{ev.title}</span>
                   </button>
                 ))}

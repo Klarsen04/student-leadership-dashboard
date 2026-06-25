@@ -12,7 +12,7 @@ export interface SubCalendar {
 const STORAGE_KEY = "leadership-os-calendars";
 
 const DEFAULT_CALENDARS: SubCalendar[] = [
-  { id: "default", name: "My Calendar", color: "bg-blue-500", visible: true },
+  { id: "default", name: "Personal", color: "bg-blue-500", visible: true },
 ];
 
 const COLOR_OPTIONS = [
@@ -77,5 +77,11 @@ export function useCalendars() {
     save(current.map((c) => c.id === id ? { ...c, ...updates } : c));
   }, [save]);
 
-  return { calendars, addCalendar, deleteCalendar, toggleVisibility, updateCalendar, COLOR_OPTIONS };
+  const getCalendarColor = useCallback((categoryName: string): string => {
+    const current = getStoredCalendars();
+    const cal = current.find((c) => c.name === categoryName);
+    return cal?.color || "bg-gray-400";
+  }, []);
+
+  return { calendars, addCalendar, deleteCalendar, toggleVisibility, updateCalendar, getCalendarColor, COLOR_OPTIONS };
 }
