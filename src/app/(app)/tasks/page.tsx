@@ -132,6 +132,20 @@ export default function TasksPage() {
     }
   };
 
+  const updateTaskPriority = async (task: Task, priority: string) => {
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: task.id, priority }),
+      });
+      if (!res.ok) throw new Error();
+      setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, priority } : t));
+    } catch {
+      toast.error("Failed to update priority");
+    }
+  };
+
   const quickAddTask = async (status: string) => {
     if (!newTaskTitle.trim()) return;
     const dueDate = format(selectedDate, "yyyy-MM-dd");
@@ -293,6 +307,7 @@ export default function TasksPage() {
           theme={theme}
           tasks={todoTasks}
           onStatusChange={updateTaskStatus}
+          onPriorityChange={updateTaskPriority}
           onDelete={setDeleteTarget}
           addingTo={addingTo}
           setAddingTo={setAddingTo}
@@ -311,6 +326,7 @@ export default function TasksPage() {
           theme={theme}
           tasks={inProgressTasks}
           onStatusChange={updateTaskStatus}
+          onPriorityChange={updateTaskPriority}
           onDelete={setDeleteTarget}
           addingTo={addingTo}
           setAddingTo={setAddingTo}
@@ -329,6 +345,7 @@ export default function TasksPage() {
           theme={theme}
           tasks={doneTasks}
           onStatusChange={updateTaskStatus}
+          onPriorityChange={updateTaskPriority}
           onDelete={setDeleteTarget}
           addingTo={addingTo}
           setAddingTo={setAddingTo}
@@ -451,6 +468,7 @@ function KanbanColumn({
   theme,
   tasks,
   onStatusChange,
+  onPriorityChange,
   onDelete,
   addingTo,
   setAddingTo,
@@ -466,6 +484,7 @@ function KanbanColumn({
   theme: typeof DAY_THEMES[0];
   tasks: Task[];
   onStatusChange: (task: Task, status: string) => void;
+  onPriorityChange: (task: Task, priority: string) => void;
   onDelete: (task: Task) => void;
   addingTo: string | null;
   setAddingTo: (s: string | null) => void;
@@ -499,6 +518,7 @@ function KanbanColumn({
             task={task}
             theme={theme}
             onStatusChange={onStatusChange}
+            onPriorityChange={onPriorityChange}
             onDelete={onDelete}
             nextStatus={nextStatus}
             prevStatus={prevStatus}
@@ -542,6 +562,7 @@ function TaskCard({
   theme,
   onStatusChange,
   onDelete,
+  onPriorityChange,
   nextStatus,
   prevStatus,
 }: {
@@ -549,10 +570,18 @@ function TaskCard({
   theme: typeof DAY_THEMES[0];
   onStatusChange: (task: Task, status: string) => void;
   onDelete: (task: Task) => void;
+  onPriorityChange: (task: Task, priority: string) => void;
   nextStatus: string | null;
   prevStatus: string | null;
 }) {
   const isDone = task.status === "done";
+  const priorities = ["low", "medium", "high", "urgent"];
+
+  const cyclePriority = () => {
+    const currentIdx = priorities.indexOf(task.priority);
+    const nextIdx = (currentIdx + 1) % priorities.length;
+    onPriorityChange(task, priorities[nextIdx]);
+  };
 
   return (
     <div
@@ -580,7 +609,14 @@ function TaskCard({
             {task.title}
           </p>
           <div className="flex items-center gap-1.5 mt-1.5">
-            <PriorityDot priority={task.priority} />
+            <button
+              onClick={cyclePriority}
+              className="flex items-center gap-1 hover:opacity-70 transition-opacity"
+              title={`Priority: ${task.priority} (click to change)`}
+            >
+              <PriorityDot priority={task.priority} />
+              <span className="text-[10px] text-muted-foreground capitalize">{task.priority}</span>
+            </button>
             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${theme.accentLight}`}>
               {task.role}
             </span>

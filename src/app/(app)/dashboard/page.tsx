@@ -247,7 +247,10 @@ export default function DashboardPage() {
 
 function TaskRow({ task, overdue }: { task: any; overdue?: boolean }) {
   return (
-    <div className="flex items-center gap-3 py-2">
+    <Link
+      href="/tasks"
+      className="flex items-center gap-3 py-2 px-2 -mx-2 rounded-md hover:bg-accent/50 transition-colors cursor-pointer"
+    >
       <PriorityDot priority={task.priority} />
       <div className="flex-1 min-w-0">
         <p className={`text-sm truncate ${overdue ? "text-destructive" : ""}`}>
@@ -259,7 +262,7 @@ function TaskRow({ task, overdue }: { task: any; overdue?: boolean }) {
           {format(new Date(task.dueDate), "MMM d")}
         </span>
       )}
-    </div>
+    </Link>
   );
 }
 
