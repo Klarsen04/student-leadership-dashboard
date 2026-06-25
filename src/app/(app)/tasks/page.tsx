@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { format, startOfWeek, addDays, isToday, isSameDay } from "date-fns";
-import { Plus, Check, Trash2, GripVertical, Play, Pause, RotateCcw, Timer } from "lucide-react";
+import { format, startOfWeek, addDays, isToday, parseISO } from "date-fns";
+import { Plus, Check, Trash2, Play, Pause, RotateCcw, Timer } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -93,9 +93,11 @@ export default function TasksPage() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [focusRunning, focusTime]);
 
+  const selectedDateStr = format(selectedDate, "yyyy-MM-dd");
   const dayTasks = tasks.filter((t) => {
-    if (t.dueDate) return isSameDay(new Date(t.dueDate), selectedDate);
-    return isSameDay(new Date(t.createdAt), selectedDate);
+    if (!t.dueDate) return true;
+    const taskDate = t.dueDate.slice(0, 10);
+    return taskDate === selectedDateStr;
   });
 
   const todoTasks = dayTasks.filter((t) => t.status === "todo");
@@ -120,13 +122,14 @@ export default function TasksPage() {
 
   const quickAddTask = async (status: string) => {
     if (!newTaskTitle.trim()) return;
+    const dueDate = format(selectedDate, "yyyy-MM-dd");
     try {
       const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: newTaskTitle,
-          dueDate: format(selectedDate, "yyyy-MM-dd"),
+          dueDate,
           priority: "medium",
           role: "Student",
         }),
@@ -141,7 +144,13 @@ export default function TasksPage() {
         });
         task.status = status;
       }
-      setTasks((prev) => [...prev, task]);
+      const newTask = {
+        ...task,
+        dueDate: task.dueDate || dueDate + "T00:00:00.000Z",
+        createdAt: task.createdAt || new Date().toISOString(),
+        status: task.status || status,
+      };
+      setTasks((prev) => [...prev, newTask]);
       setNewTaskTitle("");
       setAddingTo(null);
       toast.success("Task added");
@@ -367,9 +376,10 @@ export default function TasksPage() {
       {/* Floating Add Button */}
       <button
         onClick={() => setShowFullAdd(true)}
-        className={`fixed bottom-6 right-6 w-14 h-14 rounded-full ${theme.accent} text-white shadow-lg hover:scale-105 transition-transform flex items-center justify-center`}
+        className={`fixed bottom-6 right-6 h-12 px-5 rounded-full ${theme.accent} text-white shadow-lg hover:scale-105 transition-transform flex items-center justify-center gap-2 font-medium text-sm`}
       >
-        <Plus className="w-6 h-6" />
+        <Plus className="w-5 h-5" />
+        Add Task
       </button>
 
       <ConfirmDialog
@@ -585,12 +595,26 @@ function AddTaskForm({ onSaved, defaultDate }: { onSaved: () => void; defaultDat
         />
       </div>
       <div>
-        <label className="text-sm font-medium">Due date</label>
+        <div className="flex items-center justify-between">
+          <label className="text-sm font-medium">Due date</label>
+          {form.dueDate && (
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, dueDate: "" })}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Clear
+            </button>
+          )}
+        </div>
         <Input
           type="date"
           value={form.dueDate}
           onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
         />
+        <p className="text-xs text-muted-foreground mt-1">
+          Tasks without a date show on every day
+        </p>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
