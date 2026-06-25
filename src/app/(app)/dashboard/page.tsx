@@ -126,7 +126,7 @@ export default function DashboardPage() {
           disabled={syncing}
         >
           <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-          Sync Outlook
+          Sync Calendars
         </Button>
       </div>
 
@@ -147,7 +147,7 @@ export default function DashboardPage() {
           <CardContent>
             {events.length === 0 ? (
               <p className="text-muted-foreground text-sm py-4">
-                No events today. Sync Outlook or add events manually.
+                No events today. Sync your calendars or add events manually.
               </p>
             ) : (
               <div className="space-y-3">
