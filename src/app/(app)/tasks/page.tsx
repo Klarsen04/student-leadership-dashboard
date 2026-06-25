@@ -55,6 +55,7 @@ export default function TasksPage() {
     return new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
   });
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
+  const [editTarget, setEditTarget] = useState<Task | null>(null);
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [showFullAdd, setShowFullAdd] = useState(false);
@@ -318,6 +319,7 @@ export default function TasksPage() {
           onStatusChange={updateTaskStatus}
           onPriorityChange={updateTaskPriority}
           onDelete={setDeleteTarget}
+          onEdit={setEditTarget}
           addingTo={addingTo}
           setAddingTo={setAddingTo}
           columnStatus="todo"
@@ -337,6 +339,7 @@ export default function TasksPage() {
           onStatusChange={updateTaskStatus}
           onPriorityChange={updateTaskPriority}
           onDelete={setDeleteTarget}
+          onEdit={setEditTarget}
           addingTo={addingTo}
           setAddingTo={setAddingTo}
           columnStatus="in_progress"
@@ -356,6 +359,7 @@ export default function TasksPage() {
           onStatusChange={updateTaskStatus}
           onPriorityChange={updateTaskPriority}
           onDelete={setDeleteTarget}
+          onEdit={setEditTarget}
           addingTo={addingTo}
           setAddingTo={setAddingTo}
           columnStatus="done"
@@ -460,6 +464,27 @@ export default function TasksPage() {
         Add Task
       </button>
 
+      {/* Edit Task Dialog */}
+      <Dialog open={!!editTarget} onOpenChange={(open) => !open && setEditTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Task</DialogTitle>
+            <DialogDescription>Update task details</DialogDescription>
+          </DialogHeader>
+          {editTarget && (
+            <EditTaskForm
+              task={editTarget}
+              roles={roles}
+              onSaved={(updated) => {
+                setTasks((prev) => prev.map((t) => t.id === updated.id ? { ...t, ...updated } : t));
+                setEditTarget(null);
+              }}
+              onCancel={() => setEditTarget(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
@@ -479,6 +504,7 @@ function KanbanColumn({
   onStatusChange,
   onPriorityChange,
   onDelete,
+  onEdit,
   addingTo,
   setAddingTo,
   columnStatus,
@@ -495,6 +521,7 @@ function KanbanColumn({
   onStatusChange: (task: Task, status: string) => void;
   onPriorityChange: (task: Task, priority: string) => void;
   onDelete: (task: Task) => void;
+  onEdit: (task: Task) => void;
   addingTo: string | null;
   setAddingTo: (s: string | null) => void;
   columnStatus: string;
@@ -529,6 +556,7 @@ function KanbanColumn({
             onStatusChange={onStatusChange}
             onPriorityChange={onPriorityChange}
             onDelete={onDelete}
+            onEdit={onEdit}
             nextStatus={nextStatus}
             prevStatus={prevStatus}
           />
@@ -572,6 +600,7 @@ function TaskCard({
   onStatusChange,
   onDelete,
   onPriorityChange,
+  onEdit,
   nextStatus,
   prevStatus,
 }: {
@@ -580,6 +609,7 @@ function TaskCard({
   onStatusChange: (task: Task, status: string) => void;
   onDelete: (task: Task) => void;
   onPriorityChange: (task: Task, priority: string) => void;
+  onEdit: (task: Task) => void;
   nextStatus: string | null;
   prevStatus: string | null;
 }) {
@@ -614,9 +644,14 @@ function TaskCard({
           {isDone && <Check className="w-2.5 h-2.5" />}
         </button>
         <div className="flex-1 min-w-0">
-          <p className={`text-sm font-medium leading-tight ${isDone ? "line-through text-muted-foreground" : ""}`}>
-            {task.title}
-          </p>
+          <button
+            onClick={() => onEdit(task)}
+            className="text-left w-full"
+          >
+            <p className={`text-sm font-medium leading-tight hover:underline ${isDone ? "line-through text-muted-foreground" : ""}`}>
+              {task.title}
+            </p>
+          </button>
           <div className="flex items-center gap-1.5 mt-1.5">
             <button
               onClick={cyclePriority}
@@ -742,6 +777,124 @@ function AddTaskForm({ onSaved, defaultDate, roles }: { onSaved: () => void; def
       <Button type="submit" className="w-full" disabled={saving || !form.title}>
         {saving ? "Saving..." : "Create Task"}
       </Button>
+    </form>
+  );
+}
+
+function EditTaskForm({
+  task,
+  roles,
+  onSaved,
+  onCancel,
+}: {
+  task: Task;
+  roles: string[];
+  onSaved: (updated: Partial<Task> & { id: string }) => void;
+  onCancel: () => void;
+}) {
+  const [form, setForm] = useState({
+    title: task.title,
+    description: task.description || "",
+    dueDate: task.dueDate ? task.dueDate.slice(0, 10) : "",
+    priority: task.priority,
+    role: task.role,
+  });
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: task.id,
+          title: form.title,
+          description: form.description || null,
+          dueDate: form.dueDate || null,
+          priority: form.priority,
+          role: form.role,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("Task updated");
+      onSaved({
+        id: task.id,
+        title: form.title,
+        description: form.description || null,
+        dueDate: form.dueDate ? form.dueDate + "T00:00:00.000Z" : null,
+        priority: form.priority,
+        role: form.role,
+      });
+    } catch {
+      toast.error("Failed to update task");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="text-sm font-medium">Title *</label>
+        <Input
+          required
+          value={form.title}
+          onChange={(e) => setForm({ ...form, title: e.target.value })}
+        />
+      </div>
+      <div>
+        <label className="text-sm font-medium">Description</label>
+        <textarea
+          value={form.description}
+          onChange={(e) => setForm({ ...form, description: e.target.value })}
+          placeholder="Optional details..."
+          className="w-full h-20 border rounded-md px-3 py-2 text-sm bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+      </div>
+      <div>
+        <label className="text-sm font-medium">Due date</label>
+        <Input
+          type="date"
+          value={form.dueDate}
+          onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-sm font-medium">Priority</label>
+          <select
+            value={form.priority}
+            onChange={(e) => setForm({ ...form, priority: e.target.value })}
+            className="w-full h-10 border rounded-md px-3 text-sm bg-background"
+          >
+            {TASK_PRIORITIES.map((p) => (
+              <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-sm font-medium">Role</label>
+          <select
+            value={form.role}
+            onChange={(e) => setForm({ ...form, role: e.target.value })}
+            className="w-full h-10 border rounded-md px-3 text-sm bg-background"
+          >
+            {roles.map((r) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <Button type="submit" className="flex-1" disabled={saving || !form.title}>
+          {saving ? "Saving..." : "Save Changes"}
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
     </form>
   );
 }

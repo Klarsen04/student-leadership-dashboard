@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { format, isToday, isPast, startOfWeek, endOfWeek, getDay } from "date-fns";
+import { format, isToday, isPast, endOfWeek } from "date-fns";
 import {
   Calendar,
   CheckSquare,
@@ -251,9 +251,13 @@ export default function DashboardPage() {
 }
 
 function TaskRow({ task, overdue }: { task: any; overdue?: boolean }) {
-  const dayIndex = task.dueDate
-    ? ((getDay(new Date(task.dueDate)) + 6) % 7)
-    : undefined;
+  let dayIndex: number | undefined;
+  if (task.dueDate) {
+    const dateStr = task.dueDate.slice(0, 10);
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const localDate = new Date(y, m - 1, d);
+    dayIndex = (localDate.getDay() + 6) % 7;
+  }
   const href = dayIndex !== undefined ? `/tasks?day=${dayIndex}` : "/tasks";
 
   return (
