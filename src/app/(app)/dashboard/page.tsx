@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { format, isToday, isPast } from "date-fns";
+import { format, isToday, isPast, startOfWeek, endOfWeek, getDay } from "date-fns";
 import {
   Calendar,
   CheckSquare,
@@ -93,11 +93,16 @@ export default function DashboardPage() {
     }
   };
 
+  const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
   const overdueTasks = tasks.filter(
     (t) => t.dueDate && isPast(new Date(t.dueDate))
   );
   const upcomingTasks = tasks
-    .filter((t) => !t.dueDate || !isPast(new Date(t.dueDate)))
+    .filter((t) => {
+      if (!t.dueDate) return true;
+      const d = new Date(t.dueDate);
+      return !isPast(d) && d <= weekEnd;
+    })
     .slice(0, 5);
 
   if (loading) {
@@ -246,9 +251,14 @@ export default function DashboardPage() {
 }
 
 function TaskRow({ task, overdue }: { task: any; overdue?: boolean }) {
+  const dayIndex = task.dueDate
+    ? ((getDay(new Date(task.dueDate)) + 6) % 7)
+    : undefined;
+  const href = dayIndex !== undefined ? `/tasks?day=${dayIndex}` : "/tasks";
+
   return (
     <Link
-      href="/tasks"
+      href={href}
       className="flex items-center gap-3 py-2 px-2 -mx-2 rounded-md hover:bg-accent/50 transition-colors cursor-pointer"
     >
       <PriorityDot priority={task.priority} />

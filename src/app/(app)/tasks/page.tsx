@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { format, startOfWeek, addDays, isToday, parseISO } from "date-fns";
 import { Plus, Check, Trash2, Play, Pause, RotateCcw, Timer } from "lucide-react";
 import { toast } from "sonner";
@@ -42,9 +43,17 @@ const DAY_THEMES = [
 ];
 
 export default function TasksPage() {
+  const searchParams = useSearchParams();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDay, setSelectedDay] = useState(() => new Date().getDay() === 0 ? 6 : new Date().getDay() - 1);
+  const [selectedDay, setSelectedDay] = useState(() => {
+    const dayParam = searchParams.get("day");
+    if (dayParam !== null) {
+      const parsed = parseInt(dayParam);
+      if (parsed >= 0 && parsed <= 6) return parsed;
+    }
+    return new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+  });
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
