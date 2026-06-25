@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { ROLE_BADGE_VARIANTS } from "@/lib/utils";
 import { useRoles, getRoleColor } from "@/lib/useRoles";
+import { useCalendars } from "@/lib/useCalendars";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 interface CalendarEvent {
@@ -58,7 +59,11 @@ export default function CalendarPage() {
   const [newRoleName, setNewRoleName] = useState("");
   const [roleToDelete, setRoleToDelete] = useState<string | null>(null);
   const [roleUsageCount, setRoleUsageCount] = useState(0);
+  const [showAddCalendar, setShowAddCalendar] = useState(false);
+  const [newCalName, setNewCalName] = useState("");
+  const [newCalColor, setNewCalColor] = useState("bg-blue-500");
   const { roles, addRole, deleteRole } = useRoles();
+  const { calendars, addCalendar, deleteCalendar, toggleVisibility, COLOR_OPTIONS } = useCalendars();
 
   const fetchEvents = async () => {
     let start: Date, end: Date;
@@ -171,9 +176,15 @@ export default function CalendarPage() {
     }
   };
 
-  const filteredEvents = activeRoles.size === 0
-    ? events
-    : events.filter((e) => activeRoles.has(e.role));
+  const hiddenCalendars = new Set(
+    calendars.filter((c) => !c.visible).map((c) => c.name)
+  );
+
+  const filteredEvents = events.filter((e) => {
+    if (hiddenCalendars.has(e.category)) return false;
+    if (activeRoles.size > 0 && !activeRoles.has(e.role)) return false;
+    return true;
+  });
 
   const deleteEvent = async (id: string) => {
     try {
@@ -307,6 +318,73 @@ export default function CalendarPage() {
         )}
       </div>
 
+      {/* My Calendars */}
+      <div className="flex gap-2 flex-wrap items-center">
+        {calendars.map((cal) => (
+          <button
+            key={cal.id}
+            onClick={() => toggleVisibility(cal.id)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+              cal.visible
+                ? "bg-accent text-foreground"
+                : "bg-muted/30 text-muted-foreground/50 line-through"
+            }`}
+          >
+            <div className={`w-2 h-2 rounded-full ${cal.color} ${!cal.visible ? "opacity-30" : ""}`} />
+            {cal.name}
+          </button>
+        ))}
+        {showAddCalendar ? (
+          <div className="flex items-center gap-1">
+            <input
+              autoFocus
+              value={newCalName}
+              onChange={(e) => setNewCalName(e.target.value)}
+              placeholder="Calendar name..."
+              className="h-6 w-28 px-2 text-xs border rounded-full bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newCalName.trim()) {
+                  addCalendar(newCalName.trim(), newCalColor);
+                  setNewCalName("");
+                  setShowAddCalendar(false);
+                }
+              }}
+              onBlur={() => { if (!newCalName) setShowAddCalendar(false); }}
+            />
+            <div className="flex gap-0.5">
+              {COLOR_OPTIONS.slice(0, 6).map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setNewCalColor(c)}
+                  className={`w-4 h-4 rounded-full ${c} ${newCalColor === c ? "ring-2 ring-offset-1 ring-foreground/30" : ""}`}
+                />
+              ))}
+            </div>
+            <button
+              onClick={() => {
+                if (newCalName.trim()) {
+                  addCalendar(newCalName.trim(), newCalColor);
+                  setNewCalName("");
+                  setShowAddCalendar(false);
+                }
+              }}
+              disabled={!newCalName.trim()}
+              className="h-6 w-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs disabled:opacity-50"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowAddCalendar(true)}
+            className="flex items-center gap-1 px-2 py-1 rounded-full text-xs text-muted-foreground hover:text-foreground border border-dashed border-muted-foreground/30 hover:border-foreground/30 transition-colors"
+          >
+            <Plus className="w-3 h-3" />
+            Calendar
+          </button>
+        )}
+      </div>
+
       {/* Calendar View */}
       {loading ? (
         <div className="text-center text-muted-foreground py-12">Loading...</div>
@@ -327,6 +405,7 @@ export default function CalendarPage() {
           </DialogHeader>
           <EventForm
             roles={roles}
+            calendars={calendars}
             onSaved={() => { setShowAdd(false); fetchEvents(); }}
             onCancel={() => setShowAdd(false)}
           />
@@ -389,6 +468,7 @@ export default function CalendarPage() {
           {selectedEvent && editingEvent && (
             <EventForm
               roles={roles}
+              calendars={calendars}
               event={selectedEvent}
               onSaved={() => { setSelectedEvent(null); setEditingEvent(false); fetchEvents(); }}
               onCancel={() => setEditingEvent(false)}
@@ -695,11 +775,13 @@ function MonthView({ events, currentDate, onEventClick }: { events: CalendarEven
 
 function EventForm({
   roles,
+  calendars,
   event,
   onSaved,
   onCancel,
 }: {
   roles: string[];
+  calendars: { id: string; name: string; color: string; visible: boolean }[];
   event?: CalendarEvent;
   onSaved: () => void;
   onCancel: () => void;
@@ -709,7 +791,7 @@ function EventForm({
     startTime: event ? format(new Date(event.startTime), "yyyy-MM-dd'T'HH:mm") : "",
     endTime: event ? format(new Date(event.endTime), "yyyy-MM-dd'T'HH:mm") : "",
     role: event?.role || roles[0] || "Student",
-    category: event?.category || "",
+    category: event?.category || calendars[0]?.name || "",
     location: event?.location || "",
   });
   const [saving, setSaving] = useState(false);
@@ -787,12 +869,25 @@ function EventForm({
           </select>
         </div>
         <div>
-          <label className="text-sm font-medium">Location</label>
-          <Input
-            value={form.location}
-            onChange={(e) => setForm({ ...form, location: e.target.value })}
-          />
+          <label className="text-sm font-medium">Calendar</label>
+          <select
+            value={form.category}
+            onChange={(e) => setForm({ ...form, category: e.target.value })}
+            className="w-full h-10 border rounded-md px-3 text-sm bg-background"
+          >
+            {calendars.map((c) => (
+              <option key={c.id} value={c.name}>{c.name}</option>
+            ))}
+          </select>
         </div>
+      </div>
+      <div>
+        <label className="text-sm font-medium">Location</label>
+        <Input
+          value={form.location}
+          onChange={(e) => setForm({ ...form, location: e.target.value })}
+          placeholder="Optional"
+        />
       </div>
       <div className="flex gap-2">
         <Button type="submit" className="flex-1" disabled={saving || !form.title}>

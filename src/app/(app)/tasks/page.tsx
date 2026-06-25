@@ -156,6 +156,13 @@ export default function TasksPage() {
     }
   };
 
+  const handleDrop = (taskId: string, newStatus: string) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (task && task.status !== newStatus) {
+      updateTaskStatus(task, newStatus);
+    }
+  };
+
   const quickAddTask = async (status: string) => {
     if (!newTaskTitle.trim()) return;
     const dueDate = format(selectedDate, "yyyy-MM-dd");
@@ -320,6 +327,7 @@ export default function TasksPage() {
           onPriorityChange={updateTaskPriority}
           onDelete={setDeleteTarget}
           onEdit={setEditTarget}
+          onDrop={handleDrop}
           addingTo={addingTo}
           setAddingTo={setAddingTo}
           columnStatus="todo"
@@ -340,6 +348,7 @@ export default function TasksPage() {
           onPriorityChange={updateTaskPriority}
           onDelete={setDeleteTarget}
           onEdit={setEditTarget}
+          onDrop={handleDrop}
           addingTo={addingTo}
           setAddingTo={setAddingTo}
           columnStatus="in_progress"
@@ -360,6 +369,7 @@ export default function TasksPage() {
           onPriorityChange={updateTaskPriority}
           onDelete={setDeleteTarget}
           onEdit={setEditTarget}
+          onDrop={handleDrop}
           addingTo={addingTo}
           setAddingTo={setAddingTo}
           columnStatus="done"
@@ -505,6 +515,7 @@ function KanbanColumn({
   onPriorityChange,
   onDelete,
   onEdit,
+  onDrop,
   addingTo,
   setAddingTo,
   columnStatus,
@@ -522,6 +533,7 @@ function KanbanColumn({
   onPriorityChange: (task: Task, priority: string) => void;
   onDelete: (task: Task) => void;
   onEdit: (task: Task) => void;
+  onDrop: (taskId: string, status: string) => void;
   addingTo: string | null;
   setAddingTo: (s: string | null) => void;
   columnStatus: string;
@@ -531,6 +543,8 @@ function KanbanColumn({
   nextStatus: string | null;
   prevStatus: string | null;
 }) {
+  const [dragOver, setDragOver] = useState(false);
+
   return (
     <div className="flex flex-col">
       <div className="flex items-center gap-2 mb-3 px-1">
@@ -541,10 +555,25 @@ function KanbanColumn({
         <span className="text-xs text-muted-foreground">· {count}</span>
       </div>
 
-      <div className={`flex-1 rounded-2xl border bg-card/50 p-3 space-y-2 min-h-[200px] ${theme.border}`}>
-        {tasks.length === 0 && addingTo !== columnStatus && (
+      <div
+        className={`flex-1 rounded-2xl border bg-card/50 p-3 space-y-2 min-h-[200px] transition-colors ${theme.border} ${dragOver ? "ring-2 ring-primary/30 bg-primary/5" : ""}`}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          const taskId = e.dataTransfer.getData("text/plain");
+          if (taskId) onDrop(taskId, columnStatus);
+        }}
+      >
+        {tasks.length === 0 && addingTo !== columnStatus && !dragOver && (
           <p className="text-xs text-muted-foreground/60 text-center py-8 italic">
             {columnStatus === "todo" ? "No items pending" : columnStatus === "in_progress" ? "Nothing in progress" : "Nothing finished yet"}
+          </p>
+        )}
+        {dragOver && tasks.length === 0 && (
+          <p className="text-xs text-primary/60 text-center py-8 italic">
+            Drop here
           </p>
         )}
 
@@ -624,7 +653,12 @@ function TaskCard({
 
   return (
     <div
-      className={`group relative rounded-xl border bg-background p-3 transition-all hover:shadow-sm ${
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", task.id);
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      className={`group relative rounded-xl border bg-background p-3 transition-all hover:shadow-sm cursor-grab active:cursor-grabbing active:opacity-70 active:scale-[0.98] ${
         isDone ? "opacity-60" : ""
       }`}
     >
