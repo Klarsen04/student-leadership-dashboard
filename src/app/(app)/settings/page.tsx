@@ -59,7 +59,7 @@ export default function SettingsPage() {
             <select
               value={exportType}
               onChange={(e) => setExportType(e.target.value)}
-              className="w-full h-10 border rounded-md px-3 text-sm"
+              className="w-full h-10 border rounded-md px-3 text-sm bg-background"
             >
               {EXPORT_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>

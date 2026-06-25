@@ -12,6 +12,7 @@ import {
   getDay,
 } from "date-fns";
 import { RefreshCw, Plus, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -63,11 +64,17 @@ export default function CalendarPage() {
       end = endOfMonth(currentDate);
     }
 
-    const res = await fetch(
-      `/api/calendar?start=${start.toISOString()}&end=${end.toISOString()}`
-    );
-    if (res.ok) setEvents(await res.json());
-    setLoading(false);
+    try {
+      const res = await fetch(
+        `/api/calendar?start=${start.toISOString()}&end=${end.toISOString()}`
+      );
+      if (!res.ok) throw new Error();
+      setEvents(await res.json());
+    } catch {
+      toast.error("Failed to load events");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -76,15 +83,23 @@ export default function CalendarPage() {
 
   const syncOutlook = async () => {
     setSyncing(true);
-    const start = startOfWeek(currentDate, { weekStartsOn: 1 });
-    const end = addDays(start, 14);
-    await fetch("/api/calendar", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "sync", start: start.toISOString(), end: end.toISOString() }),
-    });
-    await fetchEvents();
-    setSyncing(false);
+    try {
+      const start = startOfWeek(currentDate, { weekStartsOn: 1 });
+      const end = addDays(start, 14);
+      const res = await fetch("/api/calendar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sync", start: start.toISOString(), end: end.toISOString() }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      toast.success(`Synced ${data.synced} events`);
+      await fetchEvents();
+    } catch {
+      toast.error("Failed to sync calendars");
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const navigate = (dir: number) => {
@@ -216,9 +231,15 @@ export default function CalendarPage() {
                   variant="destructive"
                   size="sm"
                   onClick={async () => {
-                    await fetch(`/api/calendar?id=${selectedEvent.id}`, { method: "DELETE" });
-                    setSelectedEvent(null);
-                    fetchEvents();
+                    try {
+                      const res = await fetch(`/api/calendar?id=${selectedEvent.id}`, { method: "DELETE" });
+                      if (!res.ok) throw new Error();
+                      toast.success("Event deleted");
+                      setSelectedEvent(null);
+                      fetchEvents();
+                    } catch {
+                      toast.error("Failed to delete event");
+                    }
                   }}
                 >
                   <Trash2 className="w-4 h-4 mr-2" />
@@ -448,7 +469,7 @@ function AddEventForm({ onSaved }: { onSaved: () => void }) {
           <select
             value={form.role}
             onChange={(e) => setForm({ ...form, role: e.target.value })}
-            className="w-full h-10 border rounded-md px-3 text-sm"
+            className="w-full h-10 border rounded-md px-3 text-sm bg-background"
           >
             {ROLES.map((r) => (
               <option key={r} value={r}>{r}</option>

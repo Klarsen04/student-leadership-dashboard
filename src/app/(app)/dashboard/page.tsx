@@ -6,15 +6,16 @@ import { format, isToday, isPast } from "date-fns";
 import {
   Calendar,
   Users,
-  AlertCircle,
   CheckSquare,
   Clock,
   RefreshCw,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ROLE_BADGE_VARIANTS } from "@/lib/utils";
+import { PriorityDot } from "@/components/PriorityDot";
 import Link from "next/link";
 
 interface Event {
@@ -76,20 +77,28 @@ export default function DashboardPage() {
 
   const syncOutlook = async () => {
     setSyncing(true);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const endOfWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-    await fetch("/api/calendar", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "sync",
-        start: today.toISOString(),
-        end: endOfWeek.toISOString(),
-      }),
-    });
-    await fetchData();
-    setSyncing(false);
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const endOfWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const res = await fetch("/api/calendar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "sync",
+          start: today.toISOString(),
+          end: endOfWeek.toISOString(),
+        }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      toast.success(`Synced ${data.synced} events`);
+      await fetchData();
+    } catch {
+      toast.error("Failed to sync calendars");
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const overdueTasks = tasks.filter(
@@ -288,16 +297,9 @@ export default function DashboardPage() {
 }
 
 function TaskRow({ task, overdue }: { task: any; overdue?: boolean }) {
-  const priorityColors: Record<string, string> = {
-    urgent: "bg-red-500",
-    high: "bg-orange-500",
-    medium: "bg-yellow-500",
-    low: "bg-gray-400",
-  };
-
   return (
     <div className="flex items-center gap-3 py-2">
-      <div className={`w-2 h-2 rounded-full ${priorityColors[task.priority]}`} />
+      <PriorityDot priority={task.priority} />
       <div className="flex-1 min-w-0">
         <p className={`text-sm truncate ${overdue ? "text-destructive" : ""}`}>
           {task.title}

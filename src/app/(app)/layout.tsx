@@ -24,7 +24,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (status === "unauthenticated") return null;
 
   return (
-    <div className="min-h-screen flex bg-gray-50/50">
+    <div className="min-h-screen flex bg-muted/30">
       <Sidebar />
       <main className="flex-1 p-4 md:p-8 overflow-auto md:ml-0 ml-0 pt-16 md:pt-8">
         {children}

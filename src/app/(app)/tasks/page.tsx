@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { format, isPast } from "date-fns";
 import { Plus, Check, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +15,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { PriorityDot } from "@/components/PriorityDot";
 import { ROLES, TASK_PRIORITIES } from "@/lib/utils";
 
 interface Task {
@@ -33,14 +36,22 @@ export default function TasksPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [filterRole, setFilterRole] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
 
   const fetchTasks = async () => {
     const params = new URLSearchParams();
     if (filterRole) params.set("role", filterRole);
     if (filterStatus) params.set("status", filterStatus);
-    const res = await fetch(`/api/tasks?${params}`);
-    if (res.ok) setTasks(await res.json());
-    setLoading(false);
+    try {
+      const res = await fetch(`/api/tasks?${params}`);
+      if (!res.ok) throw new Error("Failed to load tasks");
+      const data = await res.json();
+      setTasks(data.tasks || data);
+    } catch (err) {
+      toast.error("Failed to load tasks");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -49,17 +60,30 @@ export default function TasksPage() {
 
   const toggleTask = async (task: Task) => {
     const newStatus = task.status === "done" ? "todo" : "done";
-    await fetch("/api/tasks", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: task.id, status: newStatus }),
-    });
-    fetchTasks();
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: task.id, status: newStatus }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(newStatus === "done" ? "Task completed!" : "Task reopened");
+      fetchTasks();
+    } catch {
+      toast.error("Failed to update task");
+    }
   };
 
-  const deleteTask = async (id: string) => {
-    await fetch(`/api/tasks?id=${id}`, { method: "DELETE" });
-    fetchTasks();
+  const deleteTask = async () => {
+    if (!deleteTarget) return;
+    try {
+      const res = await fetch(`/api/tasks?id=${deleteTarget.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      toast.success("Task deleted");
+      fetchTasks();
+    } catch {
+      toast.error("Failed to delete task");
+    }
   };
 
   const todoTasks = tasks.filter((t) => t.status === "todo");
@@ -145,7 +169,7 @@ export default function TasksPage() {
             return (
               <div
                 key={task.id}
-                className={`flex items-center gap-3 p-3 rounded-lg border bg-background hover:bg-accent/30 transition-colors ${
+                className={`flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-accent/30 transition-colors ${
                   overdue ? "border-destructive/30" : ""
                 }`}
               >
@@ -184,7 +208,7 @@ export default function TasksPage() {
                 </div>
 
                 <button
-                  onClick={() => deleteTask(task.id)}
+                  onClick={() => setDeleteTarget(task)}
                   className="text-muted-foreground hover:text-destructive p-1"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -194,19 +218,15 @@ export default function TasksPage() {
           })}
         </div>
       )}
-    </div>
-  );
-}
 
-function PriorityDot({ priority }: { priority: string }) {
-  const colors: Record<string, string> = {
-    urgent: "bg-red-500",
-    high: "bg-orange-500",
-    medium: "bg-yellow-500",
-    low: "bg-gray-400",
-  };
-  return (
-    <span className={`w-2 h-2 rounded-full ${colors[priority] || colors.medium}`} />
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete task?"
+        description={`"${deleteTarget?.title}" will be permanently deleted.`}
+        onConfirm={deleteTask}
+      />
+    </div>
   );
 }
 
@@ -223,13 +243,20 @@ function AddTaskForm({ onSaved }: { onSaved: () => void }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    const res = await fetch("/api/tasks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    if (res.ok) onSaved();
-    setSaving(false);
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("Task created");
+      onSaved();
+    } catch {
+      toast.error("Failed to create task");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -257,7 +284,7 @@ function AddTaskForm({ onSaved }: { onSaved: () => void }) {
           <select
             value={form.priority}
             onChange={(e) => setForm({ ...form, priority: e.target.value })}
-            className="w-full h-10 border rounded-md px-3 text-sm"
+            className="w-full h-10 border rounded-md px-3 text-sm bg-background"
           >
             {TASK_PRIORITIES.map((p) => (
               <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
@@ -269,7 +296,7 @@ function AddTaskForm({ onSaved }: { onSaved: () => void }) {
           <select
             value={form.role}
             onChange={(e) => setForm({ ...form, role: e.target.value })}
-            className="w-full h-10 border rounded-md px-3 text-sm"
+            className="w-full h-10 border rounded-md px-3 text-sm bg-background"
           >
             {ROLES.map((r) => (
               <option key={r} value={r}>{r}</option>

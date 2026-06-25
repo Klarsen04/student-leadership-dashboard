@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { NotificationBell } from "@/components/Notifications";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const nav = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard },
@@ -43,7 +44,7 @@ export function Sidebar() {
       {/* Mobile toggle */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="md:hidden fixed top-4 left-4 z-50 p-2 bg-white rounded-lg shadow-md border"
+        className="md:hidden fixed top-4 left-4 z-50 p-2 bg-background rounded-lg shadow-md border"
       >
         <Menu className="w-5 h-5" />
       </button>
@@ -58,7 +59,7 @@ export function Sidebar() {
 
       <aside
         className={cn(
-          "fixed md:sticky top-0 left-0 h-screen w-64 bg-white border-r flex flex-col z-50 transition-transform md:translate-x-0",
+          "fixed md:sticky top-0 left-0 h-screen w-64 bg-background border-r flex flex-col z-50 transition-transform md:translate-x-0",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -68,10 +69,11 @@ export function Sidebar() {
             <h1 className="font-bold text-base">Leadership OS</h1>
           </div>
           <div className="flex items-center gap-1">
+            <ThemeToggle />
             <NotificationBell />
             <button
               onClick={() => setMobileOpen(false)}
-              className="md:hidden p-1 hover:bg-gray-100 rounded"
+              className="md:hidden p-1 hover:bg-accent rounded"
             >
               <X className="w-4 h-4" />
             </button>

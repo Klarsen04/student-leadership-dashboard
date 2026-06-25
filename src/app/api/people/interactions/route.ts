@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { createInteractionSchema } from "@/lib/validations";
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -10,9 +11,15 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
+  const parsed = createInteractionSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const { data } = parsed;
 
   const person = await prisma.person.findFirst({
-    where: { id: body.personId, userId: session.user.id },
+    where: { id: data.personId, userId: session.user.id },
   });
   if (!person) {
     return NextResponse.json({ error: "Person not found" }, { status: 404 });
@@ -20,16 +27,15 @@ export async function POST(req: NextRequest) {
 
   const interaction = await prisma.interaction.create({
     data: {
-      type: body.type,
-      notes: body.notes || null,
-      date: body.date ? new Date(body.date) : new Date(),
-      personId: body.personId,
-      eventId: body.eventId || null,
+      type: data.type,
+      notes: data.notes || null,
+      date: new Date(),
+      personId: data.personId,
     },
   });
 
   await prisma.person.update({
-    where: { id: body.personId },
+    where: { id: data.personId },
     data: { lastContactDate: new Date() },
   });
 

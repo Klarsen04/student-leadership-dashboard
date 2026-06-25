@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { format, formatDistanceToNow } from "date-fns";
-import { UserPlus, Search, MessageCircle, Clock, Filter } from "lucide-react";
+import { UserPlus, Search, MessageCircle, Clock } from "lucide-react";
+import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -43,9 +44,16 @@ export default function PeoplePage() {
   const fetchPeople = async () => {
     const params = new URLSearchParams();
     if (filterCategory) params.set("category", filterCategory);
-    const res = await fetch(`/api/people?${params}`);
-    if (res.ok) setPeople(await res.json());
-    setLoading(false);
+    try {
+      const res = await fetch(`/api/people?${params}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setPeople(data.people || data);
+    } catch {
+      toast.error("Failed to load people");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -177,19 +185,26 @@ function PersonCard({ person, onUpdate }: { person: Person; onUpdate: () => void
 
   const logInteraction = async () => {
     setSaving(true);
-    await fetch("/api/people/interactions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        personId: person.id,
-        type: interactionType,
-        notes: interactionNote || null,
-      }),
-    });
-    setShowInteraction(false);
-    setInteractionNote("");
-    setSaving(false);
-    onUpdate();
+    try {
+      const res = await fetch("/api/people/interactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personId: person.id,
+          type: interactionType,
+          notes: interactionNote || null,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("Interaction logged");
+      setShowInteraction(false);
+      setInteractionNote("");
+      onUpdate();
+    } catch {
+      toast.error("Failed to log interaction");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const isOverdue = person.followUpDate && new Date(person.followUpDate) <= new Date();
@@ -247,7 +262,7 @@ function PersonCard({ person, onUpdate }: { person: Person; onUpdate: () => void
               <select
                 value={interactionType}
                 onChange={(e) => setInteractionType(e.target.value)}
-                className="w-full text-sm border rounded-md px-2 py-1.5"
+                className="w-full text-sm border rounded-md px-2 py-1.5 bg-background"
               >
                 <option value="check-in">Check-in</option>
                 <option value="mentoring">Mentoring</option>
@@ -300,13 +315,20 @@ function AddPersonForm({ onSaved }: { onSaved: () => void }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    const res = await fetch("/api/people", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    if (res.ok) onSaved();
-    setSaving(false);
+    try {
+      const res = await fetch("/api/people", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("Person added");
+      onSaved();
+    } catch {
+      toast.error("Failed to add person");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -325,7 +347,7 @@ function AddPersonForm({ onSaved }: { onSaved: () => void }) {
         <select
           value={form.category}
           onChange={(e) => setForm({ ...form, category: e.target.value })}
-          className="w-full h-10 border rounded-md px-3 text-sm"
+          className="w-full h-10 border rounded-md px-3 text-sm bg-background"
         >
           {PERSON_CATEGORIES.map((cat) => (
             <option key={cat} value={cat}>{cat}</option>

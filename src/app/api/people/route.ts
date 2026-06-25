@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { createPersonSchema, updatePersonSchema } from "@/lib/validations";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -13,6 +14,8 @@ export async function GET(req: NextRequest) {
   const category = searchParams.get("category");
   const needsFollowUp = searchParams.get("needsFollowUp");
   const search = searchParams.get("search");
+  const page = parseInt(searchParams.get("page") || "1");
+  const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
 
   const where: Record<string, unknown> = { userId: session.user.id };
   if (category) where.category = category;
@@ -23,13 +26,18 @@ export async function GET(req: NextRequest) {
     where.name = { contains: search };
   }
 
-  const people = await prisma.person.findMany({
-    where,
-    include: { interactions: { orderBy: { date: "desc" }, take: 5 } },
-    orderBy: { updatedAt: "desc" },
-  });
+  const [people, total] = await Promise.all([
+    prisma.person.findMany({
+      where,
+      include: { interactions: { orderBy: { date: "desc" }, take: 5 } },
+      orderBy: { updatedAt: "desc" },
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.person.count({ where }),
+  ]);
 
-  return NextResponse.json(people);
+  return NextResponse.json({ people, total, page, limit });
 }
 
 export async function POST(req: NextRequest) {
@@ -39,18 +47,24 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
+  const parsed = createPersonSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const { data } = parsed;
   const person = await prisma.person.create({
     data: {
-      name: body.name,
-      category: body.category,
-      email: body.email || null,
-      phone: body.phone || null,
-      dateMet: body.dateMet ? new Date(body.dateMet) : new Date(),
-      notes: body.notes || null,
-      prayerRequests: body.prayerRequests || null,
-      goals: body.goals || null,
-      tags: body.tags || null,
-      followUpDate: body.followUpDate ? new Date(body.followUpDate) : null,
+      name: data.name,
+      category: data.category,
+      email: data.email || null,
+      phone: data.phone || null,
+      dateMet: data.dateMet ? new Date(data.dateMet) : new Date(),
+      notes: data.notes || null,
+      prayerRequests: data.prayerRequests || null,
+      goals: data.goals || null,
+      tags: data.tags || null,
+      followUpDate: data.followUpDate ? new Date(data.followUpDate) : null,
       userId: session.user.id,
     },
   });
@@ -65,20 +79,26 @@ export async function PATCH(req: NextRequest) {
   }
 
   const body = await req.json();
+  const parsed = updatePersonSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const { id, ...fields } = parsed.data;
   const data: Record<string, unknown> = {};
-  if (body.name !== undefined) data.name = body.name;
-  if (body.category !== undefined) data.category = body.category;
-  if (body.email !== undefined) data.email = body.email;
-  if (body.phone !== undefined) data.phone = body.phone;
-  if (body.notes !== undefined) data.notes = body.notes;
-  if (body.prayerRequests !== undefined) data.prayerRequests = body.prayerRequests;
-  if (body.goals !== undefined) data.goals = body.goals;
-  if (body.tags !== undefined) data.tags = body.tags;
-  if (body.followUpDate !== undefined) data.followUpDate = body.followUpDate ? new Date(body.followUpDate) : null;
-  if (body.lastContactDate !== undefined) data.lastContactDate = new Date(body.lastContactDate);
+  if (fields.name !== undefined) data.name = fields.name;
+  if (fields.category !== undefined) data.category = fields.category;
+  if (fields.email !== undefined) data.email = fields.email;
+  if (fields.phone !== undefined) data.phone = fields.phone;
+  if (fields.notes !== undefined) data.notes = fields.notes;
+  if (fields.prayerRequests !== undefined) data.prayerRequests = fields.prayerRequests;
+  if (fields.goals !== undefined) data.goals = fields.goals;
+  if (fields.tags !== undefined) data.tags = fields.tags;
+  if (fields.followUpDate !== undefined) data.followUpDate = fields.followUpDate ? new Date(fields.followUpDate) : null;
+  if (fields.lastContactDate !== undefined) data.lastContactDate = new Date(fields.lastContactDate);
 
   const person = await prisma.person.update({
-    where: { id: body.id, userId: session.user.id },
+    where: { id, userId: session.user.id },
     data,
   });
 

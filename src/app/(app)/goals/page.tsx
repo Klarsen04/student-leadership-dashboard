@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import { Plus, Target, Trash2 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { toast } from "sonner";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { GOAL_CATEGORIES } from "@/lib/utils";
 
 interface Goal {
@@ -34,13 +36,20 @@ export default function GoalsPage() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [filterCategory, setFilterCategory] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Goal | null>(null);
 
   const fetchGoals = async () => {
     const params = new URLSearchParams();
     if (filterCategory) params.set("category", filterCategory);
-    const res = await fetch(`/api/goals?${params}`);
-    if (res.ok) setGoals(await res.json());
-    setLoading(false);
+    try {
+      const res = await fetch(`/api/goals?${params}`);
+      if (!res.ok) throw new Error();
+      setGoals(await res.json());
+    } catch {
+      toast.error("Failed to load goals");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -48,17 +57,30 @@ export default function GoalsPage() {
   }, [filterCategory]);
 
   const updateProgress = async (id: string, progress: number) => {
-    await fetch("/api/goals", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, progress }),
-    });
-    fetchGoals();
+    try {
+      const res = await fetch("/api/goals", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, progress, status: progress === 100 ? "completed" : "active" }),
+      });
+      if (!res.ok) throw new Error();
+      if (progress === 100) toast.success("Goal completed!");
+      fetchGoals();
+    } catch {
+      toast.error("Failed to update progress");
+    }
   };
 
-  const deleteGoal = async (id: string) => {
-    await fetch(`/api/goals?id=${id}`, { method: "DELETE" });
-    fetchGoals();
+  const deleteGoal = async () => {
+    if (!deleteTarget) return;
+    try {
+      const res = await fetch(`/api/goals?id=${deleteTarget.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      toast.success("Goal deleted");
+      fetchGoals();
+    } catch {
+      toast.error("Failed to delete goal");
+    }
   };
 
   const activeGoals = goals.filter((g) => g.status === "active");
@@ -135,7 +157,7 @@ export default function GoalsPage() {
                     </Badge>
                   </div>
                   <button
-                    onClick={() => deleteGoal(goal.id)}
+                    onClick={() => setDeleteTarget(goal)}
                     className="text-muted-foreground hover:text-destructive p-1"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -191,6 +213,14 @@ export default function GoalsPage() {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete goal?"
+        description={`"${deleteTarget?.title}" and its progress will be permanently deleted.`}
+        onConfirm={deleteGoal}
+      />
     </div>
   );
 }
@@ -207,13 +237,20 @@ function AddGoalForm({ onSaved }: { onSaved: () => void }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    const res = await fetch("/api/goals", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    if (res.ok) onSaved();
-    setSaving(false);
+    try {
+      const res = await fetch("/api/goals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("Goal created");
+      onSaved();
+    } catch {
+      toast.error("Failed to create goal");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -241,7 +278,7 @@ function AddGoalForm({ onSaved }: { onSaved: () => void }) {
           <select
             value={form.category}
             onChange={(e) => setForm({ ...form, category: e.target.value })}
-            className="w-full h-10 border rounded-md px-3 text-sm"
+            className="w-full h-10 border rounded-md px-3 text-sm bg-background"
           >
             {GOAL_CATEGORIES.map((c) => (
               <option key={c} value={c}>{c}</option>

@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
     }),
     prisma.person.findMany({
       where: { userId: session.user.id },
+      select: { id: true, followUpDate: true, createdAt: true },
     }),
     prisma.interaction.findMany({
       where: { person: { userId: session.user.id }, date: { gte: start, lte: end } },

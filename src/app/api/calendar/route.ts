@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fetchCalendarEvents, categorizeEvent } from "@/lib/microsoft-graph";
 import { syncGoogleCalendar } from "@/lib/google-calendar";
+import { createEventSchema } from "@/lib/validations";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -79,16 +80,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ synced: allSynced.length, events: allSynced });
   }
 
+  const parsed = createEventSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const { data } = parsed;
   const event = await prisma.event.create({
     data: {
-      title: body.title,
-      description: body.description,
-      startTime: new Date(body.startTime),
-      endTime: new Date(body.endTime),
-      category: body.category || "Personal",
-      role: body.role || "Student",
-      location: body.location,
-      isLed: body.isLed || false,
+      title: data.title,
+      description: data.description,
+      startTime: new Date(data.startTime),
+      endTime: new Date(data.endTime),
+      category: data.category,
+      role: data.role,
+      location: data.location,
+      isLed: data.isLed,
       userId: session.user.id,
     },
   });
