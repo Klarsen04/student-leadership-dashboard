@@ -11,7 +11,7 @@ import {
   eachDayOfInterval,
   getDay,
 } from "date-fns";
-import { RefreshCw, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { RefreshCw, Plus, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +34,7 @@ interface CalendarEvent {
   role: string;
   location: string | null;
   isLed: boolean;
+  description?: string;
 }
 
 type View = "day" | "week" | "month";
@@ -45,6 +46,7 @@ export default function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<View>("week");
   const [showAdd, setShowAdd] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
 
   const fetchEvents = async () => {
     let start: Date, end: Date;
@@ -107,7 +109,7 @@ export default function CalendarPage() {
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={syncOutlook} disabled={syncing}>
             <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-            Sync
+            Sync Calendars
           </Button>
           <Dialog open={showAdd} onOpenChange={setShowAdd}>
             <DialogTrigger asChild>
@@ -172,17 +174,66 @@ export default function CalendarPage() {
       {loading ? (
         <div className="text-center text-muted-foreground py-12">Loading...</div>
       ) : view === "week" ? (
-        <WeekView events={events} currentDate={currentDate} />
+        <WeekView events={events} currentDate={currentDate} onEventClick={setSelectedEvent} />
       ) : view === "day" ? (
-        <DayView events={events} currentDate={currentDate} />
+        <DayView events={events} currentDate={currentDate} onEventClick={setSelectedEvent} />
       ) : (
-        <MonthView events={events} currentDate={currentDate} />
+        <MonthView events={events} currentDate={currentDate} onEventClick={setSelectedEvent} />
       )}
+
+      {/* Event Detail Dialog */}
+      <Dialog open={!!selectedEvent} onOpenChange={(open) => !open && setSelectedEvent(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedEvent?.title}</DialogTitle>
+          </DialogHeader>
+          {selectedEvent && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Start:</span>
+                  <p className="font-medium">{format(new Date(selectedEvent.startTime), "MMM d, h:mm a")}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">End:</span>
+                  <p className="font-medium">{format(new Date(selectedEvent.endTime), "MMM d, h:mm a")}</p>
+                </div>
+              </div>
+              {selectedEvent.location && (
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Location:</span>
+                  <p className="font-medium">{selectedEvent.location}</p>
+                </div>
+              )}
+              <div className="flex items-center gap-2 text-sm">
+                <Badge variant={(ROLE_BADGE_VARIANTS[selectedEvent.role] || "secondary") as any}>
+                  {selectedEvent.role}
+                </Badge>
+                <Badge variant="outline">{selectedEvent.category}</Badge>
+              </div>
+              <div className="pt-3 border-t">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={async () => {
+                    await fetch(`/api/calendar?id=${selectedEvent.id}`, { method: "DELETE" });
+                    setSelectedEvent(null);
+                    fetchEvents();
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete Event
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function WeekView({ events, currentDate }: { events: CalendarEvent[]; currentDate: Date }) {
+function WeekView({ events, currentDate, onEventClick }: { events: CalendarEvent[]; currentDate: Date; onEventClick: (e: CalendarEvent) => void }) {
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
@@ -206,18 +257,19 @@ function WeekView({ events, currentDate }: { events: CalendarEvent[]; currentDat
             </div>
             <div className="space-y-1">
               {dayEvents.map((ev) => (
-                <div
+                <button
                   key={ev.id}
-                  className="p-1.5 rounded text-[11px] bg-accent/50 border leading-tight"
+                  onClick={() => onEventClick(ev)}
+                  className="w-full text-left p-1.5 rounded text-[11px] bg-accent/50 border leading-tight hover:bg-accent transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-1">
-                    <div className={`w-1.5 h-1.5 rounded-full ${ROLE_COLORS[ev.role] || "bg-gray-400"}`} />
+                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${ROLE_COLORS[ev.role] || "bg-gray-400"}`} />
                     <span className="font-medium truncate">{ev.title}</span>
                   </div>
                   <p className="text-muted-foreground ml-2.5">
                     {format(new Date(ev.startTime), "h:mm a")}
                   </p>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -227,43 +279,62 @@ function WeekView({ events, currentDate }: { events: CalendarEvent[]; currentDat
   );
 }
 
-function DayView({ events, currentDate }: { events: CalendarEvent[]; currentDate: Date }) {
+function DayView({ events, currentDate, onEventClick }: { events: CalendarEvent[]; currentDate: Date; onEventClick: (e: CalendarEvent) => void }) {
   const dayEvents = events.filter((e) => isSameDay(new Date(e.startTime), currentDate));
+  const hours = Array.from({ length: 16 }, (_, i) => i + 6);
 
   return (
     <Card>
       <CardContent className="p-4">
-        {dayEvents.length === 0 ? (
-          <p className="text-muted-foreground text-sm py-8 text-center">No events today.</p>
-        ) : (
-          <div className="space-y-3">
-            {dayEvents.map((ev) => (
-              <div key={ev.id} className="flex items-center gap-4 p-3 rounded-lg border">
-                <div className="text-sm text-muted-foreground w-24">
-                  {format(new Date(ev.startTime), "h:mm a")}
-                  <br />
-                  <span className="text-xs">{format(new Date(ev.endTime), "h:mm a")}</span>
-                </div>
-                <div className={`w-1 h-10 rounded-full ${ROLE_COLORS[ev.role] || "bg-gray-400"}`} />
-                <div className="flex-1">
-                  <p className="font-medium text-sm">{ev.title}</p>
-                  {ev.location && (
-                    <p className="text-xs text-muted-foreground">{ev.location}</p>
-                  )}
-                </div>
-                <Badge variant={(ROLE_BADGE_VARIANTS[ev.role] || "secondary") as any}>
-                  {ev.role}
-                </Badge>
+        <div className="relative">
+          {hours.map((hour) => (
+            <div key={hour} className="flex border-t h-16">
+              <div className="w-16 pr-2 text-right text-xs text-muted-foreground -mt-2 shrink-0">
+                {format(new Date(2024, 0, 1, hour), "h a")}
               </div>
-            ))}
-          </div>
-        )}
+              <div className="flex-1 relative" />
+            </div>
+          ))}
+          {dayEvents.map((ev) => {
+            const start = new Date(ev.startTime);
+            const end = new Date(ev.endTime);
+            const startHour = start.getHours() + start.getMinutes() / 60;
+            const endHour = end.getHours() + end.getMinutes() / 60;
+            const top = Math.max(0, (startHour - 6) * 64);
+            const height = Math.max(24, (endHour - startHour) * 64);
+
+            return (
+              <button
+                key={ev.id}
+                onClick={() => onEventClick(ev)}
+                className="absolute left-16 right-2 rounded-md px-2 py-1 text-left border shadow-sm hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
+                style={{
+                  top: `${top}px`,
+                  height: `${height}px`,
+                  backgroundColor: `var(--accent)`,
+                  borderLeftWidth: "3px",
+                  borderLeftColor: ROLE_COLORS[ev.role]?.includes("bg-")
+                    ? undefined
+                    : "#6b7280",
+                }}
+              >
+                <p className="text-xs font-medium truncate">{ev.title}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {format(start, "h:mm a")} - {format(end, "h:mm a")}
+                </p>
+                {ev.location && (
+                  <p className="text-[10px] text-muted-foreground truncate">{ev.location}</p>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-function MonthView({ events, currentDate }: { events: CalendarEvent[]; currentDate: Date }) {
+function MonthView({ events, currentDate, onEventClick }: { events: CalendarEvent[]; currentDate: Date; onEventClick: (e: CalendarEvent) => void }) {
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
@@ -295,10 +366,14 @@ function MonthView({ events, currentDate }: { events: CalendarEvent[]; currentDa
               </p>
               <div className="mt-0.5 space-y-px">
                 {dayEvents.slice(0, 3).map((ev) => (
-                  <div key={ev.id} className="flex items-center gap-0.5">
-                    <div className={`w-1.5 h-1.5 rounded-full ${ROLE_COLORS[ev.role] || "bg-gray-400"}`} />
+                  <button
+                    key={ev.id}
+                    onClick={() => onEventClick(ev)}
+                    className="flex items-center gap-0.5 w-full text-left hover:bg-accent/50 rounded px-0.5 cursor-pointer"
+                  >
+                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${ROLE_COLORS[ev.role] || "bg-gray-400"}`} />
                     <span className="text-[9px] truncate">{ev.title}</span>
-                  </div>
+                  </button>
                 ))}
                 {dayEvents.length > 3 && (
                   <span className="text-[9px] text-muted-foreground">

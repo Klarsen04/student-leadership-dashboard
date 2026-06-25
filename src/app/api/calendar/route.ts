@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fetchCalendarEvents, categorizeEvent } from "@/lib/microsoft-graph";
+import { syncGoogleCalendar } from "@/lib/google-calendar";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -43,9 +44,10 @@ export async function POST(req: NextRequest) {
     const start = body.start || new Date().toISOString();
     const end = body.end || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const outlookEvents = await fetchCalendarEvents(session.user.id, start, end);
-    const synced = [];
+    const allSynced = [];
 
+    // Sync Outlook/Microsoft calendar
+    const outlookEvents = await fetchCalendarEvents(session.user.id, start, end);
     for (const event of outlookEvents) {
       const { category, role } = categorizeEvent(event.subject, event.bodyPreview);
       const upserted = await prisma.event.upsert({
@@ -67,10 +69,14 @@ export async function POST(req: NextRequest) {
           userId: session.user.id,
         },
       });
-      synced.push(upserted);
+      allSynced.push(upserted);
     }
 
-    return NextResponse.json({ synced: synced.length, events: synced });
+    // Sync Google Calendar
+    const googleSynced = await syncGoogleCalendar(session.user.id, start, end);
+    allSynced.push(...googleSynced);
+
+    return NextResponse.json({ synced: allSynced.length, events: allSynced });
   }
 
   const event = await prisma.event.create({
