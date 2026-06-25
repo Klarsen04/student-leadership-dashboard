@@ -62,8 +62,10 @@ export default function CalendarPage() {
   const [showAddCalendar, setShowAddCalendar] = useState(false);
   const [newCalName, setNewCalName] = useState("");
   const [newCalColor, setNewCalColor] = useState("bg-blue-500");
+  const [selectedCalendar, setSelectedCalendar] = useState<string | null>(null);
+  const [calendarToDelete, setCalendarToDelete] = useState<string | null>(null);
   const { roles, addRole, deleteRole } = useRoles();
-  const { calendars, addCalendar, deleteCalendar, toggleVisibility, getCalendarColor, COLOR_OPTIONS } = useCalendars();
+  const { calendars, addCalendar, deleteCalendar, getCalendarColor, COLOR_OPTIONS } = useCalendars();
 
   const fetchEvents = async () => {
     let start: Date, end: Date;
@@ -176,12 +178,8 @@ export default function CalendarPage() {
     }
   };
 
-  const hiddenCalendars = new Set(
-    calendars.filter((c) => !c.visible).map((c) => c.name)
-  );
-
   const filteredEvents = events.filter((e) => {
-    if (hiddenCalendars.has(e.category)) return false;
+    if (selectedCalendar && e.category !== selectedCalendar) return false;
     if (activeRoles.size > 0 && !activeRoles.has(e.role)) return false;
     return true;
   });
@@ -320,20 +318,42 @@ export default function CalendarPage() {
 
       {/* My Calendars */}
       <div className="flex gap-2 flex-wrap items-center">
-        {calendars.map((cal) => (
-          <button
-            key={cal.id}
-            onClick={() => toggleVisibility(cal.id)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
-              cal.visible
-                ? "bg-accent text-foreground"
-                : "bg-muted/30 text-muted-foreground/50 line-through"
-            }`}
-          >
-            <div className={`w-2 h-2 rounded-full ${cal.color} ${!cal.visible ? "opacity-30" : ""}`} />
-            {cal.name}
-          </button>
-        ))}
+        <button
+          onClick={() => setSelectedCalendar(null)}
+          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+            selectedCalendar === null
+              ? "bg-foreground text-background"
+              : "bg-muted text-muted-foreground hover:bg-accent"
+          }`}
+        >
+          All Calendars
+        </button>
+        {calendars.map((cal) => {
+          const isSelected = selectedCalendar === cal.name;
+          return (
+            <div key={cal.id} className="group relative flex items-center">
+              <button
+                onClick={() => setSelectedCalendar(isSelected ? null : cal.name)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+                  isSelected
+                    ? "ring-2 ring-offset-1 ring-foreground/20 bg-accent text-foreground"
+                    : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                <div className={`w-2 h-2 rounded-full ${cal.color}`} />
+                {cal.name}
+              </button>
+              {cal.id !== "default" && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setCalendarToDelete(cal.id); }}
+                  className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-destructive/80 text-white items-center justify-center text-[8px] hidden group-hover:flex hover:bg-destructive transition-colors"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              )}
+            </div>
+          );
+        })}
         {showAddCalendar ? (
           <div className="flex items-center gap-1">
             <input
@@ -355,12 +375,14 @@ export default function CalendarPage() {
               {COLOR_OPTIONS.slice(0, 6).map((c) => (
                 <button
                   key={c}
+                  type="button"
                   onClick={() => setNewCalColor(c)}
                   className={`w-4 h-4 rounded-full ${c} ${newCalColor === c ? "ring-2 ring-offset-1 ring-foreground/30" : ""}`}
                 />
               ))}
             </div>
             <button
+              type="button"
               onClick={() => {
                 if (newCalName.trim()) {
                   addCalendar(newCalName.trim(), newCalColor);
@@ -487,6 +509,24 @@ export default function CalendarPage() {
             : "No tasks or events use this role. Safe to delete."
         }
         onConfirm={confirmDeleteRole}
+      />
+
+      <ConfirmDialog
+        open={!!calendarToDelete}
+        onOpenChange={(open) => !open && setCalendarToDelete(null)}
+        title="Delete this calendar?"
+        description="Events in this calendar will remain but won't be associated with any calendar. This cannot be undone."
+        onConfirm={() => {
+          if (calendarToDelete) {
+            deleteCalendar(calendarToDelete);
+            if (selectedCalendar) {
+              const cal = calendars.find((c) => c.id === calendarToDelete);
+              if (cal && selectedCalendar === cal.name) setSelectedCalendar(null);
+            }
+            toast.success("Calendar deleted");
+            setCalendarToDelete(null);
+          }
+        }}
       />
     </div>
   );
