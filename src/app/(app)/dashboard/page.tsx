@@ -70,8 +70,14 @@ export default function DashboardPage() {
     ]);
 
     if (evRes.ok) setEvents(await evRes.json());
-    if (pplRes.ok) setFollowUps(await pplRes.json());
-    if (taskRes.ok) setTasks(await taskRes.json());
+    if (pplRes.ok) {
+      const data = await pplRes.json();
+      setFollowUps(data.people || data);
+    }
+    if (taskRes.ok) {
+      const data = await taskRes.json();
+      setTasks(data.tasks || data);
+    }
     setLoading(false);
   };
 
