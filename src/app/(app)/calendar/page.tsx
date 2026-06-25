@@ -524,58 +524,92 @@ function DayView({ events, currentDate, onEventClick }: { events: CalendarEvent[
     return isSameDay(start, currentDate) || isSameDay(end, currentDate) ||
       isWithinInterval(currentDate, { start, end });
   });
+
+  const allDayEvents = dayEvents.filter((e) => {
+    const start = new Date(e.startTime);
+    const end = new Date(e.endTime);
+    return !isSameDay(start, end);
+  });
+
+  const timedEvents = dayEvents.filter((e) => {
+    const start = new Date(e.startTime);
+    const end = new Date(e.endTime);
+    return isSameDay(start, end);
+  });
+
   const hours = Array.from({ length: 24 }, (_, i) => i);
 
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="relative">
-          {hours.map((hour) => (
-            <div key={hour} className="flex border-t h-14">
-              <div className="w-16 pr-2 text-right text-xs text-muted-foreground -mt-2 shrink-0">
-                {format(new Date(2024, 0, 1, hour), "h a")}
-              </div>
-              <div className="flex-1 relative" />
+    <div className="space-y-2">
+      {/* All-day / multi-day banner */}
+      {allDayEvents.length > 0 && (
+        <Card>
+          <CardContent className="p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">All Day / Multi-Day</p>
+            <div className="space-y-1">
+              {allDayEvents.map((ev) => (
+                <button
+                  key={ev.id}
+                  onClick={() => onEventClick(ev)}
+                  className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent/50 transition-colors cursor-pointer"
+                >
+                  <div className={`w-2 h-2 rounded-full shrink-0 ${getRoleColor(ev.role)}`} />
+                  <span className="text-sm font-medium truncate">{ev.title}</span>
+                  <span className="text-[10px] text-muted-foreground ml-auto shrink-0">
+                    {format(new Date(ev.startTime), "MMM d")} – {format(new Date(ev.endTime), "MMM d")}
+                  </span>
+                </button>
+              ))}
             </div>
-          ))}
-          {dayEvents.map((ev) => {
-            const start = new Date(ev.startTime);
-            const end = new Date(ev.endTime);
-            const startHour = isSameDay(start, currentDate)
-              ? start.getHours() + start.getMinutes() / 60
-              : 0;
-            const endHour = isSameDay(end, currentDate)
-              ? end.getHours() + end.getMinutes() / 60
-              : 24;
-            const top = startHour * 56;
-            const height = Math.max(24, (endHour - startHour) * 56);
+          </CardContent>
+        </Card>
+      )}
 
-            return (
-              <button
-                key={ev.id}
-                onClick={() => onEventClick(ev)}
-                className="absolute left-16 right-2 rounded-md px-2 py-1 text-left border shadow-sm hover:shadow-md transition-shadow cursor-pointer overflow-hidden bg-accent"
-                style={{
-                  top: `${top}px`,
-                  height: `${height}px`,
-                  borderLeftWidth: "3px",
-                  borderLeftColor: "currentColor",
-                }}
-              >
-                <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${getRoleColor(ev.role)}`} />
-                <p className="text-xs font-medium truncate">{ev.title}</p>
-                <p className="text-[10px] text-muted-foreground">
-                  {format(start, "h:mm a")} - {format(end, "h:mm a")}
-                </p>
-                {ev.location && (
-                  <p className="text-[10px] text-muted-foreground truncate">{ev.location}</p>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </CardContent>
-    </Card>
+      {/* Time grid */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="relative">
+            {hours.map((hour) => (
+              <div key={hour} className="flex border-t h-14">
+                <div className="w-16 pr-2 text-right text-xs text-muted-foreground -mt-2 shrink-0">
+                  {format(new Date(2024, 0, 1, hour), "h a")}
+                </div>
+                <div className="flex-1 relative" />
+              </div>
+            ))}
+            {timedEvents.map((ev) => {
+              const start = new Date(ev.startTime);
+              const end = new Date(ev.endTime);
+              const startHour = start.getHours() + start.getMinutes() / 60;
+              const endHour = end.getHours() + end.getMinutes() / 60;
+              const top = startHour * 56;
+              const height = Math.max(28, (endHour - startHour) * 56);
+
+              return (
+                <button
+                  key={ev.id}
+                  onClick={() => onEventClick(ev)}
+                  className="absolute left-16 right-2 rounded-md px-2 py-1 text-left border shadow-sm hover:shadow-md transition-shadow cursor-pointer overflow-hidden bg-accent"
+                  style={{
+                    top: `${top}px`,
+                    height: `${height}px`,
+                  }}
+                >
+                  <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-md ${getRoleColor(ev.role)}`} />
+                  <p className="text-xs font-medium truncate ml-1">{ev.title}</p>
+                  <p className="text-[10px] text-muted-foreground ml-1">
+                    {format(start, "h:mm a")} - {format(end, "h:mm a")}
+                  </p>
+                  {ev.location && (
+                    <p className="text-[10px] text-muted-foreground truncate ml-1">{ev.location}</p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
