@@ -497,7 +497,13 @@ export default function CalendarPage() {
         open={!!calendarToDelete}
         onOpenChange={(open) => !open && setCalendarToDelete(null)}
         title="Delete this calendar?"
-        description="Events in this calendar will have their calendar and tags cleared. This cannot be undone."
+        description={(() => {
+          const cal = calendars.find((c) => c.id === calendarToDelete);
+          const count = cal ? events.filter((e) => e.category === cal.name).length : 0;
+          return count > 0
+            ? `This will permanently delete ${count} event${count !== 1 ? "s" : ""} in this calendar. This cannot be undone.`
+            : "No events in this calendar. Safe to delete.";
+        })()}
         onConfirm={async () => {
           if (calendarToDelete) {
             const cal = calendars.find((c) => c.id === calendarToDelete);
@@ -505,18 +511,14 @@ export default function CalendarPage() {
               const calEvents = events.filter((e) => e.category === cal.name);
               for (const ev of calEvents) {
                 try {
-                  await fetch("/api/calendar", {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ id: ev.id, category: "Personal", role: "" }),
-                  });
+                  await fetch(`/api/calendar?id=${ev.id}`, { method: "DELETE" });
                 } catch {}
               }
-              setEvents((prev) => prev.map((e) => e.category === cal.name ? { ...e, category: "Personal", role: "" } : e));
+              setEvents((prev) => prev.filter((e) => e.category !== cal.name));
               if (selectedCalendar === cal.name) setSelectedCalendar(null);
             }
             deleteCalendar(calendarToDelete);
-            toast.success("Calendar deleted");
+            toast.success("Calendar and its events deleted");
             setCalendarToDelete(null);
           }
         }}
