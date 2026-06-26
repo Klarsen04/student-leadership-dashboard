@@ -5,7 +5,7 @@ export const createTaskSchema = z.object({
   description: z.string().max(2000).optional(),
   dueDate: z.string().optional(),
   priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
-  role: z.string().max(50).default("Student"),
+  role: z.string().max(50).default("Personal"),
   goalId: z.string().optional(),
 });
 
@@ -70,7 +70,7 @@ export const createEventSchema = z.object({
   startTime: z.string().min(1),
   endTime: z.string().min(1),
   category: z.string().max(50).default("Personal"),
-  role: z.string().max(50).default("Student"),
+  role: z.string().max(50).default("Personal"),
   location: z.string().max(200).optional(),
   isLed: z.boolean().default(false),
 });

@@ -174,7 +174,7 @@ export default function TasksPage() {
           title: newTaskTitle,
           dueDate,
           priority: "medium",
-          role: "Student",
+          role: roles[0] || "Personal",
         }),
       });
       if (!res.ok) throw new Error();
@@ -717,7 +717,7 @@ function AddTaskForm({ onSaved, defaultDate, roles }: { onSaved: () => void; def
     description: "",
     dueDate: defaultDate,
     priority: "medium",
-    role: "Student",
+    role: roles[0] || "Personal",
   });
   const [saving, setSaving] = useState(false);
 
