@@ -101,6 +101,11 @@ export default function GoalsPage() {
     }
   };
 
+  const allCategories = Array.from(new Set([
+    ...categories,
+    ...goals.map((g) => g.category).filter(Boolean),
+  ]));
+
   const activeGoals = goals.filter((g) => g.status === "active");
   const completedGoals = goals.filter((g) => g.status === "completed");
 
@@ -142,7 +147,7 @@ export default function GoalsPage() {
         >
           All
         </Button>
-        {categories.map((cat) => (
+        {allCategories.map((cat) => (
           <div key={cat} className="group relative">
             <Button
               variant={filterCategory === cat ? "default" : "outline"}
@@ -244,7 +249,11 @@ export default function GoalsPage() {
                         max="100"
                         step="5"
                         value={goal.progress}
-                        onChange={(e) => updateProgress(goal.id, parseInt(e.target.value))}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value);
+                          setGoals((prev) => prev.map((g) => g.id === goal.id ? { ...g, progress: val } : g));
+                        }}
+                        onPointerUp={(e) => updateProgress(goal.id, parseInt((e.target as HTMLInputElement).value))}
                         className="w-32 h-2 accent-primary cursor-pointer"
                       />
                     </div>
@@ -367,7 +376,7 @@ function GoalForm({ categories, goal, onSaved }: { categories: string[]; goal?: 
             onChange={(e) => setForm({ ...form, category: e.target.value })}
             className="w-full h-10 border rounded-md px-3 text-sm bg-background"
           >
-            {categories.map((c) => (
+            {Array.from(new Set([...categories, ...(goal?.category ? [goal.category] : [])])).map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
