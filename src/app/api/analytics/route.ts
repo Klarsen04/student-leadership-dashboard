@@ -23,31 +23,49 @@ export async function GET(req: NextRequest) {
     end = endOfWeek(now, { weekStartsOn: 0 });
   }
 
-  const [events, tasks, reflections, goals, allTasks, allReflections] = await Promise.all([
-    prisma.event.findMany({
-      where: { userId: session.user.id, startTime: { lte: end }, endTime: { gte: start } },
-    }),
-    prisma.task.findMany({
-      where: { userId: session.user.id, updatedAt: { gte: start, lte: end } },
-    }),
-    prisma.reflection.findMany({
-      where: { userId: session.user.id, date: { gte: start, lte: end } },
-      orderBy: { date: "asc" },
-    }),
-    prisma.goal.findMany({
-      where: { userId: session.user.id, status: "active" },
-    }),
-    prisma.task.findMany({
-      where: { userId: session.user.id, status: "done" },
-      orderBy: { updatedAt: "desc" },
-      take: 60,
-    }),
-    prisma.reflection.findMany({
-      where: { userId: session.user.id },
-      orderBy: { date: "desc" },
-      take: 60,
-    }),
-  ]);
+  let events: any[] = [], tasks: any[] = [], reflections: any[] = [], goals: any[] = [], allTasks: any[] = [], allReflections: any[] = [];
+  try {
+    [events, tasks, reflections, goals, allTasks, allReflections] = await Promise.all([
+      prisma.event.findMany({
+        where: { userId: session.user.id, startTime: { lte: end }, endTime: { gte: start } },
+      }),
+      prisma.task.findMany({
+        where: { userId: session.user.id, updatedAt: { gte: start, lte: end } },
+      }),
+      prisma.reflection.findMany({
+        where: { userId: session.user.id, date: { gte: start, lte: end } },
+        orderBy: { date: "asc" },
+      }),
+      prisma.goal.findMany({
+        where: { userId: session.user.id, status: "active" },
+      }),
+      prisma.task.findMany({
+        where: { userId: session.user.id, status: "done" },
+        orderBy: { updatedAt: "desc" },
+        take: 60,
+      }),
+      prisma.reflection.findMany({
+        where: { userId: session.user.id },
+        orderBy: { date: "desc" },
+        take: 60,
+      }),
+    ]);
+  } catch (e) {
+    console.error("Analytics query error:", e);
+    return NextResponse.json({
+      eventsByCalendar: {},
+      hoursByCalendar: {},
+      totalEvents: 0,
+      tasksCompleted: 0,
+      tasksPending: 0,
+      taskStreak: 0,
+      reflectionStreak: 0,
+      reflectionCount: 0,
+      goalsActive: 0,
+      goalsProgress: 0,
+      wellness: [],
+    });
+  }
 
   // Events per calendar
   const eventsByCalendar: Record<string, number> = {};
