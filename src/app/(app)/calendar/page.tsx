@@ -873,7 +873,10 @@ function EventForm({
             className="w-full h-10 border rounded-md px-3 text-sm bg-background"
           >
             <option value="">No tag</option>
-            {(calendars.find((c) => c.name === form.category)?.tags || []).map((t) => (
+            {Array.from(new Set([
+              ...(calendars.find((c) => c.name === form.category)?.tags || []),
+              ...(event?.role ? [event.role] : []),
+            ])).map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}
           </select>
