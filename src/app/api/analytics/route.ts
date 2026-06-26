@@ -44,6 +44,7 @@ export async function GET(req: NextRequest) {
 
   for (const event of events) {
     const mins = event.actualMinutes || differenceInMinutes(event.endTime, event.startTime);
+    if (mins <= 0 || mins > 720) continue;
     totalMinutes += mins;
     const cal = event.category || "Personal";
     hoursByCalendar[cal] = (hoursByCalendar[cal] || 0) + mins;
