@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { format, startOfWeek, addDays, isToday, parseISO } from "date-fns";
-import { Plus, Check, Trash2, Play, Pause, RotateCcw, Timer } from "lucide-react";
+import { format, startOfWeek, addDays, addWeeks, isToday, isSameWeek, parseISO } from "date-fns";
+import { Plus, Check, Trash2, Play, Pause, RotateCcw, Timer, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,13 +33,13 @@ interface Task {
 }
 
 const DAY_THEMES = [
+  { name: "Sunday", short: "Sun", gradient: "from-rose-100 to-rose-50 dark:from-rose-950/30 dark:to-rose-900/10", accent: "bg-rose-500", accentLight: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300", border: "border-rose-200 dark:border-rose-800/40", tabActive: "bg-rose-500 text-white", ring: "ring-rose-200 dark:ring-rose-700" },
   { name: "Monday", short: "Mon", gradient: "from-purple-100 to-purple-50 dark:from-purple-950/30 dark:to-purple-900/10", accent: "bg-purple-500", accentLight: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300", border: "border-purple-200 dark:border-purple-800/40", tabActive: "bg-purple-500 text-white", ring: "ring-purple-200 dark:ring-purple-700" },
   { name: "Tuesday", short: "Tue", gradient: "from-pink-100 to-pink-50 dark:from-pink-950/30 dark:to-pink-900/10", accent: "bg-pink-500", accentLight: "bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300", border: "border-pink-200 dark:border-pink-800/40", tabActive: "bg-pink-500 text-white", ring: "ring-pink-200 dark:ring-pink-700" },
   { name: "Wednesday", short: "Wed", gradient: "from-green-100 to-green-50 dark:from-green-950/30 dark:to-green-900/10", accent: "bg-green-500", accentLight: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300", border: "border-green-200 dark:border-green-800/40", tabActive: "bg-green-500 text-white", ring: "ring-green-200 dark:ring-green-700" },
   { name: "Thursday", short: "Thu", gradient: "from-amber-100 to-amber-50 dark:from-amber-950/30 dark:to-amber-900/10", accent: "bg-amber-500", accentLight: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300", border: "border-amber-200 dark:border-amber-800/40", tabActive: "bg-amber-500 text-white", ring: "ring-amber-200 dark:ring-amber-700" },
   { name: "Friday", short: "Fri", gradient: "from-red-100 to-red-50 dark:from-red-950/30 dark:to-red-900/10", accent: "bg-red-500", accentLight: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300", border: "border-red-200 dark:border-red-800/40", tabActive: "bg-red-500 text-white", ring: "ring-red-200 dark:ring-red-700" },
   { name: "Saturday", short: "Sat", gradient: "from-blue-100 to-blue-50 dark:from-blue-950/30 dark:to-blue-900/10", accent: "bg-blue-500", accentLight: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300", border: "border-blue-200 dark:border-blue-800/40", tabActive: "bg-blue-500 text-white", ring: "ring-blue-200 dark:ring-blue-700" },
-  { name: "Sunday", short: "Sun", gradient: "from-rose-100 to-rose-50 dark:from-rose-950/30 dark:to-rose-900/10", accent: "bg-rose-500", accentLight: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300", border: "border-rose-200 dark:border-rose-800/40", tabActive: "bg-rose-500 text-white", ring: "ring-rose-200 dark:ring-rose-700" },
 ];
 
 export default function TasksPage() {
@@ -52,7 +52,7 @@ export default function TasksPage() {
       const parsed = parseInt(dayParam);
       if (parsed >= 0 && parsed <= 6) return parsed;
     }
-    return new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+    return new Date().getDay();
   });
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
   const [editTarget, setEditTarget] = useState<Task | null>(null);
@@ -64,12 +64,14 @@ export default function TasksPage() {
   const [focusElapsed, setFocusElapsed] = useState(0);
   const [dailyNote, setDailyNote] = useState("");
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const noteKey = `leadership-os-note-${format(addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), selectedDay), "yyyy-MM-dd")}`;
+  const [weekOffset, setWeekOffset] = useState(0);
   const { roles } = useRoles();
 
-  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+  const weekStart = addWeeks(startOfWeek(new Date(), { weekStartsOn: 0 }), weekOffset);
   const selectedDate = addDays(weekStart, selectedDay);
   const theme = DAY_THEMES[selectedDay];
+  const isCurrentWeek = isSameWeek(new Date(), weekStart, { weekStartsOn: 0 });
+  const noteKey = `leadership-os-note-${format(selectedDate, "yyyy-MM-dd")}`;
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -241,29 +243,60 @@ export default function TasksPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      {/* Day Tabs */}
-      <div className="flex items-center justify-center gap-1.5">
-        {DAY_THEMES.map((day, idx) => {
-          const dayDate = addDays(weekStart, idx);
-          const isActive = idx === selectedDay;
-          const isCurrentDay = isToday(dayDate);
-          return (
-            <button
-              key={day.name}
-              onClick={() => setSelectedDay(idx)}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                isActive
-                  ? day.tabActive + " shadow-sm scale-105"
-                  : isCurrentDay
-                  ? "bg-muted ring-2 " + day.ring + " text-foreground"
-                  : "bg-muted/50 text-muted-foreground hover:bg-muted"
-              }`}
-            >
-              {day.short}
-            </button>
-          );
-        })}
+      {/* Week Navigation + Day Tabs */}
+      <div className="flex items-center justify-center gap-2">
+        <button
+          onClick={() => setWeekOffset((w) => w - 1)}
+          className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+
+        <div className="flex items-center gap-1.5">
+          {DAY_THEMES.map((day, idx) => {
+            const dayDate = addDays(weekStart, idx);
+            const isActive = idx === selectedDay;
+            const isCurrentDay = isToday(dayDate);
+            return (
+              <button
+                key={day.name}
+                onClick={() => setSelectedDay(idx)}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                  isActive
+                    ? day.tabActive + " shadow-sm scale-105"
+                    : isCurrentDay
+                    ? "bg-muted ring-2 " + day.ring + " text-foreground"
+                    : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                {day.short}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          onClick={() => setWeekOffset((w) => w + 1)}
+          className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
       </div>
+
+      {/* Week label + Today button */}
+      {!isCurrentWeek && (
+        <div className="flex items-center justify-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            Week of {format(weekStart, "MMM d")}
+          </span>
+          <button
+            onClick={() => { setWeekOffset(0); setSelectedDay(new Date().getDay()); }}
+            className="text-xs px-2 py-0.5 rounded-full bg-primary text-primary-foreground hover:opacity-90"
+          >
+            Today
+          </button>
+        </div>
+      )}
 
       {/* Day Header */}
       <div className="text-center space-y-1">

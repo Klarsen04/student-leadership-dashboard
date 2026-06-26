@@ -258,7 +258,7 @@ function TaskRow({ task, overdue }: { task: any; overdue?: boolean }) {
     const dateStr = task.dueDate.slice(0, 10);
     const [y, m, d] = dateStr.split("-").map(Number);
     const localDate = new Date(y, m - 1, d);
-    dayIndex = (localDate.getDay() + 6) % 7;
+    dayIndex = localDate.getDay();
   }
   const href = dayIndex !== undefined ? `/tasks?day=${dayIndex}` : "/tasks";
 
