@@ -41,6 +41,7 @@ export default function GoalsPage() {
   const [editTarget, setEditTarget] = useState<Goal | null>(null);
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
+  const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
   const { categories, addCategory, deleteCategory } = useGoalCategories();
 
   const fetchGoals = async () => {
@@ -101,6 +102,23 @@ export default function GoalsPage() {
     }
   };
 
+  const goalsInCategory = (cat: string) => goals.filter((g) => g.category === cat);
+
+  const confirmDeleteCategory = async () => {
+    if (!categoryToDelete) return;
+    const goalsToDelete = goalsInCategory(categoryToDelete);
+    for (const goal of goalsToDelete) {
+      try {
+        await fetch(`/api/goals?id=${goal.id}`, { method: "DELETE" });
+      } catch {}
+    }
+    deleteCategory(categoryToDelete);
+    setGoals((prev) => prev.filter((g) => g.category !== categoryToDelete));
+    if (filterCategory === categoryToDelete) setFilterCategory("");
+    toast.success(`Deleted "${categoryToDelete}" and ${goalsToDelete.length} goal${goalsToDelete.length !== 1 ? "s" : ""}`);
+    setCategoryToDelete(null);
+  };
+
   const allCategories = Array.from(new Set([
     ...categories,
     ...goals.map((g) => g.category).filter(Boolean),
@@ -157,7 +175,7 @@ export default function GoalsPage() {
               {cat}
             </Button>
             <button
-              onClick={(e) => { e.stopPropagation(); deleteCategory(cat); toast.success(`Removed "${cat}"`); }}
+              onClick={(e) => { e.stopPropagation(); setCategoryToDelete(cat); }}
               className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-destructive/80 text-white items-center justify-center text-[8px] hidden group-hover:flex hover:bg-destructive transition-colors"
             >
               <span className="text-[10px]">×</span>
@@ -297,6 +315,18 @@ export default function GoalsPage() {
         title="Delete goal?"
         description={`"${deleteTarget?.title}" and its progress will be permanently deleted.`}
         onConfirm={deleteGoal}
+      />
+
+      <ConfirmDialog
+        open={!!categoryToDelete}
+        onOpenChange={(open) => !open && setCategoryToDelete(null)}
+        title={`Delete "${categoryToDelete}" category?`}
+        description={
+          categoryToDelete && goalsInCategory(categoryToDelete).length > 0
+            ? `This will permanently delete ${goalsInCategory(categoryToDelete).length} goal${goalsInCategory(categoryToDelete).length !== 1 ? "s" : ""} in this category. This cannot be undone.`
+            : "No goals in this category. Safe to delete."
+        }
+        onConfirm={confirmDeleteCategory}
       />
     </div>
   );

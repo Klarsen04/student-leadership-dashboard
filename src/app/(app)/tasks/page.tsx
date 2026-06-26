@@ -64,6 +64,7 @@ export default function TasksPage() {
   const [focusElapsed, setFocusElapsed] = useState(0);
   const [dailyNote, setDailyNote] = useState("");
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const noteKey = `leadership-os-note-${format(addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), selectedDay), "yyyy-MM-dd")}`;
   const { roles } = useRoles();
 
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
@@ -86,6 +87,16 @@ export default function TasksPage() {
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(noteKey);
+    setDailyNote(saved || "");
+  }, [noteKey]);
+
+  const saveDailyNote = (value: string) => {
+    setDailyNote(value);
+    localStorage.setItem(noteKey, value);
+  };
 
   useEffect(() => {
     if (focusRunning) {
@@ -440,8 +451,8 @@ export default function TasksPage() {
           </div>
           <textarea
             value={dailyNote}
-            onChange={(e) => setDailyNote(e.target.value)}
-            placeholder="What music does today feel like today..."
+            onChange={(e) => saveDailyNote(e.target.value)}
+            placeholder="What's on your mind today..."
             className="w-full h-24 bg-background/50 border rounded-xl p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-offset-0 placeholder:text-muted-foreground/60"
           />
         </div>
