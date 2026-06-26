@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { useTimeBudget } from "@/lib/useTimeBudget";
+import { useCalendars } from "@/lib/useCalendars";
 
 interface AnalyticsData {
   eventsByCalendar: Record<string, number>;
@@ -30,6 +31,7 @@ export default function AnalyticsPage() {
   const [editingBudget, setEditingBudget] = useState<string | null>(null);
   const [budgetValue, setBudgetValue] = useState("");
   const { budgets, setBudget } = useTimeBudget();
+  const { calendars } = useCalendars();
 
   useEffect(() => {
     setLoading(true);
@@ -139,11 +141,12 @@ export default function AnalyticsPage() {
             <p className="text-xs text-muted-foreground">
               Set weekly hour goals per calendar. Click a bar to set your target.
             </p>
-            {Object.entries(data.eventsByCalendar).length === 0 && budgets.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4">No events this {period}</p>
+            {calendars.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4">Create a calendar to start tracking time</p>
             ) : (
               <div className="space-y-3">
                 {Array.from(new Set([
+                  ...calendars.map((c) => c.name),
                   ...Object.keys(data.hoursByCalendar),
                   ...budgets.map((b) => b.calendar),
                 ])).map((cal) => {
