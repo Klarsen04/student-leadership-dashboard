@@ -888,8 +888,11 @@ function EventForm({
             onChange={(e) => setForm({ ...form, category: e.target.value })}
             className="w-full h-10 border rounded-md px-3 text-sm bg-background"
           >
-            {calendars.map((c) => (
-              <option key={c.id} value={c.name}>{c.name}</option>
+            {Array.from(new Set([
+              ...calendars.map((c) => c.name),
+              ...(event?.category ? [event.category] : []),
+            ])).map((name) => (
+              <option key={name} value={name}>{name}</option>
             ))}
           </select>
         </div>
