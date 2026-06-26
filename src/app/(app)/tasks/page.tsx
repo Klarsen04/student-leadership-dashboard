@@ -18,7 +18,6 @@ import {
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PriorityDot } from "@/components/PriorityDot";
 import { TASK_PRIORITIES } from "@/lib/utils";
-import { useRoles } from "@/lib/useRoles";
 
 interface Task {
   id: string;
@@ -65,7 +64,6 @@ export default function TasksPage() {
   const [dailyNote, setDailyNote] = useState("");
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const [weekOffset, setWeekOffset] = useState(0);
-  const { roles } = useRoles();
 
   const weekStart = addWeeks(startOfWeek(new Date(), { weekStartsOn: 0 }), weekOffset);
   const selectedDate = addDays(weekStart, selectedDay);
@@ -187,7 +185,6 @@ export default function TasksPage() {
           title: newTaskTitle,
           dueDate,
           priority: "medium",
-          role: roles[0] || "Personal",
         }),
       });
       if (!res.ok) throw new Error();
@@ -500,7 +497,6 @@ export default function TasksPage() {
           </DialogHeader>
           <AddTaskForm
             defaultDate={format(selectedDate, "yyyy-MM-dd")}
-            roles={roles}
             onSaved={() => {
               setShowFullAdd(false);
               fetchTasks();
@@ -528,7 +524,6 @@ export default function TasksPage() {
           {editTarget && (
             <EditTaskForm
               task={editTarget}
-              roles={roles}
               onSaved={(updated) => {
                 setTasks((prev) => prev.map((t) => t.id === updated.id ? { ...t, ...updated } : t));
                 setEditTarget(null);
@@ -739,11 +734,6 @@ function TaskCard({
               <PriorityDot priority={task.priority} />
               <span className="text-[10px] text-muted-foreground capitalize">{task.priority}</span>
             </button>
-            {task.role && (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${theme.accentLight}`}>
-                {task.role}
-              </span>
-            )}
           </div>
         </div>
         <button
@@ -757,13 +747,12 @@ function TaskCard({
   );
 }
 
-function AddTaskForm({ onSaved, defaultDate, roles }: { onSaved: () => void; defaultDate: string; roles: string[] }) {
+function AddTaskForm({ onSaved, defaultDate }: { onSaved: () => void; defaultDate: string }) {
   const [form, setForm] = useState({
     title: "",
     description: "",
     dueDate: defaultDate,
     priority: "medium",
-    role: roles[0] || "Personal",
   });
   const [saving, setSaving] = useState(false);
 
@@ -841,19 +830,6 @@ function AddTaskForm({ onSaved, defaultDate, roles }: { onSaved: () => void; def
             ))}
           </select>
         </div>
-        <div>
-          <label className="text-sm font-medium">Role</label>
-          <select
-            value={form.role}
-            onChange={(e) => setForm({ ...form, role: e.target.value })}
-            className="w-full h-10 border rounded-md px-3 text-sm bg-background"
-          >
-            <option value="">No tag</option>
-            {roles.map((r) => (
-              <option key={r} value={r}>{r}</option>
-            ))}
-          </select>
-        </div>
       </div>
       <Button type="submit" className="w-full" disabled={saving || !form.title}>
         {saving ? "Saving..." : "Create Task"}
@@ -864,12 +840,10 @@ function AddTaskForm({ onSaved, defaultDate, roles }: { onSaved: () => void; def
 
 function EditTaskForm({
   task,
-  roles,
   onSaved,
   onCancel,
 }: {
   task: Task;
-  roles: string[];
   onSaved: (updated: Partial<Task> & { id: string }) => void;
   onCancel: () => void;
 }) {
@@ -878,7 +852,6 @@ function EditTaskForm({
     description: task.description || "",
     dueDate: task.dueDate ? task.dueDate.slice(0, 10) : "",
     priority: task.priority,
-    role: task.role,
   });
   const [saving, setSaving] = useState(false);
 
@@ -895,7 +868,6 @@ function EditTaskForm({
           description: form.description || null,
           dueDate: form.dueDate || null,
           priority: form.priority,
-          role: form.role,
         }),
       });
       if (!res.ok) throw new Error();
@@ -906,7 +878,6 @@ function EditTaskForm({
         description: form.description || null,
         dueDate: form.dueDate ? form.dueDate + "T00:00:00.000Z" : null,
         priority: form.priority,
-        role: form.role,
       });
     } catch {
       toast.error("Failed to update task");
@@ -952,19 +923,6 @@ function EditTaskForm({
           >
             {TASK_PRIORITIES.map((p) => (
               <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="text-sm font-medium">Tag</label>
-          <select
-            value={form.role}
-            onChange={(e) => setForm({ ...form, role: e.target.value })}
-            className="w-full h-10 border rounded-md px-3 text-sm bg-background"
-          >
-            <option value="">No tag</option>
-            {Array.from(new Set([...roles, ...(task.role ? [task.role] : [])])).map((r) => (
-              <option key={r} value={r}>{r}</option>
             ))}
           </select>
         </div>
