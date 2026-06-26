@@ -106,16 +106,20 @@ export default function GoalsPage() {
 
   const confirmDeleteCategory = async () => {
     if (!categoryToDelete) return;
-    const goalsToDelete = goalsInCategory(categoryToDelete);
-    for (const goal of goalsToDelete) {
+    const affected = goalsInCategory(categoryToDelete);
+    for (const goal of affected) {
       try {
-        await fetch(`/api/goals?id=${goal.id}`, { method: "DELETE" });
+        await fetch("/api/goals", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: goal.id, category: "Personal" }),
+        });
       } catch {}
     }
     deleteCategory(categoryToDelete);
-    setGoals((prev) => prev.filter((g) => g.category !== categoryToDelete));
+    setGoals((prev) => prev.map((g) => g.category === categoryToDelete ? { ...g, category: "Personal" } : g));
     if (filterCategory === categoryToDelete) setFilterCategory("");
-    toast.success(`Deleted "${categoryToDelete}" and ${goalsToDelete.length} goal${goalsToDelete.length !== 1 ? "s" : ""}`);
+    toast.success(`Deleted "${categoryToDelete}" — ${affected.length} goal${affected.length !== 1 ? "s" : ""} moved to Personal`);
     setCategoryToDelete(null);
   };
 
@@ -323,7 +327,7 @@ export default function GoalsPage() {
         title={`Delete "${categoryToDelete}" category?`}
         description={
           categoryToDelete && goalsInCategory(categoryToDelete).length > 0
-            ? `This will permanently delete ${goalsInCategory(categoryToDelete).length} goal${goalsInCategory(categoryToDelete).length !== 1 ? "s" : ""} in this category. This cannot be undone.`
+            ? `${goalsInCategory(categoryToDelete).length} goal${goalsInCategory(categoryToDelete).length !== 1 ? "s" : ""} will be moved to "Personal". The category will be removed.`
             : "No goals in this category. Safe to delete."
         }
         onConfirm={confirmDeleteCategory}
