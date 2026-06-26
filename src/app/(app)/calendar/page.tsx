@@ -80,11 +80,29 @@ export default function CalendarPage() {
     }
 
     try {
-      const res = await fetch(
-        `/api/calendar?start=${start.toISOString()}&end=${end.toISOString()}`
-      );
-      if (!res.ok) throw new Error();
-      setEvents(await res.json());
+      const [evRes, taskRes] = await Promise.all([
+        fetch(`/api/calendar?start=${start.toISOString()}&end=${end.toISOString()}`),
+        fetch("/api/tasks?limit=100"),
+      ]);
+      const calEvents = evRes.ok ? await evRes.json() : [];
+      let taskEvents: CalendarEvent[] = [];
+      if (taskRes.ok) {
+        const taskData = await taskRes.json();
+        const tasks = taskData.tasks || taskData;
+        taskEvents = tasks
+          .filter((t: any) => t.dueDate && t.status !== "done")
+          .map((t: any) => ({
+            id: `task_${t.id}`,
+            title: `📋 ${t.title}`,
+            startTime: t.dueDate,
+            endTime: t.dueDate,
+            category: "Personal",
+            role: "",
+            location: null,
+            isLed: false,
+          }));
+      }
+      setEvents([...calEvents, ...taskEvents]);
     } catch {
       toast.error("Failed to load events");
     } finally {
