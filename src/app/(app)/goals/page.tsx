@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { format } from "date-fns";
-import { Plus, Target, Trash2 } from "lucide-react";
+import { format, isPast } from "date-fns";
+import { Plus, Target, Trash2, Pencil, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,10 +15,11 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { GOAL_CATEGORIES } from "@/lib/utils";
+import { useGoalCategories } from "@/lib/useGoalCategories";
 
 interface Goal {
   id: string;
@@ -37,6 +38,10 @@ export default function GoalsPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [filterCategory, setFilterCategory] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Goal | null>(null);
+  const [editTarget, setEditTarget] = useState<Goal | null>(null);
+  const [showAddCategory, setShowAddCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const { categories, addCategory, deleteCategory } = useGoalCategories();
 
   const fetchGoals = async () => {
     const params = new URLSearchParams();
@@ -58,14 +63,15 @@ export default function GoalsPage() {
 
   const updateProgress = async (id: string, progress: number) => {
     try {
+      const status = progress === 100 ? "completed" : "active";
       const res = await fetch("/api/goals", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, progress, status: progress === 100 ? "completed" : "active" }),
+        body: JSON.stringify({ id, progress, status }),
       });
       if (!res.ok) throw new Error();
+      setGoals((prev) => prev.map((g) => g.id === id ? { ...g, progress, status } : g));
       if (progress === 100) toast.success("Goal completed!");
-      fetchGoals();
     } catch {
       toast.error("Failed to update progress");
     }
@@ -77,9 +83,21 @@ export default function GoalsPage() {
       const res = await fetch(`/api/goals?id=${deleteTarget.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error();
       toast.success("Goal deleted");
-      fetchGoals();
+      setGoals((prev) => prev.filter((g) => g.id !== deleteTarget.id));
     } catch {
       toast.error("Failed to delete goal");
+    }
+  };
+
+  const handleAddCategory = () => {
+    if (!newCategoryName.trim()) return;
+    const success = addCategory(newCategoryName.trim());
+    if (success) {
+      toast.success(`Added "${newCategoryName.trim()}" category`);
+      setNewCategoryName("");
+      setShowAddCategory(false);
+    } else {
+      toast.error("Category already exists");
     }
   };
 
@@ -105,19 +123,18 @@ export default function GoalsPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create Goal</DialogTitle>
+              <DialogDescription>Set a new goal to track</DialogDescription>
             </DialogHeader>
-            <AddGoalForm
-              onSaved={() => {
-                setShowAdd(false);
-                fetchGoals();
-              }}
+            <GoalForm
+              categories={categories}
+              onSaved={() => { setShowAdd(false); fetchGoals(); }}
             />
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-2 flex-wrap">
+      {/* Category Filters */}
+      <div className="flex gap-2 flex-wrap items-center">
         <Button
           variant={filterCategory === "" ? "default" : "outline"}
           size="sm"
@@ -125,16 +142,43 @@ export default function GoalsPage() {
         >
           All
         </Button>
-        {GOAL_CATEGORIES.map((cat) => (
-          <Button
-            key={cat}
-            variant={filterCategory === cat ? "default" : "outline"}
-            size="sm"
-            onClick={() => setFilterCategory(filterCategory === cat ? "" : cat)}
-          >
-            {cat}
-          </Button>
+        {categories.map((cat) => (
+          <div key={cat} className="group relative">
+            <Button
+              variant={filterCategory === cat ? "default" : "outline"}
+              size="sm"
+              onClick={() => setFilterCategory(filterCategory === cat ? "" : cat)}
+            >
+              {cat}
+            </Button>
+            <button
+              onClick={(e) => { e.stopPropagation(); deleteCategory(cat); toast.success(`Removed "${cat}"`); }}
+              className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-destructive/80 text-white items-center justify-center text-[8px] hidden group-hover:flex hover:bg-destructive transition-colors"
+            >
+              <span className="text-[10px]">×</span>
+            </button>
+          </div>
         ))}
+        {showAddCategory ? (
+          <form onSubmit={(e) => { e.preventDefault(); handleAddCategory(); }} className="flex items-center gap-1">
+            <input
+              autoFocus
+              value={newCategoryName}
+              onChange={(e) => setNewCategoryName(e.target.value)}
+              placeholder="Category name..."
+              className="h-8 w-28 px-2 text-xs border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+              onBlur={() => { if (!newCategoryName) setShowAddCategory(false); }}
+            />
+            <Button type="submit" size="sm" className="h-8" disabled={!newCategoryName.trim()}>
+              <Plus className="w-3 h-3" />
+            </Button>
+          </form>
+        ) : (
+          <Button variant="ghost" size="sm" onClick={() => setShowAddCategory(true)} className="text-muted-foreground">
+            <Plus className="w-3 h-3 mr-1" />
+            Category
+          </Button>
+        )}
       </div>
 
       {loading ? (
@@ -146,73 +190,97 @@ export default function GoalsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {goals.map((goal) => (
-            <Card key={goal.id}>
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <h3 className="font-semibold">{goal.title}</h3>
-                    <Badge variant="secondary" className="mt-1">
-                      {goal.category}
-                    </Badge>
-                  </div>
-                  <button
-                    onClick={() => setDeleteTarget(goal)}
-                    className="text-muted-foreground hover:text-destructive p-1"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                {goal.description && (
-                  <p className="text-sm text-muted-foreground mb-3">
-                    {goal.description}
-                  </p>
-                )}
-
-                {goal.targetDate && (
-                  <p className="text-xs text-muted-foreground mb-3">
-                    Target: {format(new Date(goal.targetDate), "MMM d, yyyy")}
-                  </p>
-                )}
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">{goal.progress}%</span>
-                    {goal.status === "active" && (
-                      <div className="flex gap-1">
-                        {[0, 25, 50, 75, 100].map((val) => (
-                          <button
-                            key={val}
-                            onClick={() => updateProgress(goal.id, val)}
-                            className={`w-6 h-6 rounded text-xs border transition-colors ${
-                              goal.progress >= val
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "hover:bg-accent border-input"
-                            }`}
-                          >
-                            {val}
-                          </button>
-                        ))}
+          {goals.map((goal) => {
+            const isOverdue = goal.status === "active" && goal.targetDate && isPast(new Date(goal.targetDate));
+            return (
+              <Card key={goal.id} className={isOverdue ? "border-destructive/40" : ""}>
+                <CardContent className="p-5">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <h3 className="font-semibold">{goal.title}</h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant="secondary">{goal.category}</Badge>
+                        {goal.status === "completed" && (
+                          <Badge variant="default" className="bg-green-600">Done</Badge>
+                        )}
                       </div>
-                    )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setEditTarget(goal)}
+                        className="text-muted-foreground hover:text-foreground p-1"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setDeleteTarget(goal)}
+                        className="text-muted-foreground hover:text-destructive p-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
-                  <Progress value={goal.progress} />
-                </div>
 
-                {goal.tasks.length > 0 && (
-                  <div className="mt-3 pt-3 border-t">
-                    <p className="text-xs text-muted-foreground mb-1">
-                      Related tasks: {goal.tasks.filter((t) => t.status === "done").length}/
-                      {goal.tasks.length}
-                    </p>
+                  {goal.description && (
+                    <p className="text-sm text-muted-foreground mb-3">{goal.description}</p>
+                  )}
+
+                  {goal.targetDate && (
+                    <div className={`flex items-center gap-1.5 text-xs mb-3 ${isOverdue ? "text-destructive" : "text-muted-foreground"}`}>
+                      {isOverdue && <AlertTriangle className="w-3 h-3" />}
+                      <span>
+                        {isOverdue ? "Overdue — was due " : "Target: "}
+                        {format(new Date(goal.targetDate), "MMM d, yyyy")}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">{goal.progress}%</span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="5"
+                        value={goal.progress}
+                        onChange={(e) => updateProgress(goal.id, parseInt(e.target.value))}
+                        className="w-32 h-2 accent-primary cursor-pointer"
+                      />
+                    </div>
+                    <Progress value={goal.progress} />
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+
+                  {goal.tasks.length > 0 && (
+                    <div className="mt-3 pt-3 border-t">
+                      <p className="text-xs text-muted-foreground">
+                        Related tasks: {goal.tasks.filter((t) => t.status === "done").length}/{goal.tasks.length}
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
+
+      {/* Edit Goal Dialog */}
+      <Dialog open={!!editTarget} onOpenChange={(open) => !open && setEditTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Goal</DialogTitle>
+            <DialogDescription>Update goal details</DialogDescription>
+          </DialogHeader>
+          {editTarget && (
+            <GoalForm
+              categories={categories}
+              goal={editTarget}
+              onSaved={() => { setEditTarget(null); fetchGoals(); }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={!!deleteTarget}
@@ -225,12 +293,13 @@ export default function GoalsPage() {
   );
 }
 
-function AddGoalForm({ onSaved }: { onSaved: () => void }) {
+function GoalForm({ categories, goal, onSaved }: { categories: string[]; goal?: Goal; onSaved: () => void }) {
   const [form, setForm] = useState({
-    title: "",
-    description: "",
-    category: "Academic",
-    targetDate: "",
+    title: goal?.title || "",
+    description: goal?.description || "",
+    category: goal?.category || categories[0] || "Personal",
+    targetDate: goal?.targetDate ? goal.targetDate.slice(0, 10) : "",
+    progress: goal?.progress ?? 0,
   });
   const [saving, setSaving] = useState(false);
 
@@ -238,16 +307,34 @@ function AddGoalForm({ onSaved }: { onSaved: () => void }) {
     e.preventDefault();
     setSaving(true);
     try {
-      const res = await fetch("/api/goals", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("Goal created");
+      if (goal) {
+        const res = await fetch("/api/goals", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: goal.id,
+            title: form.title,
+            description: form.description || null,
+            category: form.category,
+            targetDate: form.targetDate || null,
+            progress: form.progress,
+            status: form.progress === 100 ? "completed" : "active",
+          }),
+        });
+        if (!res.ok) throw new Error();
+        toast.success("Goal updated");
+      } else {
+        const res = await fetch("/api/goals", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form),
+        });
+        if (!res.ok) throw new Error();
+        toast.success("Goal created");
+      }
       onSaved();
     } catch {
-      toast.error("Failed to create goal");
+      toast.error(goal ? "Failed to update goal" : "Failed to create goal");
     } finally {
       setSaving(false);
     }
@@ -280,7 +367,7 @@ function AddGoalForm({ onSaved }: { onSaved: () => void }) {
             onChange={(e) => setForm({ ...form, category: e.target.value })}
             className="w-full h-10 border rounded-md px-3 text-sm bg-background"
           >
-            {GOAL_CATEGORIES.map((c) => (
+            {categories.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
@@ -294,8 +381,22 @@ function AddGoalForm({ onSaved }: { onSaved: () => void }) {
           />
         </div>
       </div>
+      {goal && (
+        <div>
+          <label className="text-sm font-medium">Progress: {form.progress}%</label>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="5"
+            value={form.progress}
+            onChange={(e) => setForm({ ...form, progress: parseInt(e.target.value) })}
+            className="w-full h-2 accent-primary cursor-pointer mt-1"
+          />
+        </div>
+      )}
       <Button type="submit" className="w-full" disabled={saving || !form.title}>
-        {saving ? "Saving..." : "Create Goal"}
+        {saving ? "Saving..." : goal ? "Save Changes" : "Create Goal"}
       </Button>
     </form>
   );
