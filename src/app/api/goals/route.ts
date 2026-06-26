@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
 
   const goals = await prisma.goal.findMany({
     where,
-    include: { tasks: { select: { id: true, title: true, status: true }, orderBy: { createdAt: "desc" }, take: 20 } },
+    include: { tasks: { orderBy: { createdAt: "desc" }, take: 20 } },
     orderBy: { createdAt: "desc" },
   });
 

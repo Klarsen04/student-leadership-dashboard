@@ -49,18 +49,17 @@ export async function POST(req: NextRequest) {
   }
 
   const { data } = parsed;
-  const createData: Record<string, unknown> = {
-    title: data.title,
-    description: data.description || null,
-    dueDate: data.dueDate ? new Date(data.dueDate) : null,
-    priority: data.priority,
-    role: data.role,
-    goalId: data.goalId || null,
-    userId: session.user.id,
-  };
-  if (data.hours != null) createData.hours = data.hours;
-
-  const task = await prisma.task.create({ data: createData as any });
+  const task = await prisma.task.create({
+    data: {
+      title: data.title,
+      description: data.description || null,
+      dueDate: data.dueDate ? new Date(data.dueDate) : null,
+      priority: data.priority,
+      role: data.role,
+      goalId: data.goalId || null,
+      userId: session.user.id,
+    },
+  });
 
   return NextResponse.json(task, { status: 201 });
 }
@@ -85,7 +84,6 @@ export async function PATCH(req: NextRequest) {
   if (fields.priority !== undefined) data.priority = fields.priority;
   if (fields.status !== undefined) data.status = fields.status;
   if (fields.role !== undefined) data.role = fields.role;
-  if (fields.hours !== undefined) data.hours = fields.hours;
   if (fields.goalId !== undefined) data.goalId = fields.goalId;
 
   const task = await prisma.task.update({

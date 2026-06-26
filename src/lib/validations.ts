@@ -6,7 +6,6 @@ export const createTaskSchema = z.object({
   dueDate: z.string().optional(),
   priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
   role: z.string().max(50).default("Personal"),
-  hours: z.number().min(0).max(168).nullable().optional(),
   goalId: z.string().optional(),
 });
 
@@ -18,7 +17,6 @@ export const updateTaskSchema = z.object({
   priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
   status: z.enum(["todo", "in_progress", "done"]).optional(),
   role: z.string().max(50).optional(),
-  hours: z.number().min(0).max(168).nullable().optional(),
   goalId: z.string().nullable().optional(),
 });
 
