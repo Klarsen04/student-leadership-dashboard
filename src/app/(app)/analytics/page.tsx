@@ -26,7 +26,6 @@ interface AnalyticsData {
 
 export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null);
-  const [period, setPeriod] = useState<"week" | "month">("week");
   const [loading, setLoading] = useState(true);
   const [editingBudget, setEditingBudget] = useState<string | null>(null);
   const [budgetValue, setBudgetValue] = useState("");
@@ -35,13 +34,13 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/analytics?period=${period}`)
+    fetch("/api/analytics?period=week")
       .then((r) => r.json())
       .then((d) => {
         setData(d);
         setLoading(false);
       });
-  }, [period]);
+  }, []);
 
   if (loading || !data) {
     return (
@@ -52,9 +51,16 @@ export default function AnalyticsPage() {
     );
   }
 
+  const totalBudgeted = budgets.reduce((sum, b) => sum + b.hoursPerWeek, 0);
+
   const saveBudget = (cal: string) => {
     const hours = parseFloat(budgetValue);
     if (!isNaN(hours) && hours > 0) {
+      const currentForCal = budgets.find((b) => b.calendar === cal)?.hoursPerWeek || 0;
+      const newTotal = totalBudgeted - currentForCal + hours;
+      if (newTotal > 168) {
+        return;
+      }
       setBudget(cal, hours);
     }
     setEditingBudget(null);
@@ -63,29 +69,9 @@ export default function AnalyticsPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Analytics</h1>
-          <p className="text-muted-foreground text-sm">
-            Your {period === "week" ? "weekly" : "monthly"} overview
-          </p>
-        </div>
-        <div className="flex border rounded-lg p-1">
-          <Button
-            variant={period === "week" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setPeriod("week")}
-          >
-            Week
-          </Button>
-          <Button
-            variant={period === "month" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setPeriod("month")}
-          >
-            Month
-          </Button>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold">Analytics</h1>
+        <p className="text-muted-foreground text-sm">Your weekly overview</p>
       </div>
 
       {/* Streaks & Key Metrics */}
@@ -208,6 +194,12 @@ export default function AnalyticsPage() {
                     </div>
                   );
                 })}
+                {totalBudgeted > 0 && (
+                  <div className="pt-2 border-t text-xs text-muted-foreground flex justify-between">
+                    <span>Total budgeted</span>
+                    <span className={totalBudgeted > 168 ? "text-destructive" : ""}>{totalBudgeted}h / 168h</span>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
