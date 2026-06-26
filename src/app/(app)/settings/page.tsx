@@ -15,7 +15,6 @@ const EXPORT_TYPES = [
   { value: "tasks", label: "Tasks" },
   { value: "goals", label: "Goals" },
   { value: "reflections", label: "Reflections" },
-  { value: "checkins", label: "Check-ins" },
 ];
 
 export default function SettingsPage() {

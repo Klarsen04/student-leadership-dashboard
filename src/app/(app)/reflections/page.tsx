@@ -370,31 +370,41 @@ function ReflectionForm({ reflection, onSaved }: { reflection?: Reflection; onSa
         value={form.content}
         onChange={(e) => setForm({ ...form, content: e.target.value })}
         placeholder="Write your reflection..."
-        className="min-h-[150px]"
+        className="min-h-[120px]"
       />
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-sm font-medium">Mood ({form.mood}/10)</label>
-          <input
-            type="range"
-            min="1"
-            max="10"
-            value={form.mood}
-            onChange={(e) => setForm({ ...form, mood: parseInt(e.target.value) })}
-            className="w-full"
-          />
-        </div>
-        <div>
-          <label className="text-sm font-medium">Energy ({form.energy}/10)</label>
-          <input
-            type="range"
-            min="1"
-            max="10"
-            value={form.energy}
-            onChange={(e) => setForm({ ...form, energy: parseInt(e.target.value) })}
-            className="w-full"
-          />
+      {/* Wellness Check-in */}
+      <div className="border rounded-lg p-3 space-y-3">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Wellness Check-in</p>
+        <div className="space-y-3">
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium">Energy</label>
+              <span className="text-xs text-primary font-bold">{form.energy}/10</span>
+            </div>
+            <input
+              type="range" min="1" max="10" value={form.energy}
+              onChange={(e) => setForm({ ...form, energy: parseInt(e.target.value) })}
+              className="w-full h-1.5 accent-primary cursor-pointer"
+            />
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>Drained</span><span>Energized</span>
+            </div>
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium">Mood</label>
+              <span className="text-xs text-primary font-bold">{form.mood}/10</span>
+            </div>
+            <input
+              type="range" min="1" max="10" value={form.mood}
+              onChange={(e) => setForm({ ...form, mood: parseInt(e.target.value) })}
+              className="w-full h-1.5 accent-primary cursor-pointer"
+            />
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>Low</span><span>Great</span>
+            </div>
+          </div>
         </div>
       </div>
 

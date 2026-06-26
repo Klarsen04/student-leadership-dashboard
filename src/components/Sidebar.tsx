@@ -11,7 +11,6 @@ import {
   CheckSquare,
   BookOpen,
   BarChart3,
-  Heart,
   LogOut,
   Menu,
   X,
@@ -27,7 +26,6 @@ const nav = [
   { href: "/goals", label: "Goals", icon: Target },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/reflections", label: "Reflections", icon: BookOpen },
-  { href: "/checkin", label: "Check-in", icon: Heart },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
