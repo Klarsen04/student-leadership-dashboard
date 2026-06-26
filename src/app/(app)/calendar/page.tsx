@@ -145,14 +145,25 @@ export default function CalendarPage() {
     setTagToDelete(tag);
   };
 
-  const confirmDeleteTag = () => {
+  const confirmDeleteTag = async () => {
     if (tagToDelete) {
+      const matchingEvents = events.filter((e) => e.role === tagToDelete);
+      for (const ev of matchingEvents) {
+        try {
+          await fetch("/api/calendar", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: ev.id, role: "" }),
+          });
+        } catch {}
+      }
       const cal = selectedCalendar
         ? calendars.find((c) => c.name === selectedCalendar)
         : calendars.find((c) => c.tags.includes(tagToDelete!));
       if (cal) deleteTag(cal.id, tagToDelete);
       if (activeTag === tagToDelete) setActiveTag(null);
-      toast.success(`Removed "${tagToDelete}" tag`);
+      setEvents((prev) => prev.map((e) => e.role === tagToDelete ? { ...e, role: "" } : e));
+      toast.success(`Removed "${tagToDelete}" tag from ${matchingEvents.length} event${matchingEvents.length !== 1 ? "s" : ""}`);
       setTagToDelete(null);
     }
   };
@@ -486,14 +497,25 @@ export default function CalendarPage() {
         open={!!calendarToDelete}
         onOpenChange={(open) => !open && setCalendarToDelete(null)}
         title="Delete this calendar?"
-        description="Events in this calendar will remain but won't be associated with any calendar. This cannot be undone."
-        onConfirm={() => {
+        description="Events in this calendar will have their calendar and tags cleared. This cannot be undone."
+        onConfirm={async () => {
           if (calendarToDelete) {
-            deleteCalendar(calendarToDelete);
-            if (selectedCalendar) {
-              const cal = calendars.find((c) => c.id === calendarToDelete);
-              if (cal && selectedCalendar === cal.name) setSelectedCalendar(null);
+            const cal = calendars.find((c) => c.id === calendarToDelete);
+            if (cal) {
+              const calEvents = events.filter((e) => e.category === cal.name);
+              for (const ev of calEvents) {
+                try {
+                  await fetch("/api/calendar", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: ev.id, category: "Personal", role: "" }),
+                  });
+                } catch {}
+              }
+              setEvents((prev) => prev.map((e) => e.category === cal.name ? { ...e, category: "Personal", role: "" } : e));
+              if (selectedCalendar === cal.name) setSelectedCalendar(null);
             }
+            deleteCalendar(calendarToDelete);
             toast.success("Calendar deleted");
             setCalendarToDelete(null);
           }
