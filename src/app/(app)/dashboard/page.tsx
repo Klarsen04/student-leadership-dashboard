@@ -173,9 +173,11 @@ export default function DashboardPage() {
                         </p>
                       )}
                     </div>
-                    <Badge variant={(ROLE_BADGE_VARIANTS[event.role] || "secondary") as any}>
-                      {event.role}
-                    </Badge>
+                    {event.role && (
+                      <Badge variant={(ROLE_BADGE_VARIANTS[event.role] || "secondary") as any}>
+                        {event.role}
+                      </Badge>
+                    )}
                   </div>
                 ))}
               </div>

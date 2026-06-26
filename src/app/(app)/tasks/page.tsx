@@ -695,9 +695,11 @@ function TaskCard({
               <PriorityDot priority={task.priority} />
               <span className="text-[10px] text-muted-foreground capitalize">{task.priority}</span>
             </button>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${theme.accentLight}`}>
-              {task.role}
-            </span>
+            {task.role && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${theme.accentLight}`}>
+                {task.role}
+              </span>
+            )}
           </div>
         </div>
         <button
@@ -802,6 +804,7 @@ function AddTaskForm({ onSaved, defaultDate, roles }: { onSaved: () => void; def
             onChange={(e) => setForm({ ...form, role: e.target.value })}
             className="w-full h-10 border rounded-md px-3 text-sm bg-background"
           >
+            <option value="">No tag</option>
             {roles.map((r) => (
               <option key={r} value={r}>{r}</option>
             ))}
@@ -909,13 +912,14 @@ function EditTaskForm({
           </select>
         </div>
         <div>
-          <label className="text-sm font-medium">Role</label>
+          <label className="text-sm font-medium">Tag</label>
           <select
             value={form.role}
             onChange={(e) => setForm({ ...form, role: e.target.value })}
             className="w-full h-10 border rounded-md px-3 text-sm bg-background"
           >
-            {roles.map((r) => (
+            <option value="">No tag</option>
+            {Array.from(new Set([...roles, ...(task.role ? [task.role] : [])])).map((r) => (
               <option key={r} value={r}>{r}</option>
             ))}
           </select>
