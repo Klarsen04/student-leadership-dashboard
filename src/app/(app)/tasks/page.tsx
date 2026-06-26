@@ -27,6 +27,7 @@ interface Task {
   priority: string;
   status: string;
   role: string;
+  hours: number | null;
   goal: { id: string; title: string } | null;
   createdAt: string;
 }
@@ -753,6 +754,7 @@ function AddTaskForm({ onSaved, defaultDate }: { onSaved: () => void; defaultDat
     description: "",
     dueDate: defaultDate,
     priority: "medium",
+    hours: "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -763,7 +765,10 @@ function AddTaskForm({ onSaved, defaultDate }: { onSaved: () => void; defaultDat
       const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          hours: form.hours ? parseFloat(form.hours) : null,
+        }),
       });
       if (!res.ok) throw new Error();
       toast.success("Task created");
@@ -830,6 +835,18 @@ function AddTaskForm({ onSaved, defaultDate }: { onSaved: () => void; defaultDat
             ))}
           </select>
         </div>
+        <div>
+          <label className="text-sm font-medium">Hours</label>
+          <Input
+            type="number"
+            step="0.5"
+            min="0"
+            max="24"
+            value={form.hours}
+            onChange={(e) => setForm({ ...form, hours: e.target.value })}
+            placeholder="e.g. 2"
+          />
+        </div>
       </div>
       <Button type="submit" className="w-full" disabled={saving || !form.title}>
         {saving ? "Saving..." : "Create Task"}
@@ -852,6 +869,7 @@ function EditTaskForm({
     description: task.description || "",
     dueDate: task.dueDate ? task.dueDate.slice(0, 10) : "",
     priority: task.priority,
+    hours: task.hours ? String(task.hours) : "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -868,6 +886,7 @@ function EditTaskForm({
           description: form.description || null,
           dueDate: form.dueDate || null,
           priority: form.priority,
+          hours: form.hours ? parseFloat(form.hours) : null,
         }),
       });
       if (!res.ok) throw new Error();
@@ -877,6 +896,7 @@ function EditTaskForm({
         title: form.title,
         description: form.description || null,
         dueDate: form.dueDate ? form.dueDate + "T00:00:00.000Z" : null,
+        hours: form.hours ? parseFloat(form.hours) : null,
         priority: form.priority,
       });
     } catch {
@@ -925,6 +945,18 @@ function EditTaskForm({
               <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
             ))}
           </select>
+        </div>
+        <div>
+          <label className="text-sm font-medium">Hours</label>
+          <Input
+            type="number"
+            step="0.5"
+            min="0"
+            max="24"
+            value={form.hours}
+            onChange={(e) => setForm({ ...form, hours: e.target.value })}
+            placeholder="e.g. 2"
+          />
         </div>
       </div>
       <div className="flex gap-2">
