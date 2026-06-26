@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
-import { BookOpen, Plus, Pencil, Trash2 } from "lucide-react";
+import { format, startOfWeek, endOfWeek } from "date-fns";
+import { BookOpen, Plus, Pencil, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -53,14 +53,29 @@ const PROMPTS: Record<string, string[]> = {
 function formatReflectionDate(type: string, dateStr: string): string {
   const date = new Date(dateStr);
   if (type === "daily") {
-    return format(date, "EEEE, MMM d, yyyy");
+    return format(date, "EEEE, MMM d");
   } else if (type === "weekly") {
     const ws = startOfWeek(date, { weekStartsOn: 0 });
     const we = endOfWeek(date, { weekStartsOn: 0 });
-    return `Week of ${format(ws, "MMM d")} – ${format(we, "MMM d, yyyy")}`;
+    return `Week of ${format(ws, "MMM d")} – ${format(we, "MMM d")}`;
   } else {
     return format(date, "MMMM yyyy");
   }
+}
+
+function groupByMonth(reflections: Reflection[]): { month: string; items: Reflection[] }[] {
+  const groups: Record<string, Reflection[]> = {};
+  for (const ref of reflections) {
+    const key = format(new Date(ref.date), "yyyy-MM");
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(ref);
+  }
+  return Object.entries(groups)
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([key, items]) => ({
+      month: format(new Date(key + "-01"), "MMMM yyyy"),
+      items,
+    }));
 }
 
 export default function ReflectionsPage() {
@@ -70,6 +85,7 @@ export default function ReflectionsPage() {
   const [editTarget, setEditTarget] = useState<Reflection | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Reflection | null>(null);
   const [filterType, setFilterType] = useState("");
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
 
   const fetchReflections = async () => {
     const params = new URLSearchParams();
@@ -86,6 +102,23 @@ export default function ReflectionsPage() {
   useEffect(() => {
     fetchReflections();
   }, [filterType]);
+
+  const grouped = groupByMonth(reflections);
+
+  useEffect(() => {
+    if (grouped.length > 0 && expandedMonths.size === 0) {
+      setExpandedMonths(new Set([grouped[0].month]));
+    }
+  }, [grouped.length]);
+
+  const toggleMonth = (month: string) => {
+    setExpandedMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(month)) next.delete(month);
+      else next.add(month);
+      return next;
+    });
+  };
 
   const deleteReflection = async () => {
     if (!deleteTarget) return;
@@ -105,7 +138,7 @@ export default function ReflectionsPage() {
         <div>
           <h1 className="text-2xl font-bold">Reflections</h1>
           <p className="text-muted-foreground text-sm">
-            Pause, reflect, grow intentionally
+            {reflections.length} reflection{reflections.length !== 1 ? "s" : ""} logged
           </p>
         </div>
         <Dialog open={showAdd} onOpenChange={setShowAdd}>
@@ -157,55 +190,82 @@ export default function ReflectionsPage() {
           No reflections yet. Take a moment to pause.
         </div>
       ) : (
-        <div className="space-y-4">
-          {reflections.map((ref) => (
-            <Card key={ref.id}>
-              <CardContent className="p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant={
-                        ref.type === "daily"
-                          ? "info"
-                          : ref.type === "weekly"
-                          ? "purple"
-                          : "success"
-                      }
-                    >
-                      {ref.type}
-                    </Badge>
-                    <span className="text-sm text-muted-foreground">
-                      {formatReflectionDate(ref.type, ref.date)}
-                    </span>
+        <div className="space-y-3">
+          {grouped.map(({ month, items }) => {
+            const isExpanded = expandedMonths.has(month);
+            return (
+              <div key={month}>
+                <button
+                  onClick={() => toggleMonth(month)}
+                  className="flex items-center gap-2 w-full text-left px-2 py-2 rounded-lg hover:bg-muted/50 transition-colors"
+                >
+                  {isExpanded ? (
+                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                  )}
+                  <span className="font-semibold text-sm">{month}</span>
+                  <span className="text-xs text-muted-foreground">
+                    ({items.length})
+                  </span>
+                </button>
+
+                {isExpanded && (
+                  <div className="space-y-3 mt-2 ml-6">
+                    {items.map((ref) => (
+                      <Card key={ref.id}>
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant={
+                                  ref.type === "daily"
+                                    ? "info"
+                                    : ref.type === "weekly"
+                                    ? "purple"
+                                    : "success"
+                                }
+                              >
+                                {ref.type}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {formatReflectionDate(ref.type, ref.date)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {ref.mood && (
+                                <span className="text-[10px] text-muted-foreground mr-2">
+                                  Mood {ref.mood}/10
+                                </span>
+                              )}
+                              <button
+                                onClick={() => setEditTarget(ref)}
+                                className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setDeleteTarget(ref)}
+                                className="p-1 text-muted-foreground hover:text-destructive transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                          <p className="text-sm whitespace-pre-wrap line-clamp-3">{ref.content}</p>
+                          {ref.gratitude && (
+                            <p className="mt-2 text-xs text-muted-foreground italic">
+                              Grateful for: {ref.gratitude}
+                            </p>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
                   </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => setEditTarget(ref)}
-                      className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => setDeleteTarget(ref)}
-                      className="p-1 text-muted-foreground hover:text-destructive transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-                <div className="flex gap-3 text-xs text-muted-foreground mb-2">
-                  {ref.mood && <span>Mood: {ref.mood}/10</span>}
-                  {ref.energy && <span>Energy: {ref.energy}/10</span>}
-                </div>
-                <p className="text-sm whitespace-pre-wrap">{ref.content}</p>
-                {ref.gratitude && (
-                  <p className="mt-3 text-sm text-muted-foreground italic border-t pt-3">
-                    Grateful for: {ref.gratitude}
-                  </p>
                 )}
-              </CardContent>
-            </Card>
-          ))}
+              </div>
+            );
+          })}
         </div>
       )}
 
