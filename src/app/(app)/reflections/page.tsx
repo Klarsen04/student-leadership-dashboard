@@ -66,16 +66,20 @@ function formatReflectionDate(type: string, dateStr: string): string {
 function groupByMonth(reflections: Reflection[]): { month: string; items: Reflection[] }[] {
   const groups: Record<string, Reflection[]> = {};
   for (const ref of reflections) {
-    const key = format(new Date(ref.date), "yyyy-MM");
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(ref);
+    const dateStr = ref.date.slice(0, 7);
+    if (!groups[dateStr]) groups[dateStr] = [];
+    groups[dateStr].push(ref);
   }
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   return Object.entries(groups)
     .sort(([a], [b]) => b.localeCompare(a))
-    .map(([key, items]) => ({
-      month: format(new Date(key + "-01"), "MMMM yyyy"),
-      items,
-    }));
+    .map(([key, items]) => {
+      const [year, month] = key.split("-");
+      return {
+        month: `${monthNames[parseInt(month) - 1]} ${year}`,
+        items,
+      };
+    });
 }
 
 export default function ReflectionsPage() {
