@@ -19,51 +19,62 @@ export async function GET(req: NextRequest) {
     start = startOfMonth(now);
     end = endOfMonth(now);
   } else {
-    start = startOfWeek(now, { weekStartsOn: 1 });
-    end = endOfWeek(now, { weekStartsOn: 1 });
+    start = startOfWeek(now, { weekStartsOn: 0 });
+    end = endOfWeek(now, { weekStartsOn: 0 });
   }
 
-  const [events, tasks, checkIns] = await Promise.all([
+  const [events, tasks, reflections, goals] = await Promise.all([
     prisma.event.findMany({
-      where: { userId: session.user.id, startTime: { gte: start }, endTime: { lte: end } },
+      where: { userId: session.user.id, startTime: { lte: end }, endTime: { gte: start } },
     }),
     prisma.task.findMany({
-      where: { userId: session.user.id, status: "done", updatedAt: { gte: start, lte: end } },
+      where: { userId: session.user.id, updatedAt: { gte: start, lte: end } },
     }),
-    prisma.dailyCheckIn.findMany({
+    prisma.reflection.findMany({
       where: { userId: session.user.id, date: { gte: start, lte: end } },
       orderBy: { date: "asc" },
     }),
+    prisma.goal.findMany({
+      where: { userId: session.user.id, status: "active" },
+    }),
   ]);
 
-  const hoursByRole: Record<string, number> = {};
+  const hoursByCalendar: Record<string, number> = {};
   let totalMinutes = 0;
-  let eventsLed = 0;
 
   for (const event of events) {
     const mins = event.actualMinutes || differenceInMinutes(event.endTime, event.startTime);
     totalMinutes += mins;
-    hoursByRole[event.role] = (hoursByRole[event.role] || 0) + mins;
-    if (event.isLed) eventsLed++;
+    const cal = event.category || "Personal";
+    hoursByCalendar[cal] = (hoursByCalendar[cal] || 0) + mins;
   }
 
   const hoursFormatted: Record<string, number> = {};
-  for (const [key, mins] of Object.entries(hoursByRole)) {
+  for (const [key, mins] of Object.entries(hoursByCalendar)) {
     hoursFormatted[key] = Math.round((mins / 60) * 10) / 10;
   }
 
+  const tasksCompleted = tasks.filter((t) => t.status === "done").length;
+  const tasksPending = tasks.filter((t) => t.status !== "done").length;
+
+  const wellness = reflections
+    .filter((r) => r.mood || r.energy)
+    .map((r) => ({
+      date: r.date,
+      type: r.type,
+      energy: r.energy,
+      mood: r.mood,
+    }));
+
   return NextResponse.json({
     totalHours: Math.round((totalMinutes / 60) * 10) / 10,
-    hoursByRole: hoursFormatted,
-    eventsAttended: events.filter((e) => e.attended).length,
-    eventsLed,
-    tasksCompleted: tasks.length,
-    wellness: checkIns.map((c) => ({
-      date: c.date,
-      energy: c.energy,
-      stress: c.stress,
-      mood: c.mood,
-      sleep: c.sleep,
-    })),
+    hoursByCalendar: hoursFormatted,
+    totalEvents: events.length,
+    tasksCompleted,
+    tasksPending,
+    goalsActive: goals.length,
+    goalsProgress: goals.length > 0 ? Math.round(goals.reduce((sum, g) => sum + g.progress, 0) / goals.length) : 0,
+    reflectionCount: reflections.length,
+    wellness,
   });
 }

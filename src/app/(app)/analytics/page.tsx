@@ -2,25 +2,27 @@
 
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
-import { BarChart3, Clock, CheckSquare, TrendingUp } from "lucide-react";
+import { BarChart3, Calendar, CheckSquare, Target, BookOpen, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useRoles, getRoleColor } from "@/lib/useRoles";
+import { Progress } from "@/components/ui/progress";
 
 interface AnalyticsData {
   totalHours: number;
-  hoursByRole: Record<string, number>;
-  eventsAttended: number;
-  eventsLed: number;
+  hoursByCalendar: Record<string, number>;
+  totalEvents: number;
   tasksCompleted: number;
-  wellness: { date: string; energy: number; stress: number; mood: number; sleep: number | null }[];
+  tasksPending: number;
+  goalsActive: number;
+  goalsProgress: number;
+  reflectionCount: number;
+  wellness: { date: string; type: string; energy: number | null; mood: number | null }[];
 }
 
 export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [period, setPeriod] = useState<"week" | "month">("week");
   const [loading, setLoading] = useState(true);
-  const { roles } = useRoles();
 
   useEffect(() => {
     setLoading(true);
@@ -41,7 +43,8 @@ export default function AnalyticsPage() {
     );
   }
 
-  const maxHours = Math.max(...Object.values(data.hoursByRole), 1);
+  const maxCalHours = Math.max(...Object.values(data.hoursByCalendar), 1);
+  const calColors = ["bg-blue-500", "bg-green-500", "bg-purple-500", "bg-orange-500", "bg-pink-500", "bg-cyan-500"];
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -49,7 +52,7 @@ export default function AnalyticsPage() {
         <div>
           <h1 className="text-2xl font-bold">Analytics</h1>
           <p className="text-muted-foreground text-sm">
-            Track your leadership impact
+            Your {period === "week" ? "weekly" : "monthly"} overview
           </p>
         </div>
         <div className="flex border rounded-lg p-1">
@@ -72,71 +75,82 @@ export default function AnalyticsPage() {
 
       {/* Key Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <MetricCard icon={<Clock className="w-5 h-5" />} label="Total Hours" value={`${data.totalHours}h`} />
-        <MetricCard icon={<BarChart3 className="w-5 h-5" />} label="Events" value={`${data.eventsAttended}`} />
+        <MetricCard icon={<Calendar className="w-5 h-5" />} label="Events" value={`${data.totalEvents}`} />
         <MetricCard icon={<CheckSquare className="w-5 h-5" />} label="Tasks Done" value={`${data.tasksCompleted}`} />
-        <MetricCard icon={<TrendingUp className="w-5 h-5" />} label="Events Led" value={`${data.eventsLed}`} />
+        <MetricCard icon={<Target className="w-5 h-5" />} label="Goals Active" value={`${data.goalsActive}`} />
+        <MetricCard icon={<BookOpen className="w-5 h-5" />} label="Reflections" value={`${data.reflectionCount}`} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Time by Role */}
+        {/* Time by Calendar */}
         <Card>
           <CardHeader>
-            <CardTitle>Time Allocation</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="w-5 h-5" />
+              Time by Calendar
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {roles.map((role) => {
-                const hours = data.hoursByRole[role] || 0;
-                const pct = (hours / maxHours) * 100;
-                return (
-                  <div key={role}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium">{role}</span>
-                      <span className="text-sm text-muted-foreground">{hours}h</span>
+            {Object.keys(data.hoursByCalendar).length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4">No events this {period}</p>
+            ) : (
+              <div className="space-y-3">
+                {Object.entries(data.hoursByCalendar)
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([cal, hours], idx) => (
+                    <div key={cal}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium">{cal}</span>
+                        <span className="text-sm text-muted-foreground">{hours}h</span>
+                      </div>
+                      <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${calColors[idx % calColors.length]}`}
+                          style={{ width: `${(hours / maxCalHours) * 100}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${getRoleColor(role)}`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  ))}
+                <div className="pt-2 border-t mt-3">
+                  <p className="text-sm font-medium">Total: {data.totalHours}h</p>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        {/* Leadership Impact */}
+        {/* Goals & Tasks */}
         <Card>
           <CardHeader>
-            <CardTitle>Leadership Impact</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Target className="w-5 h-5" />
+              Progress
+            </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4">
+          <CardContent className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-medium">Goals Progress</span>
+                <span className="text-sm text-muted-foreground">{data.goalsProgress}%</span>
+              </div>
+              <Progress value={data.goalsProgress} />
+              <p className="text-xs text-muted-foreground mt-1">{data.goalsActive} active goal{data.goalsActive !== 1 ? "s" : ""}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 pt-2">
               <div className="p-3 rounded-lg border text-center">
-                <p className="text-2xl font-bold">{data.eventsAttended}</p>
-                <p className="text-xs text-muted-foreground">Events Attended</p>
+                <p className="text-2xl font-bold text-green-600">{data.tasksCompleted}</p>
+                <p className="text-xs text-muted-foreground">Completed</p>
               </div>
               <div className="p-3 rounded-lg border text-center">
-                <p className="text-2xl font-bold">{data.eventsLed}</p>
-                <p className="text-xs text-muted-foreground">Events Led</p>
-              </div>
-              <div className="p-3 rounded-lg border text-center">
-                <p className="text-2xl font-bold">{data.tasksCompleted}</p>
-                <p className="text-xs text-muted-foreground">Tasks Completed</p>
-              </div>
-              <div className="p-3 rounded-lg border text-center">
-                <p className="text-2xl font-bold">{data.totalHours}h</p>
-                <p className="text-xs text-muted-foreground">Total Hours</p>
+                <p className="text-2xl font-bold text-amber-600">{data.tasksPending}</p>
+                <p className="text-xs text-muted-foreground">Pending</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Wellness Trends */}
+      {/* Wellness from Reflections */}
       {data.wellness.length > 0 && (
         <Card>
           <CardHeader>
@@ -147,19 +161,20 @@ export default function AnalyticsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {data.wellness.map((day) => (
-                <div key={day.date} className="flex items-center gap-4 text-sm">
-                  <span className="text-muted-foreground w-16">
-                    {format(new Date(day.date), "MMM d")}
+              {data.wellness.map((entry, idx) => (
+                <div key={idx} className="flex items-center gap-4 text-sm">
+                  <span className="text-muted-foreground w-20 shrink-0">
+                    {format(new Date(entry.date), "MMM d")}
                   </span>
                   <div className="flex-1 flex items-center gap-6">
-                    <WellnessBar label="Energy" value={day.energy} color="bg-green-500" />
-                    <WellnessBar label="Stress" value={day.stress} color="bg-red-500" />
-                    <WellnessBar label="Mood" value={day.mood} color="bg-blue-500" />
-                    {day.sleep && (
-                      <span className="text-xs text-muted-foreground">{day.sleep}h sleep</span>
+                    {entry.energy && (
+                      <WellnessBar label="Energy" value={entry.energy} color="bg-green-500" />
+                    )}
+                    {entry.mood && (
+                      <WellnessBar label="Mood" value={entry.mood} color="bg-blue-500" />
                     )}
                   </div>
+                  <span className="text-[10px] text-muted-foreground capitalize">{entry.type}</span>
                 </div>
               ))}
             </div>
