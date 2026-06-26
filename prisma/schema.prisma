@@ -134,6 +134,7 @@ model Task {
   priority    String    @default("medium")
   status      String    @default("todo")
   role        String    @default("Student")
+  hours       Float?
   goalId      String?
   goal        Goal?     @relation(fields: [goalId], references: [id])
   userId      String

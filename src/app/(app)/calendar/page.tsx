@@ -844,18 +844,24 @@ function EventForm({
     role: event?.role || "",
     category: event?.category || calendars[0]?.name || "",
     location: event?.location || "",
+    hours: "",
   });
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    const payload = {
+      ...form,
+      actualMinutes: form.hours ? Math.round(parseFloat(form.hours) * 60) : undefined,
+    };
+    delete (payload as any).hours;
     try {
       if (event) {
         const res = await fetch("/api/calendar", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: event.id, ...form }),
+          body: JSON.stringify({ id: event.id, ...payload }),
         });
         if (!res.ok) throw new Error();
         toast.success("Event updated");
@@ -863,7 +869,7 @@ function EventForm({
         const res = await fetch("/api/calendar", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(form),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) throw new Error();
         toast.success("Event created");
@@ -939,13 +945,27 @@ function EventForm({
           </select>
         </div>
       </div>
-      <div>
-        <label className="text-sm font-medium">Location</label>
-        <Input
-          value={form.location}
-          onChange={(e) => setForm({ ...form, location: e.target.value })}
-          placeholder="Optional"
-        />
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-sm font-medium">Location</label>
+          <Input
+            value={form.location}
+            onChange={(e) => setForm({ ...form, location: e.target.value })}
+            placeholder="Optional"
+          />
+        </div>
+        <div>
+          <label className="text-sm font-medium">Hours</label>
+          <Input
+            type="number"
+            step="0.5"
+            min="0"
+            max="24"
+            value={form.hours}
+            onChange={(e) => setForm({ ...form, hours: e.target.value })}
+            placeholder="e.g. 1.5"
+          />
+        </div>
       </div>
       <div className="flex gap-2">
         <Button type="submit" className="flex-1" disabled={saving || !form.title}>

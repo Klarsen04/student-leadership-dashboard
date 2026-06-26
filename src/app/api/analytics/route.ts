@@ -91,6 +91,11 @@ export async function GET(req: NextRequest) {
   const tasksCompleted = tasks.filter((t) => t.status === "done").length;
   const tasksPending = tasks.filter((t) => t.status !== "done").length;
 
+  const taskHours = tasks.reduce((sum, t) => sum + ((t as any).hours || 0), 0);
+  if (taskHours > 0) {
+    hoursByCalendar["Tasks"] = (hoursByCalendar["Tasks"] || 0) + Math.round(taskHours * 10) / 10;
+  }
+
   const wellness = reflections
     .filter((r) => r.mood || r.energy)
     .map((r) => ({
