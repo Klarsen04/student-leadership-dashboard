@@ -448,48 +448,67 @@ export default function CalendarPage() {
           </DialogHeader>
           {selectedEvent && !editingEvent && (
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <span className="text-muted-foreground">Start:</span>
-                  <p className="font-medium">{format(new Date(selectedEvent.startTime), "MMM d, h:mm a")}</p>
+              {selectedEvent.id.startsWith("task_") ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    This is a task due on {format(new Date(selectedEvent.startTime), "MMM d, yyyy")}
+                  </p>
+                  <div className="pt-3 border-t">
+                    <a href="/tasks">
+                      <Button variant="outline" size="sm" onClick={() => setSelectedEvent(null)}>
+                        Go to Tasks
+                      </Button>
+                    </a>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-muted-foreground">End:</span>
-                  <p className="font-medium">{format(new Date(selectedEvent.endTime), "MMM d, h:mm a")}</p>
-                </div>
-              </div>
-              {selectedEvent.location && (
-                <div className="text-sm">
-                  <span className="text-muted-foreground">Location:</span>
-                  <p className="font-medium">{selectedEvent.location}</p>
-                </div>
-              )}
-              <div className="flex items-center gap-2 text-sm">
-                <Badge variant={(ROLE_BADGE_VARIANTS[selectedEvent.role] || "secondary") as any}>
-                  {selectedEvent.role}
-                </Badge>
-                {selectedEvent.category && (
-                  <Badge variant="outline">{selectedEvent.category}</Badge>
-                )}
-              </div>
-              <div className="pt-3 border-t flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEditingEvent(true)}
-                >
-                  <Pencil className="w-4 h-4 mr-2" />
-                  Edit
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => deleteEvent(selectedEvent.id)}
-                >
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Start:</span>
+                      <p className="font-medium">{format(new Date(selectedEvent.startTime), "MMM d, h:mm a")}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">End:</span>
+                      <p className="font-medium">{format(new Date(selectedEvent.endTime), "MMM d, h:mm a")}</p>
+                    </div>
+                  </div>
+                  {selectedEvent.location && (
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">Location:</span>
+                      <p className="font-medium">{selectedEvent.location}</p>
+                    </div>
+                  )}
+                  {selectedEvent.role && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Badge variant={(ROLE_BADGE_VARIANTS[selectedEvent.role] || "secondary") as any}>
+                        {selectedEvent.role}
+                      </Badge>
+                      {selectedEvent.category && (
+                        <Badge variant="outline">{selectedEvent.category}</Badge>
+                      )}
+                    </div>
+                  )}
+                  <div className="pt-3 border-t flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setEditingEvent(true)}
+                    >
+                      <Pencil className="w-4 h-4 mr-2" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => deleteEvent(selectedEvent.id)}
+                    >
                   <Trash2 className="w-4 h-4 mr-2" />
                   Delete
                 </Button>
               </div>
+                </>
+              )}
             </div>
           )}
           {selectedEvent && editingEvent && (
