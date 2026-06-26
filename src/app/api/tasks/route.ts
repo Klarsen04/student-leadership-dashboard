@@ -49,18 +49,18 @@ export async function POST(req: NextRequest) {
   }
 
   const { data } = parsed;
-  const task = await prisma.task.create({
-    data: {
-      title: data.title,
-      description: data.description || null,
-      dueDate: data.dueDate ? new Date(data.dueDate) : null,
-      priority: data.priority,
-      role: data.role,
-      hours: data.hours ?? null,
-      goalId: data.goalId || null,
-      userId: session.user.id,
-    },
-  });
+  const createData: Record<string, unknown> = {
+    title: data.title,
+    description: data.description || null,
+    dueDate: data.dueDate ? new Date(data.dueDate) : null,
+    priority: data.priority,
+    role: data.role,
+    goalId: data.goalId || null,
+    userId: session.user.id,
+  };
+  if (data.hours != null) createData.hours = data.hours;
+
+  const task = await prisma.task.create({ data: createData as any });
 
   return NextResponse.json(task, { status: 201 });
 }
