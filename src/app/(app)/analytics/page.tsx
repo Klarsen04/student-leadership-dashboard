@@ -2,20 +2,24 @@
 
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
-import { BarChart3, Calendar, CheckSquare, Target, BookOpen, TrendingUp } from "lucide-react";
+import { Calendar, CheckSquare, Target, BookOpen, TrendingUp, Flame, Zap } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import { useTimeBudget } from "@/lib/useTimeBudget";
 
 interface AnalyticsData {
-  totalHours: number;
+  eventsByCalendar: Record<string, number>;
   hoursByCalendar: Record<string, number>;
   totalEvents: number;
   tasksCompleted: number;
   tasksPending: number;
+  taskStreak: number;
+  reflectionStreak: number;
+  reflectionCount: number;
   goalsActive: number;
   goalsProgress: number;
-  reflectionCount: number;
   wellness: { date: string; type: string; energy: number | null; mood: number | null }[];
 }
 
@@ -23,6 +27,9 @@ export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [period, setPeriod] = useState<"week" | "month">("week");
   const [loading, setLoading] = useState(true);
+  const [editingBudget, setEditingBudget] = useState<string | null>(null);
+  const [budgetValue, setBudgetValue] = useState("");
+  const { budgets, setBudget } = useTimeBudget();
 
   useEffect(() => {
     setLoading(true);
@@ -43,8 +50,14 @@ export default function AnalyticsPage() {
     );
   }
 
-  const maxCalHours = Math.max(...Object.values(data.hoursByCalendar), 1);
-  const calColors = ["bg-blue-500", "bg-green-500", "bg-purple-500", "bg-orange-500", "bg-pink-500", "bg-cyan-500"];
+  const saveBudget = (cal: string) => {
+    const hours = parseFloat(budgetValue);
+    if (!isNaN(hours) && hours > 0) {
+      setBudget(cal, hours);
+    }
+    setEditingBudget(null);
+    setBudgetValue("");
+  };
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -73,53 +86,131 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* Key Metrics */}
+      {/* Streaks & Key Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <MetricCard icon={<Calendar className="w-5 h-5" />} label="Events" value={`${data.totalEvents}`} />
-        <MetricCard icon={<CheckSquare className="w-5 h-5" />} label="Tasks Done" value={`${data.tasksCompleted}`} />
-        <MetricCard icon={<Target className="w-5 h-5" />} label="Goals Active" value={`${data.goalsActive}`} />
-        <MetricCard icon={<BookOpen className="w-5 h-5" />} label="Reflections" value={`${data.reflectionCount}`} />
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="text-orange-500"><Flame className="w-5 h-5" /></div>
+            <div>
+              <p className="text-xl font-bold">{data.taskStreak}</p>
+              <p className="text-xs text-muted-foreground">Day task streak</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="text-purple-500"><BookOpen className="w-5 h-5" /></div>
+            <div>
+              <p className="text-xl font-bold">{data.reflectionStreak}</p>
+              <p className="text-xs text-muted-foreground">Day reflection streak</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="text-primary"><CheckSquare className="w-5 h-5" /></div>
+            <div>
+              <p className="text-xl font-bold">{data.tasksCompleted}</p>
+              <p className="text-xs text-muted-foreground">Tasks done</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="text-primary"><Calendar className="w-5 h-5" /></div>
+            <div>
+              <p className="text-xl font-bold">{data.totalEvents}</p>
+              <p className="text-xs text-muted-foreground">Events</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Time by Calendar */}
+        {/* Time Budget: Planned vs Actual */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5" />
-              Time by Calendar
+              <Zap className="w-5 h-5" />
+              Time Budget
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            {Object.keys(data.hoursByCalendar).length === 0 ? (
+          <CardContent className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              Set weekly hour goals per calendar. Click a bar to set your target.
+            </p>
+            {Object.entries(data.eventsByCalendar).length === 0 && budgets.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4">No events this {period}</p>
             ) : (
               <div className="space-y-3">
-                {Object.entries(data.hoursByCalendar)
-                  .sort(([, a], [, b]) => b - a)
-                  .map(([cal, hours], idx) => (
+                {Array.from(new Set([
+                  ...Object.keys(data.hoursByCalendar),
+                  ...budgets.map((b) => b.calendar),
+                ])).map((cal) => {
+                  const actual = data.hoursByCalendar[cal] || 0;
+                  const budget = budgets.find((b) => b.calendar === cal);
+                  const target = budget?.hoursPerWeek || 0;
+                  const pct = target > 0 ? Math.min(100, (actual / target) * 100) : 0;
+                  const isOver = target > 0 && actual > target;
+
+                  return (
                     <div key={cal}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm font-medium">{cal}</span>
-                        <span className="text-sm text-muted-foreground">{hours}h</span>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs font-medium ${isOver ? "text-destructive" : ""}`}>
+                            {actual}h
+                          </span>
+                          {target > 0 && (
+                            <span className="text-xs text-muted-foreground">/ {target}h</span>
+                          )}
+                          {editingBudget === cal ? (
+                            <form
+                              onSubmit={(e) => { e.preventDefault(); saveBudget(cal); }}
+                              className="flex items-center gap-1"
+                            >
+                              <Input
+                                autoFocus
+                                type="number"
+                                step="0.5"
+                                value={budgetValue}
+                                onChange={(e) => setBudgetValue(e.target.value)}
+                                className="h-6 w-16 text-xs"
+                                placeholder="hrs"
+                                onBlur={() => saveBudget(cal)}
+                              />
+                            </form>
+                          ) : (
+                            <button
+                              onClick={() => { setEditingBudget(cal); setBudgetValue(target ? String(target) : ""); }}
+                              className="text-[10px] text-muted-foreground hover:text-foreground underline"
+                            >
+                              {target > 0 ? "edit" : "set goal"}
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${calColors[idx % calColors.length]}`}
-                          style={{ width: `${(hours / maxCalHours) * 100}%` }}
-                        />
-                      </div>
+                      {target > 0 ? (
+                        <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${isOver ? "bg-destructive" : "bg-primary"}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      ) : (
+                        <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                          <div className="h-full rounded-full bg-muted-foreground/30" style={{ width: "100%" }} />
+                        </div>
+                      )}
                     </div>
-                  ))}
-                <div className="pt-2 border-t mt-3">
-                  <p className="text-sm font-medium">Total: {data.totalHours}h</p>
-                </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Goals & Tasks */}
+        {/* Activity Breakdown */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -146,6 +237,22 @@ export default function AnalyticsPage() {
                 <p className="text-xs text-muted-foreground">Pending</p>
               </div>
             </div>
+            {/* Events by calendar count */}
+            {Object.keys(data.eventsByCalendar).length > 0 && (
+              <div className="pt-3 border-t">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Events by Calendar</p>
+                <div className="space-y-1">
+                  {Object.entries(data.eventsByCalendar)
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([cal, count]) => (
+                      <div key={cal} className="flex items-center justify-between text-sm">
+                        <span>{cal}</span>
+                        <span className="font-medium">{count}</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -182,20 +289,6 @@ export default function AnalyticsPage() {
         </Card>
       )}
     </div>
-  );
-}
-
-function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
-  return (
-    <Card>
-      <CardContent className="p-4 flex items-center gap-3">
-        <div className="text-primary">{icon}</div>
-        <div>
-          <p className="text-xl font-bold">{value}</p>
-          <p className="text-xs text-muted-foreground">{label}</p>
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 
