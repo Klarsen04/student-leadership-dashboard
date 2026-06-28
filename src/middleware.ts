@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { getToken } from "next-auth/jwt";
+
+const protectedPaths = ["/dashboard", "/calendar", "/analytics", "/reflections"];
 
 function generateNonce() {
   const array = new Uint8Array(16);
@@ -12,9 +13,7 @@ function generateNonce() {
   return btoa(binary);
 }
 
-const protectedPaths = ["/dashboard", "/calendar", "/analytics", "/reflections"];
-
-export default async function middleware(request: NextRequest) {
+export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   const isProtected = protectedPaths.some(
@@ -22,10 +21,12 @@ export default async function middleware(request: NextRequest) {
   );
 
   if (isProtected) {
-    const token = await getToken({ req: request });
-    if (!token) {
+    const sessionToken =
+      request.cookies.get("next-auth.session-token") ??
+      request.cookies.get("__Secure-next-auth.session-token");
+    if (!sessionToken) {
       const loginUrl = new URL("/login", request.url);
-      loginUrl.searchParams.set("callbackUrl", request.url);
+      loginUrl.searchParams.set("callbackUrl", pathname);
       return NextResponse.redirect(loginUrl);
     }
   }
@@ -62,6 +63,6 @@ export default async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icons|manifest.json|sw.js|register-sw.js).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icons|manifest.json|sw.js|register-sw.js|api/auth).*)",
   ],
 };
