@@ -21,7 +21,12 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
   // Only fetch same-origin requests to prevent SSRF
-  if (!event.request.url.startsWith(self.location.origin)) {
+  try {
+    const requestUrl = new URL(event.request.url);
+    if (requestUrl.origin !== self.location.origin) {
+      return;
+    }
+  } catch {
     return;
   }
 
