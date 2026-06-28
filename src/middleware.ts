@@ -5,7 +5,11 @@ import { getToken } from "next-auth/jwt";
 function generateNonce() {
   const array = new Uint8Array(16);
   crypto.getRandomValues(array);
-  return Buffer.from(array).toString("base64");
+  let binary = "";
+  for (let i = 0; i < array.length; i++) {
+    binary += String.fromCharCode(array[i]);
+  }
+  return btoa(binary);
 }
 
 const protectedPaths = ["/dashboard", "/calendar", "/analytics", "/reflections"];
