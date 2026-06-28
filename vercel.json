@@ -1,8 +1,4 @@
 {
-  "buildCommand": "npx prisma generate && next build && mkdir -p .next/standalone/node_modules/@aikidosec && cp -r node_modules/@aikidosec/firewall .next/standalone/node_modules/@aikidosec",
-  "framework": "nextjs",
-  "env": {
-    "NODE_OPTIONS": "-r @aikidosec/firewall",
-    "AIKIDO_BLOCK": "false"
-  }
+  "buildCommand": "npx prisma generate && next build",
+  "framework": "nextjs"
 }

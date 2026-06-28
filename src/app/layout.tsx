@@ -1,6 +1,5 @@
 import "./globals.css";
 import { Metadata, Viewport } from "next";
-import { headers } from "next/headers";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
 import { SessionProvider } from "@/components/SessionProvider";
@@ -25,22 +24,20 @@ export const viewport: Viewport = {
   maximumScale: 1,
 };
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const nonce = (await headers()).get("x-nonce") ?? "";
-
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
       </head>
       <body>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem nonce={nonce}>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <SessionProvider>{children}</SessionProvider>
           <Toaster richColors position="bottom-right" />
         </ThemeProvider>
         <SpeedInsights />
         <Analytics />
-        <script src="/register-sw.js" nonce={nonce} defer />
+        <script src="/register-sw.js" defer />
       </body>
     </html>
   );
