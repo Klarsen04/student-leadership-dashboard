@@ -11,7 +11,6 @@
     "db:studio": "npx prisma studio"
   },
   "dependencies": {
-    "@aikidosec/firewall": "1.8.31",
     "@libsql/client": "^0.5.6",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@prisma/adapter-libsql": "^5.22.0",
