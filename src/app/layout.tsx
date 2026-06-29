@@ -11,6 +11,9 @@ export const metadata: Metadata = {
   title: "Student Leadership OS",
   description: "Manage your roles, relationships, and impact across campus leadership",
   manifest: "/manifest.json",
+  verification: {
+    google: "KbW5T_pUL7zFXevHbt6-1zG_s1iFmKhfvuHTEJF--6w",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
