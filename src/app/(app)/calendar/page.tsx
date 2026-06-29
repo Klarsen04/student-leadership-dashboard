@@ -13,7 +13,7 @@ import {
   isWithinInterval,
   differenceInDays,
 } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, Trash2, Pencil, X } from "lucide-react";
+import { RefreshCw, Plus, ChevronLeft, ChevronRight, Trash2, Pencil, X } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,7 @@ type View = "day" | "week" | "month";
 export default function CalendarPage() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<View>("week");
   const [showAdd, setShowAdd] = useState(false);
@@ -112,6 +113,27 @@ export default function CalendarPage() {
   useEffect(() => {
     fetchEvents();
   }, [currentDate, view]);
+
+  const syncCalendars = async () => {
+    setSyncing(true);
+    try {
+      const start = startOfWeek(currentDate, { weekStartsOn: 1 });
+      const end = addDays(start, 14);
+      const res = await fetch("/api/calendar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sync", start: start.toISOString(), end: end.toISOString() }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      toast.success(`Synced ${data.synced} events`);
+      await fetchEvents();
+    } catch {
+      toast.error("Failed to sync calendars");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const navigate = (dir: number) => {
     if (view === "day") setCurrentDate(addDays(currentDate, dir));
@@ -196,6 +218,10 @@ export default function CalendarPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={syncCalendars} disabled={syncing}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
+            Sync Calendars
+          </Button>
           <Button size="sm" onClick={() => setShowAdd(true)}>
             <Plus className="w-4 h-4 mr-2" />
             Event
