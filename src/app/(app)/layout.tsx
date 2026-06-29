@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Sidebar } from "@/components/Sidebar";
+import { InstallPrompt } from "@/components/InstallPrompt";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { status } = useSession();
@@ -29,6 +30,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <main className="flex-1 p-4 md:p-8 overflow-auto md:ml-0 ml-0 pt-16 md:pt-8">
         {children}
       </main>
+      <InstallPrompt />
     </div>
   );
 }

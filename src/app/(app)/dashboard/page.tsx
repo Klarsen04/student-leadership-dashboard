@@ -7,9 +7,7 @@ import {
   Calendar,
   CheckSquare,
   Clock,
-  RefreshCw,
 } from "lucide-react";
-import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,7 +39,6 @@ export default function DashboardPage() {
   const { data: session } = useSession();
   const [events, setEvents] = useState<Event[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -65,32 +62,6 @@ export default function DashboardPage() {
       setTasks(data.tasks || data);
     }
     setLoading(false);
-  };
-
-  const syncOutlook = async () => {
-    setSyncing(true);
-    try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const endOfWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-      const res = await fetch("/api/calendar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "sync",
-          start: today.toISOString(),
-          end: endOfWeek.toISOString(),
-        }),
-      });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      toast.success(`Synced ${data.synced} events`);
-      await fetchData();
-    } catch {
-      toast.error("Failed to sync calendars");
-    } finally {
-      setSyncing(false);
-    }
   };
 
   const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
@@ -125,15 +96,6 @@ export default function DashboardPage() {
             {format(new Date(), "EEEE, MMMM d")}
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={syncOutlook}
-          disabled={syncing}
-        >
-          <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-          Sync Calendars
-        </Button>
       </div>
 
       <div className="grid grid-cols-1 gap-6">
@@ -153,7 +115,7 @@ export default function DashboardPage() {
           <CardContent>
             {events.length === 0 ? (
               <p className="text-muted-foreground text-sm py-4">
-                No events today. Sync your calendars or add events manually.
+                No events today. Add events from the calendar page.
               </p>
             ) : (
               <div className="space-y-3">
