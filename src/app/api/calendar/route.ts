@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { fetchCalendarEvents, categorizeEvent } from "@/lib/microsoft-graph";
+import { syncGoogleCalendar } from "@/lib/google-calendar";
 import { createEventSchema } from "@/lib/validations";
 
 export async function GET(req: NextRequest) {
@@ -40,7 +42,42 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
 
   if (body.action === "sync") {
-    return NextResponse.json({ synced: 0, events: [], message: "Calendar sync is not available" });
+    const start = body.start || new Date().toISOString();
+    const end = body.end || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const allSynced = [];
+
+    // Sync Outlook/Microsoft calendar
+    const outlookEvents = await fetchCalendarEvents(session.user.id, start, end);
+    for (const event of outlookEvents) {
+      const { category, role } = categorizeEvent(event.subject, event.bodyPreview);
+      const upserted = await prisma.event.upsert({
+        where: { outlookId: event.id },
+        update: {
+          title: event.subject,
+          startTime: new Date(event.start.dateTime + "Z"),
+          endTime: new Date(event.end.dateTime + "Z"),
+          location: event.location?.displayName,
+        },
+        create: {
+          title: event.subject,
+          startTime: new Date(event.start.dateTime + "Z"),
+          endTime: new Date(event.end.dateTime + "Z"),
+          location: event.location?.displayName,
+          category,
+          role,
+          outlookId: event.id,
+          userId: session.user.id,
+        },
+      });
+      allSynced.push(upserted);
+    }
+
+    // Sync Google Calendar
+    const googleSynced = await syncGoogleCalendar(session.user.id, start, end);
+    allSynced.push(...googleSynced);
+
+    return NextResponse.json({ synced: allSynced.length, events: allSynced });
   }
 
   const parsed = createEventSchema.safeParse(body);
