@@ -207,6 +207,19 @@ function LoginForm() {
             Microsoft
           </button>
         </div>
+
+        <div className="text-center mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            By continuing, you agree to our{" "}
+            <a href="/terms" className="text-blue-600 dark:text-blue-400 hover:underline">
+              Terms of Service
+            </a>{" "}
+            and{" "}
+            <a href="/privacy" className="text-blue-600 dark:text-blue-400 hover:underline">
+              Privacy Policy
+            </a>
+          </p>
+        </div>
       </div>
     </div>
   );
