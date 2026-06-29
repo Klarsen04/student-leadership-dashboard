@@ -141,7 +141,7 @@ export default function TermsPage() {
         <h2>15. Contact Us</h2>
         <p>
           If you have questions about these Terms of Service, contact us at:{" "}
-          <a href="mailto:kirstylarsen3@gmail.com">kirstylarsen3@gmail.com</a>
+          <a href="mailto:studentleadershipdashboard@gmail.com">studentleadershipdashboard@gmail.com</a>
         </p>
       </div>
     </div>

@@ -141,7 +141,7 @@ export default function PrivacyPage() {
         <p>
           If you have questions about this Privacy Policy or wish to exercise your data
           rights, contact us at:{" "}
-          <a href="mailto:kirstylarsen3@gmail.com">kirstylarsen3@gmail.com</a>
+          <a href="mailto:studentleadershipdashboard@gmail.com">studentleadershipdashboard@gmail.com</a>
         </p>
       </div>
     </div>
