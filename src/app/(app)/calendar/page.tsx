@@ -14,7 +14,7 @@ import {
   isTomorrow,
   isThisWeek,
 } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, Trash2, Pencil, X, BookOpen, Flame } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Trash2, Pencil, X, BookOpen, Flame, AlertTriangle, Clock, MapPin, User, GraduationCap } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -82,6 +82,109 @@ const MONTH_THEMES: Record<number, { bg: string; accent: string; name: string }>
   10: { bg: "#fef9c3", accent: "#a3e635", name: "November" },
   11: { bg: "#f0fdf4", accent: "#4ade80", name: "December" },
 };
+
+interface ScheduleConflict {
+  class1: ClassBlock;
+  class2: ClassBlock;
+  day: string;
+}
+
+function getMinutesFromTime(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
+function findConflicts(classes: ClassBlock[]): ScheduleConflict[] {
+  const conflicts: ScheduleConflict[] = [];
+  const CLASS_DAY_MAP: Record<string, number[]> = {
+    MWF: [1, 3, 5], TuTh: [2, 4], MW: [1, 3], TuThF: [2, 4, 5],
+    Mon: [1], Tue: [2], Wed: [3], Thu: [4], Fri: [5], Sat: [6], Sun: [0],
+  };
+  const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  for (let i = 0; i < classes.length; i++) {
+    for (let j = i + 1; j < classes.length; j++) {
+      const a = classes[i], b = classes[j];
+      const aDays = a.days.flatMap(d => CLASS_DAY_MAP[d] || []);
+      const bDays = b.days.flatMap(d => CLASS_DAY_MAP[d] || []);
+      const overlap = aDays.filter(d => bDays.includes(d));
+      if (overlap.length > 0) {
+        const aStart = getMinutesFromTime(a.startTime), aEnd = getMinutesFromTime(a.endTime);
+        const bStart = getMinutesFromTime(b.startTime), bEnd = getMinutesFromTime(b.endTime);
+        if (aStart < bEnd && bStart < aEnd) {
+          overlap.forEach(d => conflicts.push({ class1: a, class2: b, day: DAY_LABELS[d] }));
+        }
+      }
+    }
+  }
+  return conflicts;
+}
+
+function getNextClass(classes: ClassBlock[]): { cls: ClassBlock; minutesUntil: number } | null {
+  if (classes.length === 0) return null;
+  const now = new Date();
+  const dow = now.getDay();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const CLASS_DAY_MAP: Record<string, number[]> = {
+    MWF: [1, 3, 5], TuTh: [2, 4], MW: [1, 3], TuThF: [2, 4, 5],
+    Mon: [1], Tue: [2], Wed: [3], Thu: [4], Fri: [5], Sat: [6], Sun: [0],
+  };
+
+  const todayClasses = classes
+    .filter(cls => cls.days.some(d => (CLASS_DAY_MAP[d] || []).includes(dow)))
+    .filter(cls => getMinutesFromTime(cls.startTime) > nowMinutes)
+    .sort((a, b) => getMinutesFromTime(a.startTime) - getMinutesFromTime(b.startTime));
+
+  if (todayClasses.length > 0) {
+    const cls = todayClasses[0];
+    return { cls, minutesUntil: getMinutesFromTime(cls.startTime) - nowMinutes };
+  }
+
+  for (let offset = 1; offset <= 7; offset++) {
+    const targetDow = (dow + offset) % 7;
+    const nextDayClasses = classes
+      .filter(cls => cls.days.some(d => (CLASS_DAY_MAP[d] || []).includes(targetDow)))
+      .sort((a, b) => getMinutesFromTime(a.startTime) - getMinutesFromTime(b.startTime));
+    if (nextDayClasses.length > 0) {
+      const cls = nextDayClasses[0];
+      const minutesUntil = (offset * 24 * 60) - nowMinutes + getMinutesFromTime(cls.startTime);
+      return { cls, minutesUntil };
+    }
+  }
+  return null;
+}
+
+function formatCountdown(minutes: number): string {
+  if (minutes < 60) return `${minutes}min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h < 24) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  const d = Math.floor(h / 24);
+  const rh = h % 24;
+  return rh > 0 ? `${d}d ${rh}h` : `${d}d`;
+}
+
+function findGaps(classes: ClassBlock[], day: Date): { start: number; end: number }[] {
+  const dow = day.getDay();
+  const CLASS_DAY_MAP: Record<string, number[]> = {
+    MWF: [1, 3, 5], TuTh: [2, 4], MW: [1, 3], TuThF: [2, 4, 5],
+    Mon: [1], Tue: [2], Wed: [3], Thu: [4], Fri: [5], Sat: [6], Sun: [0],
+  };
+  const dayClasses = classes
+    .filter(cls => cls.days.some(d => (CLASS_DAY_MAP[d] || []).includes(dow)))
+    .map(cls => ({ start: getMinutesFromTime(cls.startTime), end: getMinutesFromTime(cls.endTime) }))
+    .sort((a, b) => a.start - b.start);
+
+  const gaps: { start: number; end: number }[] = [];
+  for (let i = 0; i < dayClasses.length - 1; i++) {
+    const gapStart = dayClasses[i].end;
+    const gapEnd = dayClasses[i + 1].start;
+    if (gapEnd - gapStart >= 30) {
+      gaps.push({ start: gapStart, end: gapEnd });
+    }
+  }
+  return gaps;
+}
 
 const CLASSES_STORAGE_KEY = "leadership-os-classes";
 
@@ -211,9 +314,25 @@ export default function CalendarPage() {
   const [newCalName, setNewCalName] = useState("");
   const [newCalColor, setNewCalColor] = useState("bg-blue-500");
   const [calendarToDelete, setCalendarToDelete] = useState<string | null>(null);
+  const [selectedClass, setSelectedClass] = useState<ClassBlock | null>(null);
   const { calendars, addCalendar, deleteCalendar, addTag, deleteTag, getCalendarColor, getTagsForCalendar, COLOR_OPTIONS } = useCalendars();
 
   useEffect(() => { setClasses(getStoredClasses()); }, []);
+
+  const nextUp = useMemo(() => getNextClass(classes), [classes]);
+  const conflicts = useMemo(() => findConflicts(classes), [classes]);
+  const totalCredits = useMemo(() => classes.reduce((sum, c) => sum + c.creditHours, 0), [classes]);
+  const weeklyHours = useMemo(() => {
+    const CLASS_DAY_MAP: Record<string, number[]> = {
+      MWF: [1, 3, 5], TuTh: [2, 4], MW: [1, 3], TuThF: [2, 4, 5],
+      Mon: [1], Tue: [2], Wed: [3], Thu: [4], Fri: [5], Sat: [6], Sun: [0],
+    };
+    return classes.reduce((sum, cls) => {
+      const meetingsPerWeek = cls.days.flatMap(d => CLASS_DAY_MAP[d] || []).length;
+      const durationHrs = (getMinutesFromTime(cls.endTime) - getMinutesFromTime(cls.startTime)) / 60;
+      return sum + meetingsPerWeek * durationHrs;
+    }, 0);
+  }, [classes]);
 
   const fetchEvents = async () => {
     let start: Date, end: Date;
@@ -486,6 +605,46 @@ export default function CalendarPage() {
         )}
       </header>
 
+      {/* Next Up Banner + Conflicts */}
+      <div className="max-w-7xl mx-auto mb-4 space-y-2">
+        {nextUp && (
+          <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-white border border-black/5 shadow-sm">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: nextUp.cls.color }}>
+              <GraduationCap className="w-4 h-4 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-black/50 font-medium">Next Up</p>
+              <p className="text-sm font-semibold text-black truncate">{nextUp.cls.title}</p>
+            </div>
+            <div className="flex items-center gap-3 text-xs text-black/60 shrink-0">
+              {nextUp.cls.location && (
+                <span className="flex items-center gap-1">
+                  <MapPin className="w-3 h-3" />{nextUp.cls.location}
+                </span>
+              )}
+              <span className="flex items-center gap-1">
+                <Clock className="w-3 h-3" />{nextUp.cls.startTime}
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-semibold text-xs">
+                in {formatCountdown(nextUp.minutesUntil)}
+              </span>
+            </div>
+          </div>
+        )}
+        {conflicts.length > 0 && (
+          <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-50 border border-amber-200">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <p className="text-xs text-amber-800">
+              <span className="font-semibold">Schedule conflict:</span>{" "}
+              {conflicts.slice(0, 2).map((c, i) => (
+                <span key={i}>{i > 0 && " • "}{c.class1.title} & {c.class2.title} ({c.day})</span>
+              ))}
+              {conflicts.length > 2 && <span> +{conflicts.length - 2} more</span>}
+            </p>
+          </div>
+        )}
+      </div>
+
       {/* Main Content */}
       <div className="max-w-7xl mx-auto flex gap-4">
         {/* Calendar Area */}
@@ -493,9 +652,9 @@ export default function CalendarPage() {
           {loading ? (
             <div className="text-center text-black/40 py-12">Loading...</div>
           ) : view === "month" ? (
-            <MonthViewCute events={filteredEvents} currentDate={currentDate} onEventClick={setSelectedEvent} getColor={getCalendarColor} classes={classes} />
+            <MonthViewCute events={filteredEvents} currentDate={currentDate} onEventClick={setSelectedEvent} getColor={getCalendarColor} classes={classes} onClassClick={setSelectedClass} />
           ) : (
-            <TimeGridView events={filteredEvents} currentDate={currentDate} view={view} onEventClick={setSelectedEvent} getColor={getCalendarColor} classes={classes} />
+            <TimeGridView events={filteredEvents} currentDate={currentDate} view={view} onEventClick={setSelectedEvent} getColor={getCalendarColor} classes={classes} onClassClick={setSelectedClass} />
           )}
         </div>
 
@@ -538,12 +697,19 @@ export default function CalendarPage() {
             {/* Classes section */}
             {classes.length > 0 && (
               <div className="mt-4 pt-3 border-t border-black/5">
-                <p className="text-[10px] uppercase tracking-wider font-semibold text-black/40 mb-2">Classes</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[10px] uppercase tracking-wider font-semibold text-black/40">Classes</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-purple-600">{totalCredits} cr</span>
+                    <span className="text-[10px] text-black/30">•</span>
+                    <span className="text-[10px] text-black/40">{weeklyHours.toFixed(1)}h/wk</span>
+                  </div>
+                </div>
                 {classes.map((cls) => (
-                  <div key={cls.id} className="flex items-center gap-2 py-1 group">
+                  <div key={cls.id} className="flex items-center gap-2 py-1 group cursor-pointer" onClick={() => setSelectedClass(cls)}>
                     <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: cls.color }} />
                     <span className="text-xs text-black/70 flex-1 truncate">{cls.title}</span>
-                    <button onClick={() => deleteClass(cls.id)} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-500 transition-opacity">
+                    <button onClick={(e) => { e.stopPropagation(); deleteClass(cls.id); }} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-500 transition-opacity">
                       <X className="w-3 h-3" />
                     </button>
                   </div>
@@ -612,6 +778,69 @@ export default function CalendarPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Class Detail Dialog */}
+      <Dialog open={!!selectedClass} onOpenChange={(open) => { if (!open) setSelectedClass(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-sm" style={{ background: selectedClass?.color }} />
+                {selectedClass?.title}
+              </div>
+            </DialogTitle>
+            <DialogDescription>Class details</DialogDescription>
+          </DialogHeader>
+          {selectedClass && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <User className="w-4 h-4 text-black/40" />
+                  <div>
+                    <p className="text-black/50 text-xs">Professor</p>
+                    <p className="font-medium text-black">{selectedClass.professor || "—"}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <MapPin className="w-4 h-4 text-black/40" />
+                  <div>
+                    <p className="text-black/50 text-xs">Location</p>
+                    <p className="font-medium text-black">{selectedClass.location || "—"}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <Clock className="w-4 h-4 text-black/40" />
+                  <div>
+                    <p className="text-black/50 text-xs">Time</p>
+                    <p className="font-medium text-black">{selectedClass.startTime} – {selectedClass.endTime}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <GraduationCap className="w-4 h-4 text-black/40" />
+                  <div>
+                    <p className="text-black/50 text-xs">Credits</p>
+                    <p className="font-medium text-black">{selectedClass.creditHours}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <BookOpen className="w-4 h-4 text-black/40" />
+                  <div>
+                    <p className="text-black/50 text-xs">Days</p>
+                    <p className="font-medium text-black">{selectedClass.days.join(", ")}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="pt-3 border-t flex items-center gap-2">
+                <Button variant="destructive" size="sm" onClick={() => { deleteClass(selectedClass.id); setSelectedClass(null); }}>
+                  <Trash2 className="w-4 h-4 mr-1" />Remove Class
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <ConfirmDialog open={!!tagToDelete} onOpenChange={(open) => !open && setTagToDelete(null)} title={`Delete "${tagToDelete}" tag?`} description="Events with this tag will have it removed." onConfirm={confirmDeleteTag} />
       <ConfirmDialog open={!!calendarToDelete} onOpenChange={(open) => !open && setCalendarToDelete(null)} title="Delete this calendar?" description="This will delete the calendar and its events." onConfirm={async () => {
         if (calendarToDelete) {
@@ -632,8 +861,8 @@ export default function CalendarPage() {
 }
 
 /* ---------- Time Grid View (Day / 3-Day / 5-Day / Week) ---------- */
-function TimeGridView({ events, currentDate, view, onEventClick, getColor, classes }: {
-  events: CalendarEvent[]; currentDate: Date; view: View; onEventClick: (e: CalendarEvent) => void; getColor: (category: string) => string; classes: ClassBlock[];
+function TimeGridView({ events, currentDate, view, onEventClick, getColor, classes, onClassClick }: {
+  events: CalendarEvent[]; currentDate: Date; view: View; onEventClick: (e: CalendarEvent) => void; getColor: (category: string) => string; classes: ClassBlock[]; onClassClick: (cls: ClassBlock) => void;
 }) {
   const dayCount = view === "day" ? 1 : view === "3day" ? 3 : view === "5day" ? 5 : 7;
   const weekStart = view === "5day" || view === "week" ? startOfWeek(currentDate, { weekStartsOn: 1 }) : currentDate;
@@ -702,16 +931,36 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
           {days.map((day) => {
             const dayClasses = getClassesForDay(day);
             const dayEvents = getEventsForDay(day);
+            const gaps = findGaps(classes, day);
             return (
               <div key={day.toISOString()} className="relative border-l border-black/5">
                 {hours.map((hour) => (
                   <div key={hour} className="h-14 border-b border-black/5" />
                 ))}
+                {/* Gap indicators */}
+                {gaps.map((gap, i) => {
+                  const top = ((gap.start / 60) - 7) * 56;
+                  const height = ((gap.end - gap.start) / 60) * 56;
+                  if (top < 0) return null;
+                  const gapMins = gap.end - gap.start;
+                  return (
+                    <div
+                      key={`gap-${i}`}
+                      className="absolute left-1 right-1 rounded-lg border border-dashed border-black/10 flex items-center justify-center pointer-events-none"
+                      style={{ top: `${top}px`, height: `${height}px`, background: "repeating-linear-gradient(135deg, transparent, transparent 4px, rgba(0,0,0,0.02) 4px, rgba(0,0,0,0.02) 8px)" }}
+                    >
+                      <span className="text-[9px] text-black/30 font-medium bg-white/80 px-1.5 py-0.5 rounded">
+                        {gapMins >= 60 ? `${Math.floor(gapMins / 60)}h ${gapMins % 60 > 0 ? `${gapMins % 60}m` : ""} free` : `${gapMins}m free`}
+                      </span>
+                    </div>
+                  );
+                })}
                 {/* Class blocks */}
                 {dayClasses.map((cls) => (
-                  <div
+                  <button
                     key={cls.id}
-                    className="absolute left-1 right-1 rounded-lg px-2 py-1 overflow-hidden shadow-sm border border-white/30"
+                    onClick={() => onClassClick(cls)}
+                    className="absolute left-1 right-1 rounded-lg px-2 py-1 overflow-hidden shadow-sm border border-white/30 text-left cursor-pointer hover:shadow-md transition-shadow"
                     style={{
                       top: `${timeToY(cls.startTime)}px`,
                       height: `${hourHeight(cls.startTime, cls.endTime)}px`,
@@ -722,7 +971,7 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
                     <p className="text-[11px] font-bold text-white truncate drop-shadow-sm">{cls.title}</p>
                     <p className="text-[9px] text-white/80 truncate">{cls.location}</p>
                     <p className="text-[9px] text-white/70">{cls.startTime} - {cls.endTime}</p>
-                  </div>
+                  </button>
                 ))}
                 {/* Event blocks */}
                 {dayEvents.map((ev) => {
@@ -757,8 +1006,8 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
 }
 
 /* ---------- Month View (Cute Seasonal) ---------- */
-function MonthViewCute({ events, currentDate, onEventClick, getColor, classes }: {
-  events: CalendarEvent[]; currentDate: Date; onEventClick: (e: CalendarEvent) => void; getColor: (category: string) => string; classes: ClassBlock[];
+function MonthViewCute({ events, currentDate, onEventClick, getColor, classes, onClassClick }: {
+  events: CalendarEvent[]; currentDate: Date; onEventClick: (e: CalendarEvent) => void; getColor: (category: string) => string; classes: ClassBlock[]; onClassClick: (cls: ClassBlock) => void;
 }) {
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
