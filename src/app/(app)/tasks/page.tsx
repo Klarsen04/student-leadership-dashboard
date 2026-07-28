@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { format, startOfWeek, addDays, addWeeks, isToday, isSameWeek } from "date-fns";
-import { Plus, Check, Trash2, Play, Pause, RotateCcw, Timer, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
+import { Plus, Check, Trash2, Play, Pause, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,7 @@ import {
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PriorityDot } from "@/components/PriorityDot";
 import { TASK_PRIORITIES } from "@/lib/utils";
-import { TapeShelf, TAPES } from "@/components/tasks/TapeShelf";
+import { TAPES, DayTabs, CassetteDisplay } from "@/components/tasks/TapeShelf";
 
 interface Task {
   id: string;
@@ -32,16 +32,6 @@ interface Task {
   goal: { id: string; title: string } | null;
   createdAt: string;
 }
-
-const DAY_THEMES = [
-  { name: "Sunday", short: "Sun", gradient: "from-rose-500/10 to-rose-500/5", accent: "bg-rose-500", accentLight: "bg-rose-500/10 text-rose-400", border: "border-rose-500/20", tabActive: "bg-rose-500 text-white shadow-rose-500/30 shadow-lg", ring: "ring-rose-500/30" },
-  { name: "Monday", short: "Mon", gradient: "from-purple-500/10 to-purple-500/5", accent: "bg-purple-500", accentLight: "bg-purple-500/10 text-purple-400", border: "border-purple-500/20", tabActive: "bg-purple-500 text-white shadow-purple-500/30 shadow-lg", ring: "ring-purple-500/30" },
-  { name: "Tuesday", short: "Tue", gradient: "from-pink-500/10 to-pink-500/5", accent: "bg-pink-500", accentLight: "bg-pink-500/10 text-pink-400", border: "border-pink-500/20", tabActive: "bg-pink-500 text-white shadow-pink-500/30 shadow-lg", ring: "ring-pink-500/30" },
-  { name: "Wednesday", short: "Wed", gradient: "from-emerald-500/10 to-emerald-500/5", accent: "bg-emerald-500", accentLight: "bg-emerald-500/10 text-emerald-400", border: "border-emerald-500/20", tabActive: "bg-emerald-500 text-white shadow-emerald-500/30 shadow-lg", ring: "ring-emerald-500/30" },
-  { name: "Thursday", short: "Thu", gradient: "from-amber-500/10 to-amber-500/5", accent: "bg-amber-500", accentLight: "bg-amber-500/10 text-amber-400", border: "border-amber-500/20", tabActive: "bg-amber-500 text-white shadow-amber-500/30 shadow-lg", ring: "ring-amber-500/30" },
-  { name: "Friday", short: "Fri", gradient: "from-orange-500/10 to-orange-500/5", accent: "bg-orange-500", accentLight: "bg-orange-500/10 text-orange-400", border: "border-orange-500/20", tabActive: "bg-orange-500 text-white shadow-orange-500/30 shadow-lg", ring: "ring-orange-500/30" },
-  { name: "Saturday", short: "Sat", gradient: "from-blue-500/10 to-blue-500/5", accent: "bg-blue-500", accentLight: "bg-blue-500/10 text-blue-400", border: "border-blue-500/20", tabActive: "bg-blue-500 text-white shadow-blue-500/30 shadow-lg", ring: "ring-blue-500/30" },
-];
 
 export default function TasksPage() {
   const searchParams = useSearchParams();
@@ -67,13 +57,12 @@ export default function TasksPage() {
   const [dailyNote, setDailyNote] = useState("");
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const [weekOffset, setWeekOffset] = useState(0);
-  const [shelfExpanded, setShelfExpanded] = useState(true);
 
   const weekStart = addWeeks(startOfWeek(new Date(), { weekStartsOn: 0 }), weekOffset);
   const selectedDate = addDays(weekStart, selectedDay);
-  const theme = DAY_THEMES[selectedDay];
   const isCurrentWeek = isSameWeek(new Date(), weekStart, { weekStartsOn: 0 });
   const noteKey = `leadership-os-note-${format(selectedDate, "yyyy-MM-dd")}`;
+  const tape = TAPES[selectedDay];
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -126,8 +115,7 @@ export default function TasksPage() {
   const overdueTasks = tasks.filter((t) => {
     if (t.status === "done") return false;
     if (!t.dueDate) return false;
-    const taskDate = t.dueDate.slice(0, 10);
-    return taskDate < today;
+    return t.dueDate.slice(0, 10) < today;
   });
 
   const dayTasks = tasks.filter((t) => {
@@ -142,20 +130,6 @@ export default function TasksPage() {
   const doneTasks = dayTasks.filter((t) => t.status === "done");
   const totalDayTasks = dayTasks.length;
   const completionPercent = totalDayTasks > 0 ? Math.round((doneTasks.length / totalDayTasks) * 100) : 0;
-
-  // Compute task counts per day for the tape shelf progress indicators
-  const taskCounts: Record<number, { total: number; done: number }> = {};
-  for (let i = 0; i <= 6; i++) {
-    const dayDate = format(addDays(weekStart, i), "yyyy-MM-dd");
-    const dayTasksForCount = tasks.filter((t) => {
-      if (!t.dueDate) return false;
-      return t.dueDate.slice(0, 10) === dayDate;
-    });
-    taskCounts[i] = {
-      total: dayTasksForCount.length,
-      done: dayTasksForCount.filter((t) => t.status === "done").length,
-    };
-  }
 
   const updateTaskStatus = async (task: Task, newStatus: string) => {
     try {
@@ -199,11 +173,7 @@ export default function TasksPage() {
       const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: newTaskTitle,
-          dueDate,
-          priority: "medium",
-        }),
+        body: JSON.stringify({ title: newTaskTitle, dueDate, priority: "medium" }),
       });
       if (!res.ok) throw new Error();
       const task = await res.json();
@@ -215,13 +185,12 @@ export default function TasksPage() {
         });
         task.status = status;
       }
-      const newTask = {
+      setTasks((prev) => [...prev, {
         ...task,
         dueDate: task.dueDate || dueDate + "T00:00:00.000Z",
         createdAt: task.createdAt || new Date().toISOString(),
         status: task.status || status,
-      };
-      setTasks((prev) => [...prev, newTask]);
+      }]);
       setNewTaskTitle("");
       setAddingTo(null);
       toast.success("Task added");
@@ -250,362 +219,301 @@ export default function TasksPage() {
 
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Tape shelf skeleton */}
-        <div className="flex items-end justify-center gap-2 h-64 px-4">
-          {Array.from({ length: 7 }).map((_, i) => (
-            <div
-              key={i}
-              className="bg-muted/50 animate-pulse rounded-sm"
-              style={{ width: i === 0 ? 80 : 36, height: `${180 + Math.random() * 40}px` }}
-            />
-          ))}
-        </div>
-        <div className="text-center space-y-2">
-          <div className="h-9 w-40 mx-auto rounded-lg bg-muted animate-pulse" />
-          <div className="h-5 w-64 mx-auto rounded bg-muted animate-pulse" />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-64 rounded-2xl bg-muted/50 border border-border animate-pulse" />
-          ))}
+      <div className="h-full min-h-screen flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 animate-pulse" />
+          <span className="text-sm text-muted-foreground">Loading your tapes...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 animate-fade-in">
-      {/* Header with branding */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-bold tracking-tight uppercase text-muted-foreground" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif", letterSpacing: "0.1em" }}>
-            Task Tape
-          </h1>
-        </div>
+    <div
+      className="min-h-screen -m-4 md:-m-8 p-4 md:p-8 flex flex-col overflow-hidden transition-all duration-700"
+      style={{ background: tape.gradientBg }}
+    >
+      {/* Header */}
+      <header className="flex items-center justify-between shrink-0 mb-4 lg:mb-6">
         <div className="flex items-center gap-2">
-          {/* Week navigation */}
           <button
             onClick={() => setWeekOffset((w) => w - 1)}
-            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            className="p-1.5 rounded-md hover:bg-black/5 text-foreground/50 hover:text-foreground transition-colors"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <span className="text-xs text-muted-foreground font-medium min-w-[100px] text-center">
-            {format(weekStart, "MMM d")} - {format(addDays(weekStart, 6), "MMM d")}
+          <span className="text-xs text-foreground/50 font-medium min-w-[100px] text-center">
+            {format(weekStart, "MMM d")} – {format(addDays(weekStart, 6), "MMM d")}
           </span>
           <button
             onClick={() => setWeekOffset((w) => w + 1)}
-            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            className="p-1.5 rounded-md hover:bg-black/5 text-foreground/50 hover:text-foreground transition-colors"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
           {!isCurrentWeek && (
             <button
               onClick={() => { setWeekOffset(0); setSelectedDay(new Date().getDay()); }}
-              className="text-xs px-2 py-0.5 rounded-full bg-primary text-primary-foreground hover:opacity-90 ml-1"
+              className="text-xs px-2 py-0.5 rounded-full bg-foreground text-background hover:opacity-90 ml-1"
             >
               Today
             </button>
           )}
         </div>
-      </div>
-
-      {/* Tape Shelf - Collapsible */}
-      <div className="relative">
-        <button
-          onClick={() => setShelfExpanded(!shelfExpanded)}
-          className="absolute -top-1 right-0 z-20 p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-          title={shelfExpanded ? "Collapse shelf" : "Expand shelf"}
-        >
-          <ChevronDown className={`w-4 h-4 transition-transform ${shelfExpanded ? "" : "-rotate-90"}`} />
-        </button>
-
-        <div className={`transition-all duration-500 overflow-hidden ${shelfExpanded ? "max-h-[400px] opacity-100" : "max-h-0 opacity-0"}`}>
-          <TapeShelf
-            selectedDay={selectedDay}
-            onSelectDay={setSelectedDay}
-            taskCounts={taskCounts}
-          />
+        <div className="flex items-center gap-3">
+          <span className="text-foreground/70 font-serif text-xl" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}>
+            Task Tape
+          </span>
         </div>
+      </header>
 
-        {/* Compact day tabs fallback when shelf is collapsed */}
-        {!shelfExpanded && (
-          <div className="flex items-center justify-center gap-1.5 py-2">
-            {DAY_THEMES.map((day, idx) => {
-              const dayDate = addDays(weekStart, idx);
-              const isActive = idx === selectedDay;
-              const isCurrentDay = isToday(dayDate);
-              return (
-                <button
-                  key={day.name}
-                  onClick={() => setSelectedDay(idx)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                    isActive
-                      ? day.tabActive + " shadow-sm scale-105"
-                      : isCurrentDay
-                      ? "bg-muted ring-2 " + day.ring + " text-foreground"
-                      : "bg-muted/50 text-muted-foreground hover:bg-muted"
-                  }`}
-                >
-                  {day.short}
-                </button>
-              );
-            })}
+      {/* Main two-panel layout */}
+      <main className="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(300px,0.85fr)_minmax(400px,1.1fr)] gap-6 lg:gap-10">
+        {/* Left panel: Cassette + Focus */}
+        <section className="flex flex-col gap-4 order-1 lg:order-none">
+          {/* Cassette display */}
+          <div className="flex-1 min-h-[250px] lg:min-h-[350px] relative">
+            <CassetteDisplay selectedDay={selectedDay} />
           </div>
-        )}
-      </div>
 
-      {/* Completion Bar */}
-      <div className="flex items-center justify-between max-w-md mx-auto">
-        <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all duration-500 ${theme.accent}`}
-            style={{ width: `${completionPercent}%` }}
-          />
-        </div>
-        <span className="ml-3 text-sm font-bold text-muted-foreground">
-          {completionPercent}%
-          <span className="text-[10px] ml-0.5 uppercase tracking-wider">complete</span>
-        </span>
-      </div>
-
-      {/* Task counts summary */}
-      <div className="text-center">
-        <p className="text-sm text-muted-foreground">
-          {totalDayTasks} {totalDayTasks === 1 ? "task" : "tasks"} · {doneTasks.length} done
-        </p>
-      </div>
-
-      {/* Overdue Tasks */}
-      {overdueTasks.length > 0 && (
-        <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-destructive">
-              Overdue
-            </h3>
-            <span className="text-xs text-destructive/70">· {overdueTasks.length}</span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-            {overdueTasks.map((task) => (
-              <div
-                key={task.id}
-                className="flex items-center gap-2.5 rounded-xl border border-destructive/20 bg-background p-3"
-              >
-                <button
-                  onClick={() => updateTaskStatus(task, "done")}
-                  className="w-4 h-4 rounded-full border-2 border-destructive/40 hover:border-destructive shrink-0 transition-colors"
-                  style={{ width: 18, height: 18 }}
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium leading-tight truncate">{task.title}</p>
-                  <p className="text-[10px] text-destructive/70">
-                    Due {task.dueDate ? format(new Date(task.dueDate), "MMM d") : ""}
-                  </p>
+          {/* Focus Session Button */}
+          <div className="flex flex-col items-center gap-2 shrink-0">
+            {focusRunning ? (
+              <div className="flex flex-col items-center gap-2">
+                <div className="text-3xl font-mono font-bold text-foreground">
+                  {formatTimer(focusTime - focusElapsed)}
                 </div>
-                <button
-                  onClick={() => setDeleteTarget(task)}
-                  className="p-1 text-muted-foreground hover:text-destructive transition-colors"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setFocusRunning(false)}
+                    className="h-12 flex items-center gap-2.5 px-7 rounded-full bg-foreground text-background font-medium shadow-lg hover:opacity-90 transition-opacity"
+                  >
+                    <Pause className="w-4 h-4" />
+                    Pause
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (focusElapsed > 60 && focusTask) {
+                        const hoursSpent = Math.round((focusElapsed / 3600) * 10) / 10;
+                        const currentHours = focusTask.hours || 0;
+                        fetch("/api/tasks", {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ id: focusTask.id, hours: currentHours + hoursSpent }),
+                        }).then(() => {
+                          setTasks((prev) => prev.map((t) => t.id === focusTask.id ? { ...t, hours: currentHours + hoursSpent } : t));
+                          toast.success(`Logged ${hoursSpent}h to "${focusTask.title}"`);
+                        });
+                      }
+                      setFocusRunning(false);
+                      setFocusElapsed(0);
+                    }}
+                    className="h-12 w-12 flex items-center justify-center rounded-full border border-black/10 hover:bg-black/5 transition-colors"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                  </button>
+                </div>
+                {focusTask && (
+                  <p className="text-xs text-foreground/40">
+                    Focusing on: {focusTask.title}
+                  </p>
+                )}
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Kanban Columns */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <KanbanColumn
-          title="TO DO"
-          count={todoTasks.length}
-          theme={theme}
-          tasks={todoTasks}
-          onStatusChange={updateTaskStatus}
-          onPriorityChange={updateTaskPriority}
-          onDelete={setDeleteTarget}
-          onEdit={setEditTarget}
-          onDrop={handleDrop}
-          addingTo={addingTo}
-          setAddingTo={setAddingTo}
-          columnStatus="todo"
-          newTaskTitle={newTaskTitle}
-          setNewTaskTitle={setNewTaskTitle}
-          onQuickAdd={quickAddTask}
-          nextStatus="in_progress"
-          prevStatus={null}
-        />
-
-        <KanbanColumn
-          title="IN PROGRESS"
-          count={inProgressTasks.length}
-          theme={theme}
-          tasks={inProgressTasks}
-          onStatusChange={updateTaskStatus}
-          onPriorityChange={updateTaskPriority}
-          onDelete={setDeleteTarget}
-          onEdit={setEditTarget}
-          onDrop={handleDrop}
-          addingTo={addingTo}
-          setAddingTo={setAddingTo}
-          columnStatus="in_progress"
-          newTaskTitle={newTaskTitle}
-          setNewTaskTitle={setNewTaskTitle}
-          onQuickAdd={quickAddTask}
-          nextStatus="done"
-          prevStatus="todo"
-        />
-
-        <KanbanColumn
-          title="DONE"
-          count={doneTasks.length}
-          theme={theme}
-          tasks={doneTasks}
-          onStatusChange={updateTaskStatus}
-          onPriorityChange={updateTaskPriority}
-          onDelete={setDeleteTarget}
-          onEdit={setEditTarget}
-          onDrop={handleDrop}
-          addingTo={addingTo}
-          setAddingTo={setAddingTo}
-          columnStatus="done"
-          newTaskTitle={newTaskTitle}
-          setNewTaskTitle={setNewTaskTitle}
-          onQuickAdd={quickAddTask}
-          nextStatus={null}
-          prevStatus="in_progress"
-        />
-      </div>
-
-      {/* Bottom Section: Focus Timer + Notes */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8">
-        {/* Focus Timer */}
-        <div className={`rounded-2xl border p-6 bg-gradient-to-br ${theme.gradient}`}>
-          <div className="flex items-center gap-2 mb-4">
-            <Timer className="w-4 h-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              Focus Session
-            </h3>
-          </div>
-
-          {/* Task selector */}
-          <div className="mb-4">
-            <select
-              value={focusTask?.id || ""}
-              onChange={(e) => {
-                const t = tasks.find((task) => task.id === e.target.value);
-                setFocusTask(t || null);
-              }}
-              className="w-full h-8 text-xs border border-input rounded-lg px-2 bg-background/50 text-foreground"
-            >
-              <option value="">No task (free focus)</option>
-              {[...todoTasks, ...inProgressTasks].map((t) => (
-                <option key={t.id} value={t.id}>{t.title}</option>
-              ))}
-            </select>
-            {focusTask && (
-              <p className="text-[10px] text-muted-foreground mt-1">
-                Focusing on: <span className="font-medium text-foreground">{focusTask.title}</span>
-              </p>
-            )}
-          </div>
-
-          <div className="text-center">
-            <div className="text-4xl font-mono font-bold mb-4">
-              {formatTimer(focusTime - focusElapsed)}
-            </div>
-            <div className="flex items-center justify-center gap-2">
-              <Button
-                size="sm"
-                onClick={() => {
-                  if (!focusRunning && focusTask && focusTask.status === "todo") {
-                    updateTaskStatus(focusTask, "in_progress");
-                  }
-                  setFocusRunning(!focusRunning);
-                }}
-                className={theme.accent + " hover:opacity-90 text-white"}
-              >
-                {focusRunning ? <Pause className="w-4 h-4 mr-1" /> : <Play className="w-4 h-4 mr-1" />}
-                {focusRunning ? "Pause" : "Start"}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  if (focusElapsed > 60 && focusTask) {
-                    const hoursSpent = Math.round((focusElapsed / 3600) * 10) / 10;
-                    const currentHours = focusTask.hours || 0;
-                    fetch("/api/tasks", {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ id: focusTask.id, hours: currentHours + hoursSpent }),
-                    }).then(() => {
-                      setTasks((prev) => prev.map((t) => t.id === focusTask.id ? { ...t, hours: currentHours + hoursSpent } : t));
-                      toast.success(`Logged ${hoursSpent}h to "${focusTask.title}"`);
-                    });
-                  }
-                  setFocusRunning(false);
-                  setFocusElapsed(0);
-                }}
-              >
-                <RotateCcw className="w-4 h-4" />
-              </Button>
-            </div>
-            <div className="flex items-center justify-center gap-2 mt-3">
-              {[15, 25, 45, 60].map((mins) => (
+            ) : (
+              <div className="flex flex-col items-center gap-2.5">
                 <button
-                  key={mins}
-                  onClick={() => { setFocusTime(mins * 60); setFocusElapsed(0); setFocusRunning(false); }}
-                  className={`text-xs px-2 py-1 rounded-full transition-colors ${
-                    focusTime === mins * 60
-                      ? theme.accentLight + " font-semibold"
-                      : "text-muted-foreground hover:bg-muted"
-                  }`}
+                  onClick={() => {
+                    if (focusTask && focusTask.status === "todo") {
+                      updateTaskStatus(focusTask, "in_progress");
+                    }
+                    setFocusRunning(true);
+                  }}
+                  className="h-13 flex items-center gap-2.5 py-3.5 px-7 rounded-full bg-foreground text-background font-medium shadow-lg hover:opacity-90 transition-opacity"
                 >
-                  {mins}m
+                  <Play className="w-4 h-4" />
+                  Start Focus Session
                 </button>
-              ))}
-            </div>
-            {focusElapsed > 0 && (
-              <p className="text-[10px] text-muted-foreground mt-2">
-                {Math.round(focusElapsed / 60)}m focused{focusTask ? ` on "${focusTask.title}"` : ""}
-              </p>
+                <p className="text-xs text-foreground/35">
+                  or press play on any task to begin
+                </p>
+                {/* Timer presets */}
+                <div className="flex items-center gap-1.5">
+                  {[15, 25, 45, 60].map((mins) => (
+                    <button
+                      key={mins}
+                      onClick={() => { setFocusTime(mins * 60); setFocusElapsed(0); }}
+                      className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${
+                        focusTime === mins * 60
+                          ? "bg-foreground/10 text-foreground font-semibold"
+                          : "text-foreground/40 hover:text-foreground/60"
+                      }`}
+                    >
+                      {mins}m
+                    </button>
+                  ))}
+                </div>
+                {/* Focus task selector */}
+                <select
+                  value={focusTask?.id || ""}
+                  onChange={(e) => setFocusTask(tasks.find((t) => t.id === e.target.value) || null)}
+                  className="text-xs text-foreground/50 bg-transparent border-0 focus:outline-none cursor-pointer text-center"
+                >
+                  <option value="">No task selected</option>
+                  {[...todoTasks, ...inProgressTasks].map((t) => (
+                    <option key={t.id} value={t.id}>{t.title}</option>
+                  ))}
+                </select>
+              </div>
             )}
           </div>
-        </div>
+        </section>
 
-        {/* Thoughts of the Day */}
-        <div className={`rounded-2xl border p-6 bg-gradient-to-br ${theme.gradient}`}>
-          <div className="flex items-center gap-2 mb-4">
-            <span className="text-sm">✨</span>
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              Thoughts of the Day
-            </h3>
+        {/* Right panel: Day tabs + Kanban + Notes */}
+        <section className="flex flex-col order-2 lg:order-none min-w-0">
+          {/* Day tabs */}
+          <DayTabs selectedDay={selectedDay} onSelectDay={setSelectedDay} />
+
+          {/* Day header with stats */}
+          <div className="flex items-end justify-between mb-4">
+            <div>
+              <h2
+                className="text-4xl lg:text-5xl font-bold tracking-tight text-foreground"
+                style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}
+              >
+                {tape.day}
+              </h2>
+              <p className="mt-1 text-sm text-foreground/40">
+                {totalDayTasks} {totalDayTasks === 1 ? "task" : "tasks"} · {doneTasks.length} done
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-4xl font-bold text-foreground">{completionPercent}%</p>
+              <p className="text-xs text-foreground/40 uppercase tracking-wider">Complete</p>
+            </div>
           </div>
-          <textarea
-            value={dailyNote}
-            onChange={(e) => saveDailyNote(e.target.value)}
-            placeholder="What's on your mind today..."
-            className="w-full h-24 bg-background/50 border rounded-xl p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-offset-0 placeholder:text-muted-foreground/60"
-          />
-        </div>
-      </div>
+
+          {/* Progress bar */}
+          <div className="h-1.5 rounded-full bg-black/5 mb-5 overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${completionPercent}%`, backgroundColor: tape.accent }}
+            />
+          </div>
+
+          {/* Overdue */}
+          {overdueTasks.length > 0 && (
+            <div className="rounded-2xl border border-red-200 bg-red-50/50 p-3 mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                <span className="text-xs font-bold uppercase tracking-wider text-red-600">Overdue</span>
+                <span className="text-xs text-red-400">· {overdueTasks.length}</span>
+              </div>
+              <div className="space-y-1">
+                {overdueTasks.slice(0, 3).map((task) => (
+                  <div key={task.id} className="flex items-center gap-2 rounded-lg bg-white/60 p-2">
+                    <button
+                      onClick={() => updateTaskStatus(task, "done")}
+                      className="w-5 h-5 rounded-full border-2 border-red-300 hover:border-red-500 shrink-0 transition-colors"
+                    />
+                    <span className="text-sm text-foreground/80 truncate flex-1">{task.title}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Kanban columns */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 flex-1">
+            <KanbanColumn
+              title="To Do"
+              count={todoTasks.length}
+              accent={tape.accent}
+              dotColor="bg-foreground/60"
+              tasks={todoTasks}
+              onStatusChange={updateTaskStatus}
+              onPriorityChange={updateTaskPriority}
+              onDelete={setDeleteTarget}
+              onEdit={setEditTarget}
+              onDrop={handleDrop}
+              onStartFocus={(task) => { setFocusTask(task); setFocusRunning(true); if (task.status === "todo") updateTaskStatus(task, "in_progress"); }}
+              addingTo={addingTo}
+              setAddingTo={setAddingTo}
+              columnStatus="todo"
+              newTaskTitle={newTaskTitle}
+              setNewTaskTitle={setNewTaskTitle}
+              onQuickAdd={quickAddTask}
+              nextStatus="in_progress"
+              prevStatus={null}
+            />
+            <KanbanColumn
+              title="In Progress"
+              count={inProgressTasks.length}
+              accent={tape.accent}
+              dotColor="bg-amber-500"
+              tasks={inProgressTasks}
+              onStatusChange={updateTaskStatus}
+              onPriorityChange={updateTaskPriority}
+              onDelete={setDeleteTarget}
+              onEdit={setEditTarget}
+              onDrop={handleDrop}
+              onStartFocus={(task) => { setFocusTask(task); setFocusRunning(true); }}
+              addingTo={addingTo}
+              setAddingTo={setAddingTo}
+              columnStatus="in_progress"
+              newTaskTitle={newTaskTitle}
+              setNewTaskTitle={setNewTaskTitle}
+              onQuickAdd={quickAddTask}
+              nextStatus="done"
+              prevStatus="todo"
+            />
+            <KanbanColumn
+              title="Done"
+              count={doneTasks.length}
+              accent={tape.accent}
+              dotColor="bg-green-500"
+              tasks={doneTasks}
+              onStatusChange={updateTaskStatus}
+              onPriorityChange={updateTaskPriority}
+              onDelete={setDeleteTarget}
+              onEdit={setEditTarget}
+              onDrop={handleDrop}
+              onStartFocus={() => {}}
+              addingTo={addingTo}
+              setAddingTo={setAddingTo}
+              columnStatus="done"
+              newTaskTitle={newTaskTitle}
+              setNewTaskTitle={setNewTaskTitle}
+              onQuickAdd={quickAddTask}
+              nextStatus={null}
+              prevStatus="in_progress"
+            />
+          </div>
+
+          {/* Thoughts of the Day */}
+          <div className="mt-4 p-5 rounded-3xl bg-white/60 border border-black/5 shadow-sm relative">
+            <label className="text-[11px] font-semibold text-foreground/35 uppercase tracking-wider">
+              Thoughts of the Day
+            </label>
+            <textarea
+              value={dailyNote}
+              onChange={(e) => saveDailyNote(e.target.value)}
+              placeholder="What made today feel like today..."
+              className="w-full mt-2 bg-transparent text-sm text-foreground/80 leading-relaxed resize-none focus:outline-none min-h-[80px] placeholder:text-foreground/25"
+            />
+          </div>
+        </section>
+      </main>
 
       {/* Full Add Task Dialog */}
       <Dialog open={showFullAdd} onOpenChange={setShowFullAdd}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New Task</DialogTitle>
-            <DialogDescription>Add a detailed task for {theme.name}</DialogDescription>
+            <DialogDescription>Add a detailed task for {tape.day}</DialogDescription>
           </DialogHeader>
           <AddTaskForm
             defaultDate={format(selectedDate, "yyyy-MM-dd")}
-            onSaved={() => {
-              setShowFullAdd(false);
-              fetchTasks();
-            }}
+            onSaved={() => { setShowFullAdd(false); fetchTasks(); }}
           />
         </DialogContent>
       </Dialog>
@@ -613,7 +521,7 @@ export default function TasksPage() {
       {/* Floating Add Button */}
       <button
         onClick={() => setShowFullAdd(true)}
-        className={`fixed bottom-6 right-6 h-12 px-5 rounded-full ${theme.accent} text-white shadow-lg shadow-purple-500/20 hover:scale-110 hover:shadow-xl hover:shadow-purple-500/30 transition-all duration-200 flex items-center justify-center gap-2 font-medium text-sm`}
+        className="fixed bottom-6 right-6 h-12 px-5 rounded-full bg-foreground text-background shadow-lg hover:scale-105 hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2 font-medium text-sm z-50"
       >
         <Plus className="w-5 h-5" />
         Add Task
@@ -653,13 +561,15 @@ export default function TasksPage() {
 function KanbanColumn({
   title,
   count,
-  theme,
+  accent,
+  dotColor,
   tasks,
   onStatusChange,
   onPriorityChange,
   onDelete,
   onEdit,
   onDrop,
+  onStartFocus,
   addingTo,
   setAddingTo,
   columnStatus,
@@ -671,13 +581,15 @@ function KanbanColumn({
 }: {
   title: string;
   count: number;
-  theme: typeof DAY_THEMES[0];
+  accent: string;
+  dotColor: string;
   tasks: Task[];
   onStatusChange: (task: Task, status: string) => void;
   onPriorityChange: (task: Task, priority: string) => void;
   onDelete: (task: Task) => void;
   onEdit: (task: Task) => void;
   onDrop: (taskId: string, status: string) => void;
+  onStartFocus: (task: Task) => void;
   addingTo: string | null;
   setAddingTo: (s: string | null) => void;
   columnStatus: string;
@@ -691,16 +603,22 @@ function KanbanColumn({
 
   return (
     <div className="flex flex-col">
-      <div className="flex items-center gap-2 mb-3 px-1">
-        <span className={`w-2 h-2 rounded-full ${theme.accent}`} />
-        <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-          {title}
-        </h3>
-        <span className="text-xs text-muted-foreground">· {count}</span>
+      {/* Column header */}
+      <div className="flex items-center justify-between pb-2.5 px-1">
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${dotColor}`} />
+          <span className="text-xs font-semibold text-foreground/55 uppercase tracking-wider">{title}</span>
+        </div>
+        <span className="min-w-[22px] py-0.5 px-2 rounded-full text-[11px] font-semibold text-foreground/40 text-center bg-black/5">
+          {count}
+        </span>
       </div>
 
+      {/* Column body */}
       <div
-        className={`flex-1 rounded-2xl border bg-card/50 backdrop-blur-sm p-3 space-y-2 min-h-[200px] transition-all duration-200 ${theme.border} ${dragOver ? "ring-2 ring-purple-500/30 bg-purple-500/5 scale-[1.01]" : ""}`}
+        className={`flex-1 p-2.5 rounded-2xl border bg-black/[0.03] flex flex-col min-h-[200px] transition-all ${
+          dragOver ? "ring-2 ring-black/10 bg-black/[0.06] scale-[1.01]" : "border-black/5"
+        }`}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={(e) => {
@@ -710,43 +628,38 @@ function KanbanColumn({
           if (taskId) onDrop(taskId, columnStatus);
         }}
       >
-        {tasks.length === 0 && addingTo !== columnStatus && !dragOver && (
-          <p className="text-xs text-muted-foreground/60 text-center py-8 italic">
-            {columnStatus === "todo" ? "No items pending" : columnStatus === "in_progress" ? "Nothing in progress" : "Nothing finished yet"}
-          </p>
-        )}
-        {dragOver && tasks.length === 0 && (
-          <p className="text-xs text-primary/60 text-center py-8 italic">
-            Drop here
-          </p>
-        )}
+        <div className="flex-1 overflow-auto pr-0.5 space-y-2">
+          {tasks.length === 0 && !dragOver && addingTo !== columnStatus && (
+            <p className="text-[11px] text-foreground/25 text-center py-6">
+              {columnStatus === "todo" ? "No tasks yet" : columnStatus === "in_progress" ? "No tape playing" : "Nothing finished yet"}
+            </p>
+          )}
 
-        {tasks.map((task) => (
-          <TaskCard
-            key={task.id}
-            task={task}
-            theme={theme}
-            onStatusChange={onStatusChange}
-            onPriorityChange={onPriorityChange}
-            onDelete={onDelete}
-            onEdit={onEdit}
-            nextStatus={nextStatus}
-            prevStatus={prevStatus}
-          />
-        ))}
+          {tasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              accent={accent}
+              onStatusChange={onStatusChange}
+              onPriorityChange={onPriorityChange}
+              onDelete={onDelete}
+              onEdit={onEdit}
+              onStartFocus={onStartFocus}
+              nextStatus={nextStatus}
+              prevStatus={prevStatus}
+            />
+          ))}
+        </div>
 
-        {/* Inline Add */}
+        {/* Add task button */}
         {addingTo === columnStatus ? (
-          <form
-            onSubmit={(e) => { e.preventDefault(); onQuickAdd(columnStatus); }}
-            className="flex gap-2"
-          >
+          <form onSubmit={(e) => { e.preventDefault(); onQuickAdd(columnStatus); }} className="flex gap-2 mt-2">
             <Input
               autoFocus
               value={newTaskTitle}
               onChange={(e) => setNewTaskTitle(e.target.value)}
               placeholder="Task name..."
-              className="h-8 text-sm bg-background"
+              className="h-8 text-sm bg-white/80 border-black/10"
               onBlur={() => { if (!newTaskTitle) setAddingTo(null); }}
             />
             <Button size="sm" type="submit" className="h-8 px-2" disabled={!newTaskTitle.trim()}>
@@ -756,9 +669,9 @@ function KanbanColumn({
         ) : (
           <button
             onClick={() => { setAddingTo(columnStatus); setNewTaskTitle(""); }}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full px-2 py-1.5 rounded-lg hover:bg-muted/50"
+            className="h-10 mt-2 border-2 border-dashed border-black/10 flex rounded-xl justify-center items-center gap-2 text-foreground/40 text-xs font-medium hover:bg-black/[0.03] hover:border-black/15 hover:text-foreground/60 transition-all w-full"
           >
-            <Plus className="w-3 h-3" />
+            <Plus className="w-3.5 h-3.5" />
             Add a task
           </button>
         )}
@@ -769,31 +682,27 @@ function KanbanColumn({
 
 function TaskCard({
   task,
-  theme,
+  accent,
   onStatusChange,
   onDelete,
   onPriorityChange,
   onEdit,
+  onStartFocus,
   nextStatus,
   prevStatus,
 }: {
   task: Task;
-  theme: typeof DAY_THEMES[0];
+  accent: string;
   onStatusChange: (task: Task, status: string) => void;
   onDelete: (task: Task) => void;
   onPriorityChange: (task: Task, priority: string) => void;
   onEdit: (task: Task) => void;
+  onStartFocus: (task: Task) => void;
   nextStatus: string | null;
   prevStatus: string | null;
 }) {
   const isDone = task.status === "done";
   const priorities = ["low", "medium", "high", "urgent"];
-
-  const cyclePriority = () => {
-    const currentIdx = priorities.indexOf(task.priority);
-    const nextIdx = (currentIdx + 1) % priorities.length;
-    onPriorityChange(task, priorities[nextIdx]);
-  };
 
   return (
     <div
@@ -802,56 +711,68 @@ function TaskCard({
         e.dataTransfer.setData("text/plain", task.id);
         e.dataTransfer.effectAllowed = "move";
       }}
-      className={`group relative rounded-xl border border-border bg-card/80 backdrop-blur-sm p-3 transition-all duration-200 hover:bg-accent hover:border-border hover:shadow-lg hover:shadow-black/10 cursor-grab active:cursor-grabbing active:opacity-70 active:scale-[0.96] ${
+      className={`group relative p-3 rounded-xl bg-white/80 border border-black/5 shadow-sm transition-all duration-200 hover:shadow-md hover:bg-white cursor-grab active:cursor-grabbing active:scale-[0.97] ${
         isDone ? "opacity-50" : ""
       }`}
     >
-      <div className="flex items-start gap-2.5">
+      <div className="flex items-start gap-2">
         <button
           onClick={() => {
             if (isDone && prevStatus) onStatusChange(task, prevStatus);
             else if (nextStatus) onStatusChange(task, nextStatus);
           }}
-          className={`mt-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+          className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
             isDone
-              ? theme.accent + " border-transparent text-white"
-              : "border-muted-foreground/30 hover:border-current " + theme.accentLight.split(" ")[1]
+              ? "border-transparent text-white"
+              : "border-black/25 hover:border-black/50"
           }`}
-          style={{ width: 18, height: 18 }}
+          style={isDone ? { backgroundColor: accent } : undefined}
         >
-          {isDone && <Check className="w-2.5 h-2.5" />}
+          {isDone && <Check className="w-3 h-3" />}
         </button>
         <div className="flex-1 min-w-0">
-          <button
-            onClick={() => onEdit(task)}
-            className="text-left w-full"
-          >
-            <p className={`text-sm font-medium leading-tight hover:underline ${isDone ? "line-through text-muted-foreground" : ""}`}>
+          <button onClick={() => onEdit(task)} className="text-left w-full">
+            <p className={`text-sm font-medium leading-tight line-clamp-2 ${isDone ? "line-through text-foreground/40" : "text-foreground"}`}>
               {task.title}
             </p>
           </button>
-          <div className="flex items-center gap-1.5 mt-1.5">
-            <button
-              onClick={cyclePriority}
-              className="flex items-center gap-1 hover:opacity-70 transition-opacity"
-              title={`Priority: ${task.priority} (click to change)`}
-            >
-              <PriorityDot priority={task.priority} />
-              <span className="text-[10px] text-muted-foreground capitalize">{task.priority}</span>
-            </button>
-            {task.recurrence && (
-              <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground" title={`Repeats ${task.recurrence}`}>
-                <RotateCcw className="w-3 h-3" />
-              </span>
-            )}
+          <div className="flex items-center justify-between mt-2.5 pl-0">
+            <div className="flex items-center gap-1.5">
+              {task.hours && (
+                <span className="text-[11px] text-foreground/35">{task.hours * 60} min</span>
+              )}
+              {task.recurrence && (
+                <RotateCcw className="w-3 h-3 text-foreground/30" />
+              )}
+              <button
+                onClick={() => {
+                  const idx = priorities.indexOf(task.priority);
+                  onPriorityChange(task, priorities[(idx + 1) % priorities.length]);
+                }}
+                className="hover:opacity-70"
+              >
+                <PriorityDot priority={task.priority} />
+              </button>
+            </div>
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              {!isDone && (
+                <button
+                  onClick={() => onStartFocus(task)}
+                  className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-black/5 transition-colors"
+                  title="Start focus session"
+                >
+                  <Play className="w-3.5 h-3.5 text-foreground/50" />
+                </button>
+              )}
+              <button
+                onClick={() => onDelete(task)}
+                className="w-7 h-7 flex items-center justify-center rounded-full bg-black/5 text-foreground/40 hover:bg-red-50 hover:text-red-500 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
-        <button
-          onClick={() => onDelete(task)}
-          className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive transition-all"
-        >
-          <Trash2 className="w-3 h-3" />
-        </button>
       </div>
     </div>
   );
@@ -895,12 +816,7 @@ function AddTaskForm({ onSaved, defaultDate }: { onSaved: () => void; defaultDat
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label className="text-sm font-medium">Title *</label>
-        <Input
-          required
-          value={form.title}
-          onChange={(e) => setForm({ ...form, title: e.target.value })}
-          placeholder="What needs to be done?"
-        />
+        <Input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="What needs to be done?" />
       </div>
       <div>
         <label className="text-sm font-medium">Description</label>
@@ -915,57 +831,26 @@ function AddTaskForm({ onSaved, defaultDate }: { onSaved: () => void; defaultDat
         <div className="flex items-center justify-between">
           <label className="text-sm font-medium">Due date</label>
           {form.dueDate && (
-            <button
-              type="button"
-              onClick={() => setForm({ ...form, dueDate: "" })}
-              className="text-xs text-muted-foreground hover:text-foreground"
-            >
-              Clear
-            </button>
+            <button type="button" onClick={() => setForm({ ...form, dueDate: "" })} className="text-xs text-muted-foreground hover:text-foreground">Clear</button>
           )}
         </div>
-        <Input
-          type="date"
-          value={form.dueDate}
-          onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
-        />
-        <p className="text-xs text-muted-foreground mt-1">
-          Tasks without a date show on every day
-        </p>
+        <Input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="text-sm font-medium">Priority</label>
-          <select
-            value={form.priority}
-            onChange={(e) => setForm({ ...form, priority: e.target.value })}
-            className="w-full h-10 border rounded-md px-3 text-sm bg-background"
-          >
-            {TASK_PRIORITIES.map((p) => (
-              <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
-            ))}
+          <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className="w-full h-10 border rounded-md px-3 text-sm bg-background">
+            {TASK_PRIORITIES.map((p) => (<option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>))}
           </select>
         </div>
         <div>
           <label className="text-sm font-medium">Hours</label>
-          <Input
-            type="number"
-            step="0.5"
-            min="0"
-            max="24"
-            value={form.hours}
-            onChange={(e) => setForm({ ...form, hours: e.target.value })}
-            placeholder="e.g. 2"
-          />
+          <Input type="number" step="0.5" min="0" max="24" value={form.hours} onChange={(e) => setForm({ ...form, hours: e.target.value })} placeholder="e.g. 2" />
         </div>
       </div>
       <div>
         <label className="text-sm font-medium">Repeat</label>
-        <select
-          value={form.recurrence}
-          onChange={(e) => setForm({ ...form, recurrence: e.target.value })}
-          className="w-full h-10 border rounded-md px-3 text-sm bg-background"
-        >
+        <select value={form.recurrence} onChange={(e) => setForm({ ...form, recurrence: e.target.value })} className="w-full h-10 border rounded-md px-3 text-sm bg-background">
           <option value="">None</option>
           <option value="daily">Daily</option>
           <option value="weekdays">Weekdays</option>
@@ -981,15 +866,7 @@ function AddTaskForm({ onSaved, defaultDate }: { onSaved: () => void; defaultDat
   );
 }
 
-function EditTaskForm({
-  task,
-  onSaved,
-  onCancel,
-}: {
-  task: Task;
-  onSaved: (updated: Partial<Task> & { id: string }) => void;
-  onCancel: () => void;
-}) {
+function EditTaskForm({ task, onSaved, onCancel }: { task: Task; onSaved: (updated: Partial<Task> & { id: string }) => void; onCancel: () => void }) {
   const [form, setForm] = useState({
     title: task.title,
     description: task.description || "",
@@ -1036,62 +913,31 @@ function EditTaskForm({
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label className="text-sm font-medium">Title *</label>
-        <Input
-          required
-          value={form.title}
-          onChange={(e) => setForm({ ...form, title: e.target.value })}
-        />
+        <Input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
       </div>
       <div>
         <label className="text-sm font-medium">Description</label>
-        <textarea
-          value={form.description}
-          onChange={(e) => setForm({ ...form, description: e.target.value })}
-          placeholder="Optional details..."
-          className="w-full h-20 border rounded-md px-3 py-2 text-sm bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-        />
+        <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Optional details..." className="w-full h-20 border rounded-md px-3 py-2 text-sm bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring" />
       </div>
       <div>
         <label className="text-sm font-medium">Due date</label>
-        <Input
-          type="date"
-          value={form.dueDate}
-          onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
-        />
+        <Input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="text-sm font-medium">Priority</label>
-          <select
-            value={form.priority}
-            onChange={(e) => setForm({ ...form, priority: e.target.value })}
-            className="w-full h-10 border rounded-md px-3 text-sm bg-background"
-          >
-            {TASK_PRIORITIES.map((p) => (
-              <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
-            ))}
+          <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className="w-full h-10 border rounded-md px-3 text-sm bg-background">
+            {TASK_PRIORITIES.map((p) => (<option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>))}
           </select>
         </div>
         <div>
           <label className="text-sm font-medium">Hours</label>
-          <Input
-            type="number"
-            step="0.5"
-            min="0"
-            max="24"
-            value={form.hours}
-            onChange={(e) => setForm({ ...form, hours: e.target.value })}
-            placeholder="e.g. 2"
-          />
+          <Input type="number" step="0.5" min="0" max="24" value={form.hours} onChange={(e) => setForm({ ...form, hours: e.target.value })} placeholder="e.g. 2" />
         </div>
       </div>
       <div className="flex gap-2">
-        <Button type="submit" className="flex-1" disabled={saving || !form.title}>
-          {saving ? "Saving..." : "Save Changes"}
-        </Button>
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
+        <Button type="submit" className="flex-1" disabled={saving || !form.title}>{saving ? "Saving..." : "Save Changes"}</Button>
+        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
       </div>
     </form>
   );

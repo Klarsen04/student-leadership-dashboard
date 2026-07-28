@@ -10,9 +10,14 @@ const TAPES = [
     index: 0,
     spine: "/tasktape/sunday-spine.png",
     cover: "/tasktape/sunday-cover.png",
-    color: "from-rose-400/30 to-rose-200/10",
-    accent: "rgb(244, 63, 94)",
+    cassette: "/tasktape/sunday-cassette.png",
+    color: "from-rose-100 to-rose-50",
+    gradientBg: "radial-gradient(135% 115% at 50% -10%, rgb(254,226,226) 0%, rgb(254,205,211) 28%, rgb(251,191,204) 52%, rgb(254,226,226) 78%, rgb(255,241,242) 100%)",
+    accent: "rgb(225, 29, 72)",
+    accentBg: "bg-rose-600",
+    spineColor: "bg-rose-200",
     motto: "rest, recharge, reset for a new week",
+    dayNumber: "007",
   },
   {
     day: "Monday",
@@ -20,9 +25,14 @@ const TAPES = [
     index: 1,
     spine: "/tasktape/monday-spine.png",
     cover: "/tasktape/monday-cover.png",
-    color: "from-purple-400/30 to-purple-200/10",
-    accent: "rgb(168, 85, 247)",
+    cassette: "/tasktape/monday-cassette.png",
+    color: "from-purple-100 to-purple-50",
+    gradientBg: "radial-gradient(135% 115% at 50% -10%, rgb(243,232,255) 0%, rgb(233,213,255) 28%, rgb(221,194,255) 52%, rgb(243,232,255) 78%, rgb(250,245,255) 100%)",
+    accent: "rgb(147, 51, 234)",
+    accentBg: "bg-purple-600",
+    spineColor: "bg-purple-200",
     motto: "plan with purpose, start strong, stay focused",
+    dayNumber: "001",
   },
   {
     day: "Tuesday",
@@ -30,9 +40,14 @@ const TAPES = [
     index: 2,
     spine: "/tasktape/tuesday-spine.png",
     cover: "/tasktape/tuesday-cover.png",
-    color: "from-pink-400/30 to-pink-200/10",
-    accent: "rgb(236, 72, 153)",
+    cassette: "/tasktape/tuesday-cassette.png",
+    color: "from-pink-100 to-pink-50",
+    gradientBg: "radial-gradient(135% 115% at 50% -10%, rgb(252,231,243) 0%, rgb(251,207,232) 28%, rgb(249,186,220) 52%, rgb(252,231,243) 78%, rgb(253,242,248) 100%)",
+    accent: "rgb(219, 39, 119)",
+    accentBg: "bg-pink-600",
+    spineColor: "bg-pink-200",
     motto: "take small steps, make steady progress",
+    dayNumber: "002",
   },
   {
     day: "Wednesday",
@@ -40,9 +55,14 @@ const TAPES = [
     index: 3,
     spine: "/tasktape/wednesday-spine.png",
     cover: "/tasktape/wednesday-cover.png",
-    color: "from-yellow-400/30 to-yellow-200/10",
-    accent: "rgb(234, 179, 8)",
+    cassette: "/tasktape/wednesday-cassette.png",
+    color: "from-yellow-100 to-amber-50",
+    gradientBg: "radial-gradient(135% 115% at 50% -10%, rgb(254,249,195) 0%, rgb(254,240,138) 28%, rgb(253,224,71) 52%, rgb(254,249,195) 78%, rgb(254,252,232) 100%)",
+    accent: "rgb(161, 98, 7)",
+    accentBg: "bg-amber-700",
+    spineColor: "bg-yellow-200",
     motto: "stay consistent, build your momentum",
+    dayNumber: "003",
   },
   {
     day: "Thursday",
@@ -50,9 +70,14 @@ const TAPES = [
     index: 4,
     spine: "/tasktape/thursday-spine.png",
     cover: "/tasktape/thursday-cover.png",
-    color: "from-green-400/30 to-green-200/10",
-    accent: "rgb(34, 197, 94)",
+    cassette: "/tasktape/thursday-cassette.png",
+    color: "from-green-100 to-emerald-50",
+    gradientBg: "radial-gradient(135% 115% at 50% -10%, rgb(220,252,231) 0%, rgb(187,247,208) 28%, rgb(134,239,172) 52%, rgb(220,252,231) 78%, rgb(240,253,244) 100%)",
+    accent: "rgb(21, 128, 61)",
+    accentBg: "bg-green-700",
+    spineColor: "bg-green-200",
     motto: "grow your habits, achieve your goals",
+    dayNumber: "004",
   },
   {
     day: "Friday",
@@ -60,9 +85,14 @@ const TAPES = [
     index: 5,
     spine: "/tasktape/friday-spine.png",
     cover: "/tasktape/friday-cover.png",
-    color: "from-orange-400/30 to-orange-200/10",
-    accent: "rgb(249, 115, 22)",
+    cassette: "/tasktape/friday-cassette.png",
+    color: "from-orange-100 to-orange-50",
+    gradientBg: "radial-gradient(135% 115% at 50% -10%, rgb(255,237,213) 0%, rgb(254,215,170) 28%, rgb(253,186,116) 52%, rgb(255,237,213) 78%, rgb(255,247,237) 100%)",
+    accent: "rgb(194, 65, 12)",
+    accentBg: "bg-orange-700",
+    spineColor: "bg-orange-200",
     motto: "finish strong, feel proud",
+    dayNumber: "005",
   },
   {
     day: "Saturday",
@@ -70,98 +100,89 @@ const TAPES = [
     index: 6,
     spine: "/tasktape/saturday-spine.png",
     cover: "/tasktape/saturday-cover.png",
-    color: "from-blue-400/30 to-blue-200/10",
-    accent: "rgb(59, 130, 246)",
+    cassette: "/tasktape/saturday-cassette.png",
+    color: "from-blue-100 to-blue-50",
+    gradientBg: "radial-gradient(135% 115% at 50% -10%, rgb(219,234,254) 0%, rgb(191,219,254) 28%, rgb(147,197,253) 52%, rgb(219,234,254) 78%, rgb(239,246,255) 100%)",
+    accent: "rgb(29, 78, 216)",
+    accentBg: "bg-blue-700",
+    spineColor: "bg-blue-200",
     motto: "stay positive, make it happen",
+    dayNumber: "006",
   },
 ];
 
-interface TapeShelfProps {
+interface DayTabsProps {
   selectedDay: number;
   onSelectDay: (day: number) => void;
-  taskCounts: Record<number, { total: number; done: number }>;
 }
 
-export function TapeShelf({ selectedDay, onSelectDay, taskCounts }: TapeShelfProps) {
-  const [hoveredTape, setHoveredTape] = useState<number | null>(null);
-  const selectedTape = TAPES.find((t) => t.index === selectedDay)!;
+function DayTabs({ selectedDay, onSelectDay }: DayTabsProps) {
+  return (
+    <div className="flex gap-1 overflow-auto pb-3 scrollbar-none">
+      {TAPES.map((tape) => {
+        const isActive = tape.index === selectedDay;
+        return (
+          <button
+            key={tape.day}
+            onClick={() => onSelectDay(tape.index)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
+              isActive
+                ? "bg-foreground text-background shadow-lg"
+                : "border border-black/10 text-foreground/60 hover:text-foreground hover:border-black/20"
+            }`}
+          >
+            <span className={`w-0.5 h-4 rounded-full ${tape.spineColor}`} />
+            {tape.short}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+interface CassetteDisplayProps {
+  selectedDay: number;
+}
+
+function CassetteDisplay({ selectedDay }: CassetteDisplayProps) {
+  const tape = TAPES[selectedDay];
 
   return (
-    <div className="relative">
-      {/* Tape Shelf - Spine View */}
-      <div className="flex items-end justify-center gap-1 md:gap-2 h-48 md:h-64 px-2">
-        {TAPES.map((tape) => {
-          const isSelected = tape.index === selectedDay;
-          const isHovered = tape.index === hoveredTape;
-          const counts = taskCounts[tape.index];
-          const progress = counts && counts.total > 0 ? Math.round((counts.done / counts.total) * 100) : 0;
+    <div className="relative flex flex-col items-center justify-center h-full min-h-[300px] lg:min-h-[400px]">
+      {/* Glow effect behind cassette */}
+      <div
+        className="absolute w-64 h-64 rounded-full blur-[64px] opacity-60 pointer-events-none"
+        style={{ background: tape.accent, opacity: 0.2 }}
+      />
 
-          return (
-            <button
-              key={tape.day}
-              onClick={() => onSelectDay(tape.index)}
-              onMouseEnter={() => setHoveredTape(tape.index)}
-              onMouseLeave={() => setHoveredTape(null)}
-              className={`relative transition-all duration-300 ease-out flex-shrink-0 ${
-                isSelected
-                  ? "z-30 scale-105 -translate-y-2"
-                  : isHovered
-                  ? "z-20 scale-[1.02] -translate-y-1"
-                  : "z-10"
-              }`}
-              style={{ width: isSelected ? "clamp(80px, 15vw, 120px)" : "clamp(28px, 6vw, 48px)" }}
-            >
-              {/* Spine (collapsed) */}
-              <div
-                className={`relative h-40 md:h-56 transition-all duration-300 ${
-                  isSelected ? "opacity-0 pointer-events-none absolute" : "opacity-100"
-                }`}
-              >
-                <Image
-                  src={tape.spine}
-                  alt={`${tape.day} spine`}
-                  fill
-                  className="object-contain object-bottom drop-shadow-md"
-                  sizes="48px"
-                />
-              </div>
-
-              {/* Cover (expanded) */}
-              <div
-                className={`relative h-40 md:h-56 transition-all duration-300 ${
-                  isSelected ? "opacity-100" : "opacity-0 pointer-events-none absolute inset-0"
-                }`}
-              >
-                <Image
-                  src={tape.cover}
-                  alt={`${tape.day} cover`}
-                  fill
-                  className="object-contain object-bottom drop-shadow-lg rounded-sm"
-                  sizes="120px"
-                />
-                {/* Progress ring overlay */}
-                {isSelected && counts && counts.total > 0 && (
-                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur-sm rounded-full px-2 py-0.5">
-                    <span className="text-[10px] text-white font-medium">{progress}%</span>
-                  </div>
-                )}
-              </div>
-            </button>
-          );
-        })}
+      {/* Cover art - tilted behind */}
+      <div className="absolute -top-4 -left-2 lg:-top-8 lg:-left-4 z-0">
+        <div className="relative w-36 h-52 lg:w-48 lg:h-72 transform -rotate-6">
+          <Image
+            src={tape.cover}
+            alt={`${tape.day} cover`}
+            fill
+            className="object-contain rounded-sm drop-shadow-xl"
+            sizes="(max-width: 1024px) 144px, 192px"
+          />
+        </div>
       </div>
 
-      {/* Selected Day Label + Motto */}
-      <div className="text-center mt-4 space-y-1">
-        <h2 className="text-2xl md:text-3xl font-bold tracking-tight font-serif" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}>
-          {selectedTape.day}
-        </h2>
-        <p className="text-sm text-muted-foreground italic">
-          {selectedTape.motto}
-        </p>
+      {/* 3D Cassette - main */}
+      <div className="relative z-10 transform rotate-[1deg]">
+        <div className="relative w-72 h-48 lg:w-96 lg:h-64">
+          <Image
+            src={tape.cassette}
+            alt={`${tape.day} cassette`}
+            fill
+            className="object-contain drop-shadow-2xl"
+            sizes="(max-width: 1024px) 288px, 384px"
+            priority
+          />
+        </div>
       </div>
     </div>
   );
 }
 
-export { TAPES };
+export { TAPES, DayTabs, CassetteDisplay };
