@@ -96,6 +96,7 @@ export async function POST(req: NextRequest) {
       role: data.role,
       location: data.location,
       isLed: data.isLed,
+      actualMinutes: data.actualMinutes ?? null,
       userId: session.user.id,
     },
   });

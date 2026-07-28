@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createReflectionSchema } from "@/lib/validations";
+import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -38,10 +39,40 @@ export async function POST(req: NextRequest) {
   }
 
   const { data } = parsed;
+  const now = data.date ? new Date(data.date) : new Date();
+
+  let periodStart: Date;
+  let periodEnd: Date;
+  if (data.type === "daily") {
+    periodStart = startOfDay(now);
+    periodEnd = endOfDay(now);
+  } else if (data.type === "weekly") {
+    periodStart = startOfWeek(now, { weekStartsOn: 0 });
+    periodEnd = endOfWeek(now, { weekStartsOn: 0 });
+  } else {
+    periodStart = startOfMonth(now);
+    periodEnd = endOfMonth(now);
+  }
+
+  const existing = await prisma.reflection.findFirst({
+    where: {
+      userId: session.user.id,
+      type: data.type,
+      date: { gte: periodStart, lte: periodEnd },
+    },
+  });
+
+  if (existing) {
+    return NextResponse.json(
+      { error: `You already have a ${data.type} reflection for this period. Edit the existing one instead.` },
+      { status: 409 }
+    );
+  }
+
   const reflection = await prisma.reflection.create({
     data: {
       type: data.type,
-      date: data.date ? new Date(data.date) : new Date(),
+      date: now,
       content: data.content,
       mood: data.mood,
       energy: data.energy,

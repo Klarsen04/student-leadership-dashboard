@@ -3,6 +3,14 @@ import type { Config } from "tailwindcss";
 const config: Config = {
   darkMode: ["class"],
   content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
+  safelist: [
+    "bg-purple-500/10", "border-purple-500/20",
+    "bg-blue-500/10", "border-blue-500/20",
+    "bg-emerald-500/10", "border-emerald-500/20",
+    "bg-amber-500/10", "border-amber-500/20",
+    "bg-rose-500/10", "border-rose-500/20",
+    "bg-cyan-500/10", "border-cyan-500/20",
+  ],
   theme: {
     extend: {
       colors: {
@@ -37,9 +45,14 @@ const config: Config = {
         },
       },
       borderRadius: {
-        lg: "0.5rem",
-        md: "calc(0.5rem - 2px)",
-        sm: "calc(0.5rem - 4px)",
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
+      },
+      animation: {
+        "fade-in": "fade-in 0.4s ease-out",
+        "slide-in": "slide-in-left 0.3s ease-out",
+        "pulse-glow": "pulse-glow 2s ease-in-out infinite",
       },
     },
   },

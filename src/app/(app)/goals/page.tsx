@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { format, isPast } from "date-fns";
-import { Plus, Target, Trash2, Pencil, AlertTriangle } from "lucide-react";
+import { format, isPast, differenceInDays } from "date-fns";
+import { Plus, Target, Trash2, Pencil, AlertTriangle, Trophy, Star } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useGoalCategories } from "@/lib/useGoalCategories";
+import { useConfetti } from "@/components/Confetti";
 
 interface Goal {
   id: string;
@@ -62,8 +63,12 @@ export default function GoalsPage() {
     fetchGoals();
   }, [filterCategory]);
 
+  const { fire, burst } = useConfetti();
+
   const updateProgress = async (id: string, progress: number) => {
     try {
+      const goal = goals.find((g) => g.id === id);
+      const wasNotComplete = goal && goal.progress < 100;
       const status = progress === 100 ? "completed" : "active";
       const res = await fetch("/api/goals", {
         method: "PATCH",
@@ -72,7 +77,15 @@ export default function GoalsPage() {
       });
       if (!res.ok) throw new Error();
       setGoals((prev) => prev.map((g) => g.id === id ? { ...g, progress, status } : g));
-      if (progress === 100) toast.success("Goal completed!");
+      if (progress === 100 && wasNotComplete) {
+        fire();
+        toast.success("Goal completed!");
+      }
+      const milestones = [25, 50, 75];
+      if (goal && milestones.includes(progress) && goal.progress < progress) {
+        burst();
+        toast.success(`${progress}% milestone reached!`);
+      }
     } catch {
       toast.error("Failed to update progress");
     }
@@ -132,7 +145,7 @@ export default function GoalsPage() {
   const completedGoals = goals.filter((g) => g.status === "completed");
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Goals</h1>
@@ -211,9 +224,18 @@ export default function GoalsPage() {
       {loading ? (
         <div className="text-center text-muted-foreground py-12">Loading...</div>
       ) : goals.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <Target className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
-          No goals yet. Set a goal to stay focused.
+        <div className="text-center py-16">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500/10 to-blue-500/10 border border-purple-500/20 flex items-center justify-center mx-auto mb-4">
+            <Target className="w-8 h-8 text-purple-400" />
+          </div>
+          <h3 className="font-semibold text-lg mb-2">Set your first goal</h3>
+          <p className="text-muted-foreground text-sm max-w-md mx-auto mb-6">
+            Goals keep you focused across the semester. Try setting one for each role you hold — e.g. &quot;Grow club membership by 20%&quot; or &quot;Plan 3 community events.&quot;
+          </p>
+          <Button onClick={() => setShowAdd(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Create Your First Goal
+          </Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -256,8 +278,14 @@ export default function GoalsPage() {
                     <div className={`flex items-center gap-1.5 text-xs mb-3 ${isOverdue ? "text-destructive" : "text-muted-foreground"}`}>
                       {isOverdue && <AlertTriangle className="w-3 h-3" />}
                       <span>
-                        {isOverdue ? "Overdue — was due " : "Target: "}
+                        {isOverdue ? "Overdue — was due " : ""}
                         {format(new Date(goal.targetDate), "MMM d, yyyy")}
+                        {!isOverdue && (() => {
+                          const days = differenceInDays(new Date(goal.targetDate), new Date());
+                          if (days <= 7) return ` · ${days}d left`;
+                          if (days <= 30) return ` · ${Math.ceil(days / 7)}w left`;
+                          return ` · ${Math.ceil(days / 30)}mo left`;
+                        })()}
                       </span>
                     </div>
                   )}
@@ -279,7 +307,41 @@ export default function GoalsPage() {
                         className="w-32 h-2 accent-primary cursor-pointer"
                       />
                     </div>
-                    <Progress value={goal.progress} />
+                    <div className="relative">
+                      <Progress value={goal.progress} />
+                      <div className="absolute top-0 left-0 right-0 h-2 flex items-center pointer-events-none">
+                        {[25, 50, 75].map((m) => (
+                          <div
+                            key={m}
+                            className={`absolute w-1 h-3 rounded-full -top-0.5 transition-colors ${
+                              goal.progress >= m ? "bg-purple-300" : "bg-white/20"
+                            }`}
+                            style={{ left: `${m}%` }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    {goal.progress >= 25 && goal.progress < 100 && (
+                      <div className="flex items-center gap-1">
+                        {[25, 50, 75].map((m) => (
+                          <div
+                            key={m}
+                            className={`flex items-center gap-0.5 text-[10px] ${
+                              goal.progress >= m ? "text-purple-400" : "text-muted-foreground/50"
+                            }`}
+                          >
+                            <Star className={`w-2.5 h-2.5 ${goal.progress >= m ? "fill-purple-400" : ""}`} />
+                            {m}%
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {goal.status === "completed" && (
+                      <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                        <Trophy className="w-3.5 h-3.5" />
+                        Completed!
+                      </div>
+                    )}
                   </div>
 
                   {goal.tasks.length > 0 && (

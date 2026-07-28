@@ -2,31 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { format, isToday, isPast, endOfWeek } from "date-fns";
+import { format, isPast, endOfWeek } from "date-fns";
 import {
-  Calendar,
   CheckSquare,
   Clock,
-  RefreshCw,
+  Target,
+  TrendingUp,
+  Flame,
+  Plus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ROLE_BADGE_VARIANTS } from "@/lib/utils";
 import { PriorityDot } from "@/components/PriorityDot";
+import { useSemester } from "@/lib/useSemester";
 import Link from "next/link";
-
-interface Event {
-  id: string;
-  title: string;
-  startTime: string;
-  endTime: string;
-  category: string;
-  role: string;
-  location: string | null;
-}
-
 
 interface Task {
   id: string;
@@ -39,58 +29,26 @@ interface Task {
 
 export default function DashboardPage() {
   const { data: session } = useSession();
-  const [events, setEvents] = useState<Event[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const { getInfo } = useSemester();
+  const semester = getInfo();
 
   useEffect(() => {
     fetchData();
   }, []);
 
   const fetchData = async () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(today);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    const [evRes, taskRes] = await Promise.all([
-      fetch(`/api/calendar?start=${today.toISOString()}&end=${endOfDay.toISOString()}`),
-      fetch("/api/tasks?status=todo"),
-    ]);
-
-    if (evRes.ok) setEvents(await evRes.json());
-    if (taskRes.ok) {
-      const data = await taskRes.json();
-      setTasks(data.tasks || data);
+    try {
+      const taskRes = await fetch("/api/tasks?status=todo");
+      if (taskRes.ok) {
+        const data = await taskRes.json();
+        setTasks(data.tasks || data);
+      }
+    } catch {
+      toast.error("Failed to load tasks");
     }
     setLoading(false);
-  };
-
-  const syncCalendars = async () => {
-    setSyncing(true);
-    try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const end = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-      const res = await fetch("/api/calendar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "sync",
-          start: today.toISOString(),
-          end: end.toISOString(),
-        }),
-      });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      toast.success(`Synced ${data.synced} events`);
-      await fetchData();
-    } catch {
-      toast.error("Failed to sync calendars");
-    } finally {
-      setSyncing(false);
-    }
   };
 
   const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
@@ -107,85 +65,87 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-pulse text-muted-foreground">Loading dashboard...</div>
+      <div className="max-w-6xl mx-auto space-y-8">
+        <div className="space-y-2">
+          <div className="h-9 w-72 rounded-lg bg-muted animate-pulse" />
+          <div className="h-5 w-40 rounded bg-muted animate-pulse" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-24 rounded-xl bg-muted/50 border border-border animate-pulse" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="h-64 rounded-xl bg-muted/50 border border-border animate-pulse" />
+          <div className="h-64 rounded-xl bg-muted/50 border border-border animate-pulse" />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-8 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold">
-            Good {getTimeOfDay()}, {session?.user?.name?.split(" ")[0]}
+          <h1 className="text-3xl font-bold tracking-tight">
+            Good {getTimeOfDay()},{" "}
+            <span className="gradient-text">
+              {session?.user?.name?.split(" ")[0]}
+            </span>
           </h1>
-          <p className="text-muted-foreground">
-            {format(new Date(), "EEEE, MMMM d")}
+          <p className="text-muted-foreground mt-1">
+            {format(new Date(), "EEEE, MMMM d")} · {getMotivation(tasks.length, overdueTasks.length)}
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={syncCalendars}
-          disabled={syncing}
-        >
-          <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-          Sync Calendars
-        </Button>
+        <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card/50 text-xs">
+          <span className="text-muted-foreground">{semester.name}</span>
+          <span className="font-medium">Week {semester.weekNumber}/{semester.totalWeeks}</span>
+          {semester.isExamPeriod && (
+            <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[10px] font-medium">EXAMS</span>
+          )}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
-        {/* Today's Schedule */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-primary" />
-                Today&apos;s Schedule
-              </CardTitle>
-              <Link href="/calendar">
-                <Button variant="ghost" size="sm">View all</Button>
-              </Link>
+      {/* Quick Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="stat-card">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+              <CheckSquare className="w-5 h-5 text-blue-400" />
             </div>
-          </CardHeader>
-          <CardContent>
-            {events.length === 0 ? (
-              <p className="text-muted-foreground text-sm py-4">
-                No events today. Sync your calendars or add events manually.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {events.map((event) => (
-                  <div
-                    key={event.id}
-                    className="flex items-center gap-4 p-3 rounded-lg border bg-background hover:bg-accent/50 transition-colors"
-                  >
-                    <div className="text-sm text-muted-foreground w-20 shrink-0">
-                      {format(new Date(event.startTime), "h:mm a")}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{event.title}</p>
-                      {event.location && (
-                        <p className="text-xs text-muted-foreground truncate">
-                          {event.location}
-                        </p>
-                      )}
-                    </div>
-                    {event.role && (
-                      <Badge variant={(ROLE_BADGE_VARIANTS[event.role] || "secondary") as any}>
-                        {event.role}
-                      </Badge>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
+            <div>
+              <p className="text-2xl font-bold">{tasks.length}</p>
+              <p className="text-xs text-muted-foreground">Pending Tasks</p>
+            </div>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center">
+              <Flame className="w-5 h-5 text-rose-400" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{overdueTasks.length}</p>
+              <p className="text-xs text-muted-foreground">Overdue</p>
+            </div>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+              <TrendingUp className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{upcomingTasks.length}</p>
+              <p className="text-xs text-muted-foreground">This Week</p>
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Quick Add Task */}
+      <QuickAddTask onAdded={fetchData} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Priority Tasks */}
@@ -193,7 +153,7 @@ export default function DashboardPage() {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2">
-                <CheckSquare className="w-5 h-5 text-primary" />
+                <Target className="w-5 h-5 text-blue-400" />
                 Priority Tasks
               </CardTitle>
               <Link href="/tasks">
@@ -204,7 +164,7 @@ export default function DashboardPage() {
           <CardContent>
             {overdueTasks.length > 0 && (
               <div className="mb-4">
-                <p className="text-xs font-semibold text-destructive uppercase mb-2">
+                <p className="text-xs font-semibold text-rose-400 uppercase mb-2 tracking-wider">
                   Overdue
                 </p>
                 {overdueTasks.slice(0, 3).map((task) => (
@@ -215,7 +175,7 @@ export default function DashboardPage() {
             {upcomingTasks.length > 0 ? (
               <div>
                 {overdueTasks.length > 0 && (
-                  <p className="text-xs font-semibold text-muted-foreground uppercase mb-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase mb-2 tracking-wider">
                     Upcoming
                   </p>
                 )}
@@ -224,26 +184,45 @@ export default function DashboardPage() {
                 ))}
               </div>
             ) : overdueTasks.length === 0 ? (
-              <p className="text-muted-foreground text-sm py-4">
-                No pending tasks. Add some from the Tasks page.
-              </p>
+              <div className="flex flex-col items-center py-8 text-center">
+                <div className="w-12 h-12 rounded-full bg-muted/50 border border-border flex items-center justify-center mb-3">
+                  <CheckSquare className="w-6 h-6 text-muted-foreground" />
+                </div>
+                <p className="text-muted-foreground text-sm">
+                  No pending tasks. Add some from the Tasks page.
+                </p>
+              </div>
             ) : null}
           </CardContent>
         </Card>
 
-        {/* Weekly Commitments */}
+        {/* Streaks & Quick Actions */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2">
-              <Clock className="w-5 h-5 text-primary" />
-              Quick Stats
+              <Flame className="w-5 h-5 text-orange-400" />
+              Streaks & Actions
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-3 gap-3">
-              <StatBox label="Today's Events" value={events.length} />
-              <StatBox label="Pending Tasks" value={tasks.length} />
-              <StatBox label="Overdue" value={overdueTasks.length} />
+          <CardContent className="space-y-4">
+            <StreakBadges />
+            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border">
+              <Link href="/tasks" className="stat-card text-center group">
+                <CheckSquare className="w-5 h-5 text-blue-400 mx-auto mb-2 group-hover:scale-110 transition-transform" />
+                <p className="text-xs font-medium">New Task</p>
+              </Link>
+              <Link href="/goals" className="stat-card text-center group">
+                <Target className="w-5 h-5 text-purple-400 mx-auto mb-2 group-hover:scale-110 transition-transform" />
+                <p className="text-xs font-medium">Set Goal</p>
+              </Link>
+              <Link href="/reflections" className="stat-card text-center group">
+                <Clock className="w-5 h-5 text-emerald-400 mx-auto mb-2 group-hover:scale-110 transition-transform" />
+                <p className="text-xs font-medium">Reflect</p>
+              </Link>
+              <Link href="/analytics" className="stat-card text-center group">
+                <TrendingUp className="w-5 h-5 text-amber-400 mx-auto mb-2 group-hover:scale-110 transition-transform" />
+                <p className="text-xs font-medium">Analytics</p>
+              </Link>
             </div>
           </CardContent>
         </Card>
@@ -265,16 +244,16 @@ function TaskRow({ task, overdue }: { task: any; overdue?: boolean }) {
   return (
     <Link
       href={href}
-      className="flex items-center gap-3 py-2 px-2 -mx-2 rounded-md hover:bg-accent/50 transition-colors cursor-pointer"
+      className="flex items-center gap-3 py-2.5 px-3 -mx-3 rounded-lg hover:bg-accent transition-colors cursor-pointer"
     >
       <PriorityDot priority={task.priority} />
       <div className="flex-1 min-w-0">
-        <p className={`text-sm truncate ${overdue ? "text-destructive" : ""}`}>
+        <p className={`text-sm truncate ${overdue ? "text-rose-400" : ""}`}>
           {task.title}
         </p>
       </div>
       {task.dueDate && (
-        <span className={`text-xs ${overdue ? "text-destructive" : "text-muted-foreground"}`}>
+        <span className={`text-xs ${overdue ? "text-rose-400" : "text-muted-foreground"}`}>
           {format(new Date(task.dueDate), "MMM d")}
         </span>
       )}
@@ -282,13 +261,85 @@ function TaskRow({ task, overdue }: { task: any; overdue?: boolean }) {
   );
 }
 
-function StatBox({ label, value }: { label: string; value: number }) {
+function StreakBadges() {
+  const [streaks, setStreaks] = useState<{ taskStreak: number; reflectionStreak: number } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/analytics?period=week")
+      .then((r) => r.json())
+      .then((d) => setStreaks({ taskStreak: d.taskStreak || 0, reflectionStreak: d.reflectionStreak || 0 }))
+      .catch(() => {});
+  }, []);
+
+  if (!streaks) return null;
+
   return (
-    <div className="p-3 rounded-lg border bg-background">
-      <p className="text-2xl font-bold">{value}</p>
-      <p className="text-xs text-muted-foreground">{label}</p>
+    <div className="flex items-center gap-3">
+      <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${streaks.taskStreak >= 7 ? "border-orange-500/30 bg-orange-500/5" : "border-border bg-muted/30"}`}>
+        <Flame className={`w-4 h-4 ${streaks.taskStreak >= 7 ? "text-orange-400" : "text-muted-foreground"}`} />
+        <div>
+          <p className="text-sm font-bold">{streaks.taskStreak}d</p>
+          <p className="text-[10px] text-muted-foreground">Tasks</p>
+        </div>
+      </div>
+      <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${streaks.reflectionStreak >= 7 ? "border-purple-500/30 bg-purple-500/5" : "border-border bg-muted/30"}`}>
+        <Target className={`w-4 h-4 ${streaks.reflectionStreak >= 7 ? "text-purple-400" : "text-muted-foreground"}`} />
+        <div>
+          <p className="text-sm font-bold">{streaks.reflectionStreak}d</p>
+          <p className="text-[10px] text-muted-foreground">Reflections</p>
+        </div>
+      </div>
     </div>
   );
+}
+
+function QuickAddTask({ onAdded }: { onAdded: () => void }) {
+  const [title, setTitle] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+    setAdding(true);
+    try {
+      const today = format(new Date(), "yyyy-MM-dd");
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: title.trim(), dueDate: today, priority: "medium" }),
+      });
+      if (!res.ok) throw new Error();
+      setTitle("");
+      toast.success("Task added");
+      onAdded();
+    } catch {
+      toast.error("Failed to add task");
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="flex gap-2">
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="Quick add a task for today..."
+        className="flex-1 h-11 px-4 rounded-xl border border-border bg-card/50 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all"
+      />
+      <Button type="submit" disabled={adding || !title.trim()} size="lg" className="h-11 px-4">
+        <Plus className="w-4 h-4" />
+      </Button>
+    </form>
+  );
+}
+
+function getMotivation(pending: number, overdue: number): string {
+  if (overdue > 3) return "Let's tackle those overdue items first";
+  if (overdue > 0) return `${overdue} overdue — you've got this`;
+  if (pending === 0) return "All clear — great work!";
+  if (pending <= 3) return "Light day ahead — stay focused";
+  return `${pending} tasks on deck — one at a time`;
 }
 
 function getTimeOfDay() {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, differenceInMinutes, subDays, isSameDay } from "date-fns";
+import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, differenceInMinutes, subDays, isSameDay, format, startOfDay, endOfDay } from "date-fns";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -123,6 +123,43 @@ export async function GET(req: NextRequest) {
       mood: r.mood,
     }));
 
+  let daily: { date: string; tasksCompleted: number; reflections: number; events: number }[] = [];
+  if (period === "month") {
+    const thirtyDaysAgo = subDays(now, 30);
+    const [dailyTasks, dailyReflections, dailyEvents] = await Promise.all([
+      prisma.task.findMany({
+        where: {
+          userId: session.user.id,
+          status: "done",
+          updatedAt: { gte: startOfDay(thirtyDaysAgo), lte: endOfDay(now) },
+        },
+      }),
+      prisma.reflection.findMany({
+        where: {
+          userId: session.user.id,
+          date: { gte: startOfDay(thirtyDaysAgo), lte: endOfDay(now) },
+        },
+      }),
+      prisma.event.findMany({
+        where: {
+          userId: session.user.id,
+          startTime: { gte: startOfDay(thirtyDaysAgo), lte: endOfDay(now) },
+        },
+      }),
+    ]);
+
+    for (let i = 29; i >= 0; i--) {
+      const day = subDays(now, i);
+      const dateStr = format(day, "yyyy-MM-dd");
+      daily.push({
+        date: dateStr,
+        tasksCompleted: dailyTasks.filter((t) => isSameDay(t.updatedAt!, day)).length,
+        reflections: dailyReflections.filter((r) => isSameDay(new Date(r.date), day)).length,
+        events: dailyEvents.filter((e) => isSameDay(e.startTime, day)).length,
+      });
+    }
+  }
+
   return NextResponse.json({
     eventsByCalendar,
     hoursByCalendar,
@@ -135,5 +172,6 @@ export async function GET(req: NextRequest) {
     goalsActive: goals.length,
     goalsProgress: goals.length > 0 ? Math.round(goals.reduce((sum, g) => sum + g.progress, 0) / goals.length) : 0,
     wellness,
+    daily,
   });
 }

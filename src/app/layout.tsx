@@ -1,11 +1,15 @@
 import "./globals.css";
 import { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
+import { Inter, Instrument_Serif } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
 import { SessionProvider } from "@/components/SessionProvider";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Toaster } from "sonner";
+
+const inter = Inter({ subsets: ["latin"] });
+const instrumentSerif = Instrument_Serif({ weight: "400", subsets: ["latin"], variable: "--font-instrument-serif" });
 
 export const metadata: Metadata = {
   title: "Student Leadership OS",
@@ -22,7 +26,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0f172a",
+  themeColor: "#0a0a1a",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -36,8 +40,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
       </head>
-      <body>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem nonce={nonce}>
+      <body className={`${inter.className} ${instrumentSerif.variable}`}>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem nonce={nonce}>
           <SessionProvider>{children}</SessionProvider>
           <Toaster richColors position="bottom-right" />
         </ThemeProvider>

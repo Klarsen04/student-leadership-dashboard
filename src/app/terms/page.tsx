@@ -1,7 +1,7 @@
 export default function TermsPage() {
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 py-16 px-4">
-      <div className="max-w-2xl mx-auto prose dark:prose-invert">
+    <div className="min-h-screen py-16 px-4">
+      <div className="max-w-2xl mx-auto prose dark:prose-invert prose-headings:text-foreground prose-p:text-muted-foreground prose-li:text-muted-foreground prose-a:text-purple-500">
         <h1>Terms of Service</h1>
         <p className="text-muted-foreground">Last updated: June 28, 2026</p>
 

@@ -8,6 +8,8 @@ export const createTaskSchema = z.object({
   role: z.string().max(50).default("Personal"),
   hours: z.number().min(0).max(24).nullable().optional(),
   goalId: z.string().optional(),
+  recurrence: z.enum(["daily", "weekdays", "weekly", "biweekly", "monthly"]).nullable().optional(),
+  recurrenceEnd: z.string().nullable().optional(),
 });
 
 export const updateTaskSchema = z.object({
@@ -20,6 +22,8 @@ export const updateTaskSchema = z.object({
   role: z.string().max(50).optional(),
   hours: z.number().min(0).max(24).nullable().optional(),
   goalId: z.string().nullable().optional(),
+  recurrence: z.enum(["daily", "weekdays", "weekly", "biweekly", "monthly"]).nullable().optional(),
+  recurrenceEnd: z.string().nullable().optional(),
 });
 
 export const createGoalSchema = z.object({
@@ -75,6 +79,7 @@ export const createEventSchema = z.object({
   role: z.string().max(50).default("Personal"),
   location: z.string().max(200).optional(),
   isLed: z.boolean().default(false),
+  actualMinutes: z.number().min(0).max(1440).nullable().optional(),
 });
 
 export const createReflectionSchema = z.object({

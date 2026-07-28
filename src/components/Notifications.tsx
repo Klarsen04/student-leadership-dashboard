@@ -120,7 +120,7 @@ export function NotificationBell() {
             notifications.map((n) => (
               <div
                 key={n.id}
-                className="flex items-start gap-3 p-3 rounded-lg border hover:bg-accent/50 transition-colors"
+                className="flex items-start gap-3 p-3 rounded-lg border border-border hover:bg-accent transition-colors"
               >
                 <Badge variant={n.type === "event" ? "default" : "secondary"}>
                   {n.type === "event" ? "Event" : "Task"}

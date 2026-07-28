@@ -22,24 +22,50 @@ export async function GET(req: NextRequest) {
   if (role) where.role = role;
   if (priority) where.priority = priority;
 
-  const [tasks, total] = await Promise.all([
+  const [rawTasks, total] = await Promise.all([
     prisma.task.findMany({
       where,
       include: { goal: true },
-      orderBy: [{ priority: "desc" }, { dueDate: "asc" }],
+      orderBy: [{ dueDate: "asc" }],
       skip: (page - 1) * limit,
       take: limit,
     }),
     prisma.task.count({ where }),
   ]);
 
+  const priorityOrder: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+  const tasks = rawTasks.sort((a, b) => (priorityOrder[a.priority] ?? 9) - (priorityOrder[b.priority] ?? 9));
+
   return NextResponse.json({ tasks, total, page, limit });
 }
+
+async function ensureColumns() {
+  try {
+    const cols = await prisma.$queryRawUnsafe<any[]>(`PRAGMA table_info(Task)`);
+    const names = cols.map((c: any) => c.name);
+    if (!names.includes("recurrence")) {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Task" ADD COLUMN "recurrence" TEXT`);
+    }
+    if (!names.includes("recurrenceEnd")) {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Task" ADD COLUMN "recurrenceEnd" DATETIME`);
+    }
+    if (!names.includes("parentTaskId")) {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Task" ADD COLUMN "parentTaskId" TEXT`);
+    }
+  } catch {}
+}
+
+let migrated = false;
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!migrated) {
+    await ensureColumns();
+    migrated = true;
   }
 
   const body = await req.json();
@@ -58,6 +84,8 @@ export async function POST(req: NextRequest) {
       role: data.role,
       hours: data.hours ?? null,
       goalId: data.goalId || null,
+      recurrence: data.recurrence || null,
+      recurrenceEnd: data.recurrenceEnd ? new Date(data.recurrenceEnd) : null,
       userId: session.user.id,
     },
   });
@@ -87,6 +115,8 @@ export async function PATCH(req: NextRequest) {
   if (fields.role !== undefined) data.role = fields.role;
   if (fields.hours !== undefined) data.hours = fields.hours;
   if (fields.goalId !== undefined) data.goalId = fields.goalId;
+  if (fields.recurrence !== undefined) data.recurrence = fields.recurrence;
+  if (fields.recurrenceEnd !== undefined) data.recurrenceEnd = fields.recurrenceEnd ? new Date(fields.recurrenceEnd) : null;
 
   const task = await prisma.task.update({
     where: { id, userId: session.user.id },

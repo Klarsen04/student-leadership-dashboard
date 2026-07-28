@@ -128,20 +128,23 @@ model Goal {
 }
 
 model Task {
-  id          String    @id @default(cuid())
-  title       String
-  description String?
-  dueDate     DateTime?
-  priority    String    @default("medium")
-  status      String    @default("todo")
-  role        String    @default("Student")
-  hours       Float?
-  goalId      String?
-  goal        Goal?     @relation(fields: [goalId], references: [id])
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id            String    @id @default(cuid())
+  title         String
+  description   String?
+  dueDate       DateTime?
+  priority      String    @default("medium")
+  status        String    @default("todo")
+  role          String    @default("Student")
+  hours         Float?
+  goalId        String?
+  goal          Goal?     @relation(fields: [goalId], references: [id])
+  recurrence    String?
+  recurrenceEnd DateTime?
+  parentTaskId  String?
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
 model DailyCheckIn {
@@ -172,3 +175,4 @@ model Reflection {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+

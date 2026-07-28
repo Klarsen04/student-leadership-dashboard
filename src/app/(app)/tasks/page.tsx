@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { format, startOfWeek, addDays, addWeeks, isToday, isSameWeek, parseISO } from "date-fns";
-import { Plus, Check, Trash2, Play, Pause, RotateCcw, Timer, ChevronLeft, ChevronRight } from "lucide-react";
+import { format, startOfWeek, addDays, addWeeks, isToday, isSameWeek } from "date-fns";
+import { Plus, Check, Trash2, Play, Pause, RotateCcw, Timer, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,11 +13,11 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PriorityDot } from "@/components/PriorityDot";
 import { TASK_PRIORITIES } from "@/lib/utils";
+import { TapeShelf, TAPES } from "@/components/tasks/TapeShelf";
 
 interface Task {
   id: string;
@@ -28,18 +28,19 @@ interface Task {
   status: string;
   role: string;
   hours: number | null;
+  recurrence: string | null;
   goal: { id: string; title: string } | null;
   createdAt: string;
 }
 
 const DAY_THEMES = [
-  { name: "Sunday", short: "Sun", gradient: "from-rose-100 to-rose-50 dark:from-rose-950/30 dark:to-rose-900/10", accent: "bg-rose-500", accentLight: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300", border: "border-rose-200 dark:border-rose-800/40", tabActive: "bg-rose-500 text-white", ring: "ring-rose-200 dark:ring-rose-700" },
-  { name: "Monday", short: "Mon", gradient: "from-purple-100 to-purple-50 dark:from-purple-950/30 dark:to-purple-900/10", accent: "bg-purple-500", accentLight: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300", border: "border-purple-200 dark:border-purple-800/40", tabActive: "bg-purple-500 text-white", ring: "ring-purple-200 dark:ring-purple-700" },
-  { name: "Tuesday", short: "Tue", gradient: "from-pink-100 to-pink-50 dark:from-pink-950/30 dark:to-pink-900/10", accent: "bg-pink-500", accentLight: "bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300", border: "border-pink-200 dark:border-pink-800/40", tabActive: "bg-pink-500 text-white", ring: "ring-pink-200 dark:ring-pink-700" },
-  { name: "Wednesday", short: "Wed", gradient: "from-green-100 to-green-50 dark:from-green-950/30 dark:to-green-900/10", accent: "bg-green-500", accentLight: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300", border: "border-green-200 dark:border-green-800/40", tabActive: "bg-green-500 text-white", ring: "ring-green-200 dark:ring-green-700" },
-  { name: "Thursday", short: "Thu", gradient: "from-amber-100 to-amber-50 dark:from-amber-950/30 dark:to-amber-900/10", accent: "bg-amber-500", accentLight: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300", border: "border-amber-200 dark:border-amber-800/40", tabActive: "bg-amber-500 text-white", ring: "ring-amber-200 dark:ring-amber-700" },
-  { name: "Friday", short: "Fri", gradient: "from-red-100 to-red-50 dark:from-red-950/30 dark:to-red-900/10", accent: "bg-red-500", accentLight: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300", border: "border-red-200 dark:border-red-800/40", tabActive: "bg-red-500 text-white", ring: "ring-red-200 dark:ring-red-700" },
-  { name: "Saturday", short: "Sat", gradient: "from-blue-100 to-blue-50 dark:from-blue-950/30 dark:to-blue-900/10", accent: "bg-blue-500", accentLight: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300", border: "border-blue-200 dark:border-blue-800/40", tabActive: "bg-blue-500 text-white", ring: "ring-blue-200 dark:ring-blue-700" },
+  { name: "Sunday", short: "Sun", gradient: "from-rose-500/10 to-rose-500/5", accent: "bg-rose-500", accentLight: "bg-rose-500/10 text-rose-400", border: "border-rose-500/20", tabActive: "bg-rose-500 text-white shadow-rose-500/30 shadow-lg", ring: "ring-rose-500/30" },
+  { name: "Monday", short: "Mon", gradient: "from-purple-500/10 to-purple-500/5", accent: "bg-purple-500", accentLight: "bg-purple-500/10 text-purple-400", border: "border-purple-500/20", tabActive: "bg-purple-500 text-white shadow-purple-500/30 shadow-lg", ring: "ring-purple-500/30" },
+  { name: "Tuesday", short: "Tue", gradient: "from-pink-500/10 to-pink-500/5", accent: "bg-pink-500", accentLight: "bg-pink-500/10 text-pink-400", border: "border-pink-500/20", tabActive: "bg-pink-500 text-white shadow-pink-500/30 shadow-lg", ring: "ring-pink-500/30" },
+  { name: "Wednesday", short: "Wed", gradient: "from-emerald-500/10 to-emerald-500/5", accent: "bg-emerald-500", accentLight: "bg-emerald-500/10 text-emerald-400", border: "border-emerald-500/20", tabActive: "bg-emerald-500 text-white shadow-emerald-500/30 shadow-lg", ring: "ring-emerald-500/30" },
+  { name: "Thursday", short: "Thu", gradient: "from-amber-500/10 to-amber-500/5", accent: "bg-amber-500", accentLight: "bg-amber-500/10 text-amber-400", border: "border-amber-500/20", tabActive: "bg-amber-500 text-white shadow-amber-500/30 shadow-lg", ring: "ring-amber-500/30" },
+  { name: "Friday", short: "Fri", gradient: "from-orange-500/10 to-orange-500/5", accent: "bg-orange-500", accentLight: "bg-orange-500/10 text-orange-400", border: "border-orange-500/20", tabActive: "bg-orange-500 text-white shadow-orange-500/30 shadow-lg", ring: "ring-orange-500/30" },
+  { name: "Saturday", short: "Sat", gradient: "from-blue-500/10 to-blue-500/5", accent: "bg-blue-500", accentLight: "bg-blue-500/10 text-blue-400", border: "border-blue-500/20", tabActive: "bg-blue-500 text-white shadow-blue-500/30 shadow-lg", ring: "ring-blue-500/30" },
 ];
 
 export default function TasksPage() {
@@ -62,9 +63,11 @@ export default function TasksPage() {
   const [focusTime, setFocusTime] = useState(25 * 60);
   const [focusRunning, setFocusRunning] = useState(false);
   const [focusElapsed, setFocusElapsed] = useState(0);
+  const [focusTask, setFocusTask] = useState<Task | null>(null);
   const [dailyNote, setDailyNote] = useState("");
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const [weekOffset, setWeekOffset] = useState(0);
+  const [shelfExpanded, setShelfExpanded] = useState(true);
 
   const weekStart = addWeeks(startOfWeek(new Date(), { weekStartsOn: 0 }), weekOffset);
   const selectedDate = addDays(weekStart, selectedDay);
@@ -86,7 +89,7 @@ export default function TasksPage() {
   }, []);
 
   useEffect(() => {
-    fetchTasks();
+    fetch("/api/tasks/generate", { method: "POST" }).then(() => fetchTasks()).catch(() => fetchTasks());
   }, [fetchTasks]);
 
   useEffect(() => {
@@ -139,6 +142,20 @@ export default function TasksPage() {
   const doneTasks = dayTasks.filter((t) => t.status === "done");
   const totalDayTasks = dayTasks.length;
   const completionPercent = totalDayTasks > 0 ? Math.round((doneTasks.length / totalDayTasks) * 100) : 0;
+
+  // Compute task counts per day for the tape shelf progress indicators
+  const taskCounts: Record<number, { total: number; done: number }> = {};
+  for (let i = 0; i <= 6; i++) {
+    const dayDate = format(addDays(weekStart, i), "yyyy-MM-dd");
+    const dayTasksForCount = tasks.filter((t) => {
+      if (!t.dueDate) return false;
+      return t.dueDate.slice(0, 10) === dayDate;
+    });
+    taskCounts[i] = {
+      total: dayTasksForCount.length,
+      done: dayTasksForCount.filter((t) => t.status === "done").length,
+    };
+  }
 
   const updateTaskStatus = async (task: Task, newStatus: string) => {
     try {
@@ -233,75 +250,110 @@ export default function TasksPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-pulse text-muted-foreground">Loading tasks...</div>
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Tape shelf skeleton */}
+        <div className="flex items-end justify-center gap-2 h-64 px-4">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div
+              key={i}
+              className="bg-muted/50 animate-pulse rounded-sm"
+              style={{ width: i === 0 ? 80 : 36, height: `${180 + Math.random() * 40}px` }}
+            />
+          ))}
+        </div>
+        <div className="text-center space-y-2">
+          <div className="h-9 w-40 mx-auto rounded-lg bg-muted animate-pulse" />
+          <div className="h-5 w-64 mx-auto rounded bg-muted animate-pulse" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-64 rounded-2xl bg-muted/50 border border-border animate-pulse" />
+          ))}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      {/* Week Navigation + Day Tabs */}
-      <div className="flex items-center justify-center gap-2">
-        <button
-          onClick={() => setWeekOffset((w) => w - 1)}
-          className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-
-        <div className="flex items-center gap-1.5">
-          {DAY_THEMES.map((day, idx) => {
-            const dayDate = addDays(weekStart, idx);
-            const isActive = idx === selectedDay;
-            const isCurrentDay = isToday(dayDate);
-            return (
-              <button
-                key={day.name}
-                onClick={() => setSelectedDay(idx)}
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                  isActive
-                    ? day.tabActive + " shadow-sm scale-105"
-                    : isCurrentDay
-                    ? "bg-muted ring-2 " + day.ring + " text-foreground"
-                    : "bg-muted/50 text-muted-foreground hover:bg-muted"
-                }`}
-              >
-                {day.short}
-              </button>
-            );
-          })}
+    <div className="max-w-7xl mx-auto space-y-6 animate-fade-in">
+      {/* Header with branding */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-bold tracking-tight uppercase text-muted-foreground" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif", letterSpacing: "0.1em" }}>
+            Task Tape
+          </h1>
         </div>
-
-        <button
-          onClick={() => setWeekOffset((w) => w + 1)}
-          className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Week label + Today button */}
-      {!isCurrentWeek && (
-        <div className="flex items-center justify-center gap-2">
-          <span className="text-xs text-muted-foreground">
-            Week of {format(weekStart, "MMM d")}
+        <div className="flex items-center gap-2">
+          {/* Week navigation */}
+          <button
+            onClick={() => setWeekOffset((w) => w - 1)}
+            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <span className="text-xs text-muted-foreground font-medium min-w-[100px] text-center">
+            {format(weekStart, "MMM d")} - {format(addDays(weekStart, 6), "MMM d")}
           </span>
           <button
-            onClick={() => { setWeekOffset(0); setSelectedDay(new Date().getDay()); }}
-            className="text-xs px-2 py-0.5 rounded-full bg-primary text-primary-foreground hover:opacity-90"
+            onClick={() => setWeekOffset((w) => w + 1)}
+            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
           >
-            Today
+            <ChevronRight className="w-4 h-4" />
           </button>
+          {!isCurrentWeek && (
+            <button
+              onClick={() => { setWeekOffset(0); setSelectedDay(new Date().getDay()); }}
+              className="text-xs px-2 py-0.5 rounded-full bg-primary text-primary-foreground hover:opacity-90 ml-1"
+            >
+              Today
+            </button>
+          )}
         </div>
-      )}
+      </div>
 
-      {/* Day Header */}
-      <div className="text-center space-y-1">
-        <h1 className="text-3xl font-bold tracking-tight">{theme.name}</h1>
-        <p className="text-sm text-muted-foreground">
-          {totalDayTasks} {totalDayTasks === 1 ? "task" : "tasks"} · {doneTasks.length} done
-        </p>
+      {/* Tape Shelf - Collapsible */}
+      <div className="relative">
+        <button
+          onClick={() => setShelfExpanded(!shelfExpanded)}
+          className="absolute -top-1 right-0 z-20 p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          title={shelfExpanded ? "Collapse shelf" : "Expand shelf"}
+        >
+          <ChevronDown className={`w-4 h-4 transition-transform ${shelfExpanded ? "" : "-rotate-90"}`} />
+        </button>
+
+        <div className={`transition-all duration-500 overflow-hidden ${shelfExpanded ? "max-h-[400px] opacity-100" : "max-h-0 opacity-0"}`}>
+          <TapeShelf
+            selectedDay={selectedDay}
+            onSelectDay={setSelectedDay}
+            taskCounts={taskCounts}
+          />
+        </div>
+
+        {/* Compact day tabs fallback when shelf is collapsed */}
+        {!shelfExpanded && (
+          <div className="flex items-center justify-center gap-1.5 py-2">
+            {DAY_THEMES.map((day, idx) => {
+              const dayDate = addDays(weekStart, idx);
+              const isActive = idx === selectedDay;
+              const isCurrentDay = isToday(dayDate);
+              return (
+                <button
+                  key={day.name}
+                  onClick={() => setSelectedDay(idx)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                    isActive
+                      ? day.tabActive + " shadow-sm scale-105"
+                      : isCurrentDay
+                      ? "bg-muted ring-2 " + day.ring + " text-foreground"
+                      : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  {day.short}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Completion Bar */}
@@ -316,6 +368,13 @@ export default function TasksPage() {
           {completionPercent}%
           <span className="text-[10px] ml-0.5 uppercase tracking-wider">complete</span>
         </span>
+      </div>
+
+      {/* Task counts summary */}
+      <div className="text-center">
+        <p className="text-sm text-muted-foreground">
+          {totalDayTasks} {totalDayTasks === 1 ? "task" : "tasks"} · {doneTasks.length} done
+        </p>
       </div>
 
       {/* Overdue Tasks */}
@@ -359,7 +418,6 @@ export default function TasksPage() {
 
       {/* Kanban Columns */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* TO DO */}
         <KanbanColumn
           title="TO DO"
           count={todoTasks.length}
@@ -380,7 +438,6 @@ export default function TasksPage() {
           prevStatus={null}
         />
 
-        {/* IN PROGRESS */}
         <KanbanColumn
           title="IN PROGRESS"
           count={inProgressTasks.length}
@@ -401,7 +458,6 @@ export default function TasksPage() {
           prevStatus="todo"
         />
 
-        {/* DONE */}
         <KanbanColumn
           title="DONE"
           count={doneTasks.length}
@@ -433,6 +489,29 @@ export default function TasksPage() {
               Focus Session
             </h3>
           </div>
+
+          {/* Task selector */}
+          <div className="mb-4">
+            <select
+              value={focusTask?.id || ""}
+              onChange={(e) => {
+                const t = tasks.find((task) => task.id === e.target.value);
+                setFocusTask(t || null);
+              }}
+              className="w-full h-8 text-xs border border-input rounded-lg px-2 bg-background/50 text-foreground"
+            >
+              <option value="">No task (free focus)</option>
+              {[...todoTasks, ...inProgressTasks].map((t) => (
+                <option key={t.id} value={t.id}>{t.title}</option>
+              ))}
+            </select>
+            {focusTask && (
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Focusing on: <span className="font-medium text-foreground">{focusTask.title}</span>
+              </p>
+            )}
+          </div>
+
           <div className="text-center">
             <div className="text-4xl font-mono font-bold mb-4">
               {formatTimer(focusTime - focusElapsed)}
@@ -440,7 +519,12 @@ export default function TasksPage() {
             <div className="flex items-center justify-center gap-2">
               <Button
                 size="sm"
-                onClick={() => setFocusRunning(!focusRunning)}
+                onClick={() => {
+                  if (!focusRunning && focusTask && focusTask.status === "todo") {
+                    updateTaskStatus(focusTask, "in_progress");
+                  }
+                  setFocusRunning(!focusRunning);
+                }}
                 className={theme.accent + " hover:opacity-90 text-white"}
               >
                 {focusRunning ? <Pause className="w-4 h-4 mr-1" /> : <Play className="w-4 h-4 mr-1" />}
@@ -449,7 +533,22 @@ export default function TasksPage() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => { setFocusRunning(false); setFocusElapsed(0); }}
+                onClick={() => {
+                  if (focusElapsed > 60 && focusTask) {
+                    const hoursSpent = Math.round((focusElapsed / 3600) * 10) / 10;
+                    const currentHours = focusTask.hours || 0;
+                    fetch("/api/tasks", {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ id: focusTask.id, hours: currentHours + hoursSpent }),
+                    }).then(() => {
+                      setTasks((prev) => prev.map((t) => t.id === focusTask.id ? { ...t, hours: currentHours + hoursSpent } : t));
+                      toast.success(`Logged ${hoursSpent}h to "${focusTask.title}"`);
+                    });
+                  }
+                  setFocusRunning(false);
+                  setFocusElapsed(0);
+                }}
               >
                 <RotateCcw className="w-4 h-4" />
               </Button>
@@ -469,6 +568,11 @@ export default function TasksPage() {
                 </button>
               ))}
             </div>
+            {focusElapsed > 0 && (
+              <p className="text-[10px] text-muted-foreground mt-2">
+                {Math.round(focusElapsed / 60)}m focused{focusTask ? ` on "${focusTask.title}"` : ""}
+              </p>
+            )}
           </div>
         </div>
 
@@ -509,7 +613,7 @@ export default function TasksPage() {
       {/* Floating Add Button */}
       <button
         onClick={() => setShowFullAdd(true)}
-        className={`fixed bottom-6 right-6 h-12 px-5 rounded-full ${theme.accent} text-white shadow-lg hover:scale-105 transition-transform flex items-center justify-center gap-2 font-medium text-sm`}
+        className={`fixed bottom-6 right-6 h-12 px-5 rounded-full ${theme.accent} text-white shadow-lg shadow-purple-500/20 hover:scale-110 hover:shadow-xl hover:shadow-purple-500/30 transition-all duration-200 flex items-center justify-center gap-2 font-medium text-sm`}
       >
         <Plus className="w-5 h-5" />
         Add Task
@@ -596,7 +700,7 @@ function KanbanColumn({
       </div>
 
       <div
-        className={`flex-1 rounded-2xl border bg-card/50 p-3 space-y-2 min-h-[200px] transition-colors ${theme.border} ${dragOver ? "ring-2 ring-primary/30 bg-primary/5" : ""}`}
+        className={`flex-1 rounded-2xl border bg-card/50 backdrop-blur-sm p-3 space-y-2 min-h-[200px] transition-all duration-200 ${theme.border} ${dragOver ? "ring-2 ring-purple-500/30 bg-purple-500/5 scale-[1.01]" : ""}`}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={(e) => {
@@ -698,8 +802,8 @@ function TaskCard({
         e.dataTransfer.setData("text/plain", task.id);
         e.dataTransfer.effectAllowed = "move";
       }}
-      className={`group relative rounded-xl border bg-background p-3 transition-all hover:shadow-sm cursor-grab active:cursor-grabbing active:opacity-70 active:scale-[0.98] ${
-        isDone ? "opacity-60" : ""
+      className={`group relative rounded-xl border border-border bg-card/80 backdrop-blur-sm p-3 transition-all duration-200 hover:bg-accent hover:border-border hover:shadow-lg hover:shadow-black/10 cursor-grab active:cursor-grabbing active:opacity-70 active:scale-[0.96] ${
+        isDone ? "opacity-50" : ""
       }`}
     >
       <div className="flex items-start gap-2.5">
@@ -735,6 +839,11 @@ function TaskCard({
               <PriorityDot priority={task.priority} />
               <span className="text-[10px] text-muted-foreground capitalize">{task.priority}</span>
             </button>
+            {task.recurrence && (
+              <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground" title={`Repeats ${task.recurrence}`}>
+                <RotateCcw className="w-3 h-3" />
+              </span>
+            )}
           </div>
         </div>
         <button
@@ -755,6 +864,7 @@ function AddTaskForm({ onSaved, defaultDate }: { onSaved: () => void; defaultDat
     dueDate: defaultDate,
     priority: "medium",
     hours: "",
+    recurrence: "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -768,6 +878,7 @@ function AddTaskForm({ onSaved, defaultDate }: { onSaved: () => void; defaultDat
         body: JSON.stringify({
           ...form,
           hours: form.hours ? parseFloat(form.hours) : null,
+          recurrence: form.recurrence || null,
         }),
       });
       if (!res.ok) throw new Error();
@@ -847,6 +958,21 @@ function AddTaskForm({ onSaved, defaultDate }: { onSaved: () => void; defaultDat
             placeholder="e.g. 2"
           />
         </div>
+      </div>
+      <div>
+        <label className="text-sm font-medium">Repeat</label>
+        <select
+          value={form.recurrence}
+          onChange={(e) => setForm({ ...form, recurrence: e.target.value })}
+          className="w-full h-10 border rounded-md px-3 text-sm bg-background"
+        >
+          <option value="">None</option>
+          <option value="daily">Daily</option>
+          <option value="weekdays">Weekdays</option>
+          <option value="weekly">Weekly</option>
+          <option value="biweekly">Biweekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
       </div>
       <Button type="submit" className="w-full" disabled={saving || !form.title}>
         {saving ? "Saving..." : "Create Task"}

@@ -15,6 +15,7 @@ import {
   Menu,
   X,
   Settings,
+  Sparkles,
 } from "lucide-react";
 import { useState } from "react";
 import { NotificationBell } from "@/components/Notifications";
@@ -37,46 +38,51 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Mobile toggle */}
+      {/* Mobile toggle - hidden, replaced by BottomNav */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="md:hidden fixed top-4 left-4 z-50 p-2 bg-background rounded-lg shadow-md border"
+        className="hidden"
       >
         <Menu className="w-5 h-5" />
       </button>
 
-      {/* Overlay */}
+      {/* Overlay - hidden on mobile, BottomNav replaces mobile navigation */}
       {mobileOpen && (
         <div
-          className="md:hidden fixed inset-0 bg-black/50 z-40"
+          className="hidden"
           onClick={() => setMobileOpen(false)}
         />
       )}
 
       <aside
         className={cn(
-          "fixed md:sticky top-0 left-0 h-screen w-64 bg-background border-r flex flex-col z-50 transition-transform md:translate-x-0",
+          "fixed md:sticky top-0 left-0 h-screen w-[260px] flex flex-col z-50 transition-transform md:translate-x-0",
+          "bg-background border-r border-border",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <div className="p-5 border-b flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <LayoutDashboard className="w-5 h-5 text-primary" />
-            <h1 className="font-bold text-base">Leadership OS</h1>
+        {/* Logo */}
+        <div className="p-5 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
+              <Sparkles className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-bold text-base tracking-tight">Leadership OS</span>
           </div>
           <div className="flex items-center gap-1">
             <ThemeToggle />
             <NotificationBell />
             <button
               onClick={() => setMobileOpen(false)}
-              className="md:hidden p-1 hover:bg-accent rounded"
+              className="md:hidden p-1.5 hover:bg-white/[0.06] rounded-lg transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+        {/* Navigation */}
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {nav.map((item) => {
             const Icon = item.icon;
             const active = pathname === item.href;
@@ -86,33 +92,37 @@ export function Sidebar() {
                 href={item.href}
                 onClick={() => setMobileOpen(false)}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                  active
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  "nav-item",
+                  active ? "nav-item-active" : "nav-item-inactive"
                 )}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className={cn("w-[18px] h-[18px]", active && "text-purple-400")} />
                 {item.label}
               </Link>
             );
           })}
         </nav>
 
-        <div className="p-3 border-t">
-          <div className="flex items-center gap-3 px-3 py-2 mb-1">
-            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-semibold">
+        {/* User Section */}
+        <div className="p-3 border-t border-border">
+          <div className="flex items-center gap-3 px-3 py-2.5 mb-1">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500/30 to-blue-500/30 border border-purple-500/30 flex items-center justify-center text-purple-300 text-xs font-semibold">
               {session?.user?.name?.[0] || "?"}
             </div>
-            <span className="text-sm font-medium truncate flex-1">
-              {session?.user?.name || "User"}
-            </span>
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-medium truncate block">
+                {session?.user?.name || "User"}
+              </span>
+              <span className="text-[11px] text-muted-foreground truncate block">
+                {session?.user?.email || ""}
+              </span>
+            </div>
           </div>
           <button
             onClick={() => signOut({ callbackUrl: "/login" })}
-            className="flex items-center gap-3 px-3 py-2 w-full rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+            className="nav-item nav-item-inactive w-full"
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="w-[18px] h-[18px]" />
             Sign out
           </button>
         </div>

@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { format, startOfWeek, endOfWeek } from "date-fns";
-import { BookOpen, Plus, Pencil, Trash2, ChevronDown, ChevronRight } from "lucide-react";
+import { BookOpen, Plus, Pencil, Trash2, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { generatePrompts, PromptContext } from "@/lib/reflectionPrompts";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -137,7 +138,7 @@ export default function ReflectionsPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Reflections</h1>
@@ -158,6 +159,7 @@ export default function ReflectionsPage() {
               <DialogDescription>Take a moment to pause and reflect</DialogDescription>
             </DialogHeader>
             <ReflectionForm
+              existingReflections={reflections}
               onSaved={() => {
                 setShowAdd(false);
                 fetchReflections();
@@ -189,9 +191,18 @@ export default function ReflectionsPage() {
       {loading ? (
         <div className="text-center text-muted-foreground py-12">Loading...</div>
       ) : reflections.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <BookOpen className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
-          No reflections yet. Take a moment to pause.
+        <div className="text-center py-16">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500/10 to-blue-500/10 border border-purple-500/20 flex items-center justify-center mx-auto mb-4">
+            <BookOpen className="w-8 h-8 text-purple-400" />
+          </div>
+          <h3 className="font-semibold text-lg mb-2">Start your reflection practice</h3>
+          <p className="text-muted-foreground text-sm max-w-md mx-auto mb-6">
+            Great leaders reflect regularly. Take 5 minutes to journal what went well, what you learned, and what you&apos;re grateful for. One entry per day, week, or month.
+          </p>
+          <Button onClick={() => setShowAdd(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Write Your First Reflection
+          </Button>
         </div>
       ) : (
         <div className="space-y-3">
@@ -303,15 +314,26 @@ export default function ReflectionsPage() {
   );
 }
 
-function ReflectionForm({ reflection, onSaved }: { reflection?: Reflection; onSaved: () => void }) {
-  const [form, setForm] = useState({
-    type: reflection?.type || "daily",
-    content: reflection?.content || "",
-    mood: reflection?.mood || 5,
-    energy: reflection?.energy || 5,
-    gratitude: reflection?.gratitude || "",
+function ReflectionForm({ reflection, existingReflections, onSaved }: { reflection?: Reflection; existingReflections?: Reflection[]; onSaved: () => void }) {
+  const usedTypes = getUsedTypesForCurrentPeriod(existingReflections || []);
+
+  const [form, setForm] = useState(() => {
+    const defaultType = reflection?.type || (
+      !usedTypes.has("daily") ? "daily" :
+      !usedTypes.has("weekly") ? "weekly" :
+      !usedTypes.has("monthly") ? "monthly" : "daily"
+    );
+    return {
+      type: defaultType,
+      content: reflection?.content || "",
+      mood: reflection?.mood || 5,
+      energy: reflection?.energy || 5,
+      gratitude: reflection?.gratitude || "",
+    };
   });
   const [saving, setSaving] = useState(false);
+
+  const currentTypeUsed = !reflection && usedTypes.has(form.type);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -331,12 +353,15 @@ function ReflectionForm({ reflection, onSaved }: { reflection?: Reflection; onSa
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(form),
         });
-        if (!res.ok) throw new Error();
+        if (!res.ok) {
+          const err = await res.json().catch(() => null);
+          throw new Error(err?.error || "Failed to save");
+        }
         toast.success("Reflection saved");
       }
       onSaved();
-    } catch {
-      toast.error("Failed to save reflection");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to save reflection");
     } finally {
       setSaving(false);
     }
@@ -345,29 +370,34 @@ function ReflectionForm({ reflection, onSaved }: { reflection?: Reflection; onSa
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {!reflection && (
-        <div className="flex gap-2">
-          {(["daily", "weekly", "monthly"] as const).map((type) => (
-            <Button
-              key={type}
-              type="button"
-              variant={form.type === type ? "default" : "outline"}
-              size="sm"
-              onClick={() => setForm({ ...form, type })}
-            >
-              {type.charAt(0).toUpperCase() + type.slice(1)}
-            </Button>
-          ))}
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            {(["daily", "weekly", "monthly"] as const).map((type) => {
+              const used = usedTypes.has(type);
+              return (
+                <Button
+                  key={type}
+                  type="button"
+                  variant={form.type === type ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setForm({ ...form, type })}
+                  className={used && form.type !== type ? "opacity-50" : ""}
+                >
+                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                  {used && <span className="ml-1 text-[10px]">✓</span>}
+                </Button>
+              );
+            })}
+          </div>
+          {currentTypeUsed && (
+            <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+              You already have a {form.type} reflection for this period. You can edit the existing one from the list, or choose a different type above.
+            </p>
+          )}
         </div>
       )}
 
-      <div className="bg-accent/50 rounded-lg p-3">
-        <p className="text-xs font-medium mb-1">Consider:</p>
-        <ul className="space-y-0.5">
-          {PROMPTS[form.type]?.map((p) => (
-            <li key={p} className="text-xs text-muted-foreground">{p}</li>
-          ))}
-        </ul>
-      </div>
+      <SmartPrompts type={form.type} />
 
       <Textarea
         required
@@ -421,9 +451,74 @@ function ReflectionForm({ reflection, onSaved }: { reflection?: Reflection; onSa
         />
       </div>
 
-      <Button type="submit" className="w-full" disabled={saving || !form.content}>
-        {saving ? "Saving..." : reflection ? "Save Changes" : "Save Reflection"}
+      <Button type="submit" className="w-full" disabled={saving || !form.content || currentTypeUsed}>
+        {saving ? "Saving..." : currentTypeUsed ? `${form.type} already logged` : reflection ? "Save Changes" : "Save Reflection"}
       </Button>
     </form>
+  );
+}
+
+function getUsedTypesForCurrentPeriod(reflections: Reflection[]): Set<string> {
+  const now = new Date();
+  const used = new Set<string>();
+
+  for (const ref of reflections) {
+    const refDate = new Date(ref.date);
+    if (ref.type === "daily") {
+      if (refDate.toDateString() === now.toDateString()) used.add("daily");
+    } else if (ref.type === "weekly") {
+      const startOfCurrentWeek = new Date(now);
+      startOfCurrentWeek.setDate(now.getDate() - now.getDay());
+      startOfCurrentWeek.setHours(0, 0, 0, 0);
+      const endOfCurrentWeek = new Date(startOfCurrentWeek);
+      endOfCurrentWeek.setDate(startOfCurrentWeek.getDate() + 6);
+      endOfCurrentWeek.setHours(23, 59, 59, 999);
+      if (refDate >= startOfCurrentWeek && refDate <= endOfCurrentWeek) used.add("weekly");
+    } else if (ref.type === "monthly") {
+      if (refDate.getMonth() === now.getMonth() && refDate.getFullYear() === now.getFullYear()) used.add("monthly");
+    }
+  }
+
+  return used;
+}
+
+function SmartPrompts({ type }: { type: string }) {
+  const [prompts, setPrompts] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch("/api/analytics?period=week")
+      .then((r) => r.json())
+      .then((data) => {
+        const ctx: PromptContext = {
+          hour: new Date().getHours(),
+          taskStreak: data.taskStreak || 0,
+          reflectionStreak: data.reflectionStreak || 0,
+          recentMood: data.wellness?.[0]?.mood || null,
+          recentEnergy: data.wellness?.[0]?.energy || null,
+          goalsActive: data.goalsActive || 0,
+          tasksCompleted: data.tasksCompleted || 0,
+          dayOfWeek: new Date().getDay(),
+        };
+        setPrompts(generatePrompts(ctx));
+      })
+      .catch(() => {
+        setPrompts(PROMPTS[type] || PROMPTS.daily);
+      });
+  }, [type]);
+
+  const displayPrompts = prompts.length > 0 ? prompts : (PROMPTS[type] || PROMPTS.daily);
+
+  return (
+    <div className="rounded-lg p-3 bg-gradient-to-r from-purple-500/5 to-blue-500/5 border border-purple-500/10">
+      <div className="flex items-center gap-1.5 mb-2">
+        <Sparkles className="w-3 h-3 text-purple-400" />
+        <p className="text-xs font-medium text-purple-400">Smart prompts</p>
+      </div>
+      <ul className="space-y-1">
+        {displayPrompts.map((p) => (
+          <li key={p} className="text-xs text-muted-foreground leading-relaxed">• {p}</li>
+        ))}
+      </ul>
+    </div>
   );
 }

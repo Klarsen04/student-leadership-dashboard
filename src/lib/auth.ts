@@ -37,24 +37,11 @@ export const authOptions: NextAuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      authorization: {
-        params: {
-          scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly",
-          access_type: "offline",
-          prompt: "consent",
-        },
-      },
     }),
     AzureADProvider({
       clientId: process.env.AZURE_AD_CLIENT_ID!,
       clientSecret: process.env.AZURE_AD_CLIENT_SECRET!,
       tenantId: process.env.AZURE_AD_TENANT_ID || "common",
-      authorization: {
-        params: {
-          scope:
-            "openid profile email offline_access Calendars.Read Calendars.ReadWrite",
-        },
-      },
     }),
   ],
   callbacks: {
