@@ -28,6 +28,10 @@ import {
 } from "@/components/ui/dialog";
 import { useCalendars, SubCalendar } from "@/lib/useCalendars";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { BlurFade } from "@/components/ui/blur-fade";
+import { NumberTicker } from "@/components/ui/number-ticker";
+import { ShineBorder } from "@/components/ui/shine-border";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface CalendarEvent {
   id: string;
@@ -526,12 +530,16 @@ export default function CalendarPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => setShowAddClass(true)} className="bg-purple-500 hover:bg-purple-600 text-white">
-              <BookOpen className="w-4 h-4 mr-1" /> Class
-            </Button>
-            <Button size="sm" onClick={() => setShowAdd(true)} className="bg-black text-white hover:bg-black/80">
-              <Plus className="w-4 h-4 mr-1" /> Event
-            </Button>
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              <Button size="sm" onClick={() => setShowAddClass(true)} className="bg-purple-500 hover:bg-purple-600 text-white shadow-md shadow-purple-500/20">
+                <BookOpen className="w-4 h-4 mr-1" /> Class
+              </Button>
+            </motion.div>
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              <Button size="sm" onClick={() => setShowAdd(true)} className="bg-black text-white hover:bg-black/80 shadow-md shadow-black/20">
+                <Plus className="w-4 h-4 mr-1" /> Event
+              </Button>
+            </motion.div>
           </div>
         </div>
 
@@ -626,34 +634,48 @@ export default function CalendarPage() {
       {/* Next Up Banner + Conflicts */}
       <div className="max-w-7xl mx-auto mb-4 space-y-2">
         {nextUp && (
-          <div className="flex items-center gap-4 px-4 py-3 rounded-xl border border-black/5 shadow-sm relative overflow-hidden" style={{ background: "linear-gradient(135deg, #faf9f7 0%, #f5f3ff 100%)" }}>
-            <div className="absolute inset-0 opacity-[0.03]" style={{ background: `linear-gradient(90deg, ${nextUp.cls.color} 0%, transparent 60%)` }} />
-            <div className="relative w-10 h-10 rounded-xl flex items-center justify-center shadow-sm" style={{ background: nextUp.cls.color }}>
-              <GraduationCap className="w-5 h-5 text-white" />
-            </div>
-            <div className="relative flex-1 min-w-0">
-              <p className="text-[10px] uppercase tracking-wider text-black/40 font-semibold">Next Up</p>
-              <p className="text-sm font-bold text-black truncate">{nextUp.cls.title}</p>
-              {nextUp.cls.professor && (
-                <p className="text-[11px] text-black/40 truncate">{nextUp.cls.professor}</p>
-              )}
-            </div>
-            <div className="relative flex items-center gap-3 text-xs text-black/60 shrink-0">
-              {nextUp.cls.location && (
+          <BlurFade delay={0.1} duration={0.5}>
+            <div className="flex items-center gap-4 px-4 py-3 rounded-xl border border-black/5 shadow-sm relative overflow-hidden" style={{ background: "linear-gradient(135deg, #faf9f7 0%, #f5f3ff 100%)" }}>
+              <ShineBorder shineColor={[nextUp.cls.color, "#a855f7", nextUp.cls.color]} duration={8} borderWidth={1} />
+              <div className="absolute inset-0 opacity-[0.04]" style={{ background: `linear-gradient(90deg, ${nextUp.cls.color} 0%, transparent 60%)` }} />
+              <motion.div
+                className="relative w-10 h-10 rounded-xl flex items-center justify-center shadow-sm"
+                style={{ background: nextUp.cls.color }}
+                animate={{ scale: [1, 1.05, 1] }}
+                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+              >
+                <GraduationCap className="w-5 h-5 text-white" />
+              </motion.div>
+              <div className="relative flex-1 min-w-0">
+                <p className="text-[10px] uppercase tracking-wider text-black/40 font-semibold">Next Up</p>
+                <p className="text-sm font-bold text-black truncate">{nextUp.cls.title}</p>
+                {nextUp.cls.professor && (
+                  <p className="text-[11px] text-black/40 truncate">{nextUp.cls.professor}</p>
+                )}
+              </div>
+              <div className="relative flex items-center gap-3 text-xs text-black/60 shrink-0">
+                {nextUp.cls.location && (
+                  <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-black/[0.03]">
+                    <MapPin className="w-3 h-3 text-black/40" />{nextUp.cls.location}
+                  </span>
+                )}
                 <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-black/[0.03]">
-                  <MapPin className="w-3 h-3 text-black/40" />{nextUp.cls.location}
+                  <Clock className="w-3 h-3 text-black/40" />{nextUp.cls.startTime}
                 </span>
-              )}
-              <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-black/[0.03]">
-                <Clock className="w-3 h-3 text-black/40" />{nextUp.cls.startTime}
-              </span>
-              <span className="px-2.5 py-1 rounded-full font-bold text-xs text-white shadow-sm" style={{ background: nextUp.cls.color }}>
-                {formatCountdown(nextUp.minutesUntil)}
-              </span>
+                <motion.span
+                  className="px-2.5 py-1 rounded-full font-bold text-xs text-white shadow-sm"
+                  style={{ background: nextUp.cls.color }}
+                  animate={{ opacity: [1, 0.7, 1] }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                >
+                  {formatCountdown(nextUp.minutesUntil)}
+                </motion.span>
+              </div>
             </div>
-          </div>
+          </BlurFade>
         )}
         {conflicts.length > 0 && (
+          <BlurFade delay={0.2} duration={0.4}>
           <div className="rounded-xl bg-amber-50 border border-amber-200 overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-2">
               <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
@@ -681,6 +703,7 @@ export default function CalendarPage() {
               )}
             </div>
           </div>
+          </BlurFade>
         )}
       </div>
 
@@ -689,16 +712,28 @@ export default function CalendarPage() {
         {/* Calendar Area */}
         <div className="flex-1 min-w-0">
           {loading ? (
-            <div className="text-center text-black/40 py-12">Loading...</div>
+            <div className="text-center text-black/40 py-12">
+              <motion.div
+                className="w-8 h-8 rounded-full border-2 border-purple-300 border-t-purple-600 mx-auto"
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+              />
+              <p className="mt-2 text-sm">Loading schedule...</p>
+            </div>
           ) : view === "month" ? (
-            <MonthViewCute events={filteredEvents} currentDate={currentDate} onEventClick={setSelectedEvent} getColor={getCalendarColor} classes={classes} onClassClick={setSelectedClass} />
+            <BlurFade key={`month-${currentDate.getMonth()}`} duration={0.3}>
+              <MonthViewCute events={filteredEvents} currentDate={currentDate} onEventClick={setSelectedEvent} getColor={getCalendarColor} classes={classes} onClassClick={setSelectedClass} />
+            </BlurFade>
           ) : (
-            <TimeGridView events={filteredEvents} currentDate={currentDate} view={view} onEventClick={setSelectedEvent} getColor={getCalendarColor} classes={classes} onClassClick={setSelectedClass} />
+            <BlurFade key={`grid-${view}-${currentDate.toISOString()}`} duration={0.3}>
+              <TimeGridView events={filteredEvents} currentDate={currentDate} view={view} onEventClick={setSelectedEvent} getColor={getCalendarColor} classes={classes} onClassClick={setSelectedClass} />
+            </BlurFade>
           )}
         </div>
 
         {/* Task Sidebar */}
         <aside className="hidden lg:block w-64 shrink-0">
+          <BlurFade delay={0.2} direction="right" duration={0.5}>
           <div className="bg-white rounded-2xl shadow-sm border border-black/5 p-4 sticky top-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-bold text-black">Tasks</h3>
@@ -740,11 +775,15 @@ export default function CalendarPage() {
                   <p className="text-[10px] uppercase tracking-wider font-semibold text-black/40">Classes</p>
                 </div>
                 {/* Credit stats */}
-                <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-purple-50/60 border border-purple-100">
+                <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-purple-50/60 border border-purple-100 relative overflow-hidden">
                   <GraduationCap className="w-3.5 h-3.5 text-purple-500" />
-                  <span className="text-[11px] font-bold text-purple-700">{totalCredits} credits</span>
+                  <span className="text-[11px] font-bold text-purple-700">
+                    <NumberTicker value={totalCredits} /> credits
+                  </span>
                   <span className="text-[10px] text-purple-400">•</span>
-                  <span className="text-[11px] text-purple-600">{weeklyHours.toFixed(1)}h/wk</span>
+                  <span className="text-[11px] text-purple-600">
+                    <NumberTicker value={parseFloat(weeklyHours.toFixed(1))} decimalPlaces={1} />h/wk
+                  </span>
                 </div>
                 {classes.map((cls) => (
                   <div key={cls.id} className="flex items-center gap-2 py-1.5 group cursor-pointer rounded-md px-1 -mx-1 hover:bg-black/[0.02] transition-colors" onClick={() => setSelectedClass(cls)}>
@@ -759,6 +798,7 @@ export default function CalendarPage() {
               </div>
             )}
           </div>
+          </BlurFade>
         </aside>
       </div>
 
