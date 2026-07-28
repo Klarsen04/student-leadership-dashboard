@@ -578,7 +578,7 @@ function KanbanColumn({ title, count, accent, dotColor, tasks, onStatusChange, o
         </div>
         {addingTo === columnStatus ? (
           <form onSubmit={(e) => { e.preventDefault(); onQuickAdd(columnStatus); }} className="flex gap-2 mt-2">
-            <Input autoFocus value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} placeholder="Task name..." className="h-8 text-sm bg-white border-black/10" onBlur={() => { if (!newTaskTitle) setAddingTo(null); }} />
+            <Input autoFocus value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} placeholder="Task name..." className="h-8 text-sm bg-white border-black/10 text-black placeholder:text-black/40" onBlur={() => { if (!newTaskTitle) setAddingTo(null); }} />
             <Button size="sm" type="submit" className="h-8 px-2" disabled={!newTaskTitle.trim()}><Plus className="w-3 h-3" /></Button>
           </form>
         ) : (
