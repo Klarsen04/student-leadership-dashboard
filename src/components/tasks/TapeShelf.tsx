@@ -11,11 +11,8 @@ const TAPES = [
     spine: "/tasktape/sunday-spine.png",
     cover: "/tasktape/sunday-cover.png",
     cassette: "/tasktape/sunday-cassette.png",
-    color: "from-rose-100 to-rose-50",
-    gradientBg: "radial-gradient(135% 115% at 50% -10%, rgb(254,226,226) 0%, rgb(254,205,211) 28%, rgb(251,191,204) 52%, rgb(254,226,226) 78%, rgb(255,241,242) 100%)",
-    accent: "rgb(225, 29, 72)",
-    accentBg: "bg-rose-600",
-    spineColor: "bg-rose-200",
+    accentRgb: "225, 29, 72",
+    spineColor: "bg-rose-300",
     motto: "rest, recharge, reset for a new week",
     dayNumber: "007",
   },
@@ -26,11 +23,8 @@ const TAPES = [
     spine: "/tasktape/monday-spine.png",
     cover: "/tasktape/monday-cover.png",
     cassette: "/tasktape/monday-cassette.png",
-    color: "from-purple-100 to-purple-50",
-    gradientBg: "radial-gradient(135% 115% at 50% -10%, rgb(243,232,255) 0%, rgb(233,213,255) 28%, rgb(221,194,255) 52%, rgb(243,232,255) 78%, rgb(250,245,255) 100%)",
-    accent: "rgb(147, 51, 234)",
-    accentBg: "bg-purple-600",
-    spineColor: "bg-purple-200",
+    accentRgb: "147, 51, 234",
+    spineColor: "bg-purple-300",
     motto: "plan with purpose, start strong, stay focused",
     dayNumber: "001",
   },
@@ -41,11 +35,8 @@ const TAPES = [
     spine: "/tasktape/tuesday-spine.png",
     cover: "/tasktape/tuesday-cover.png",
     cassette: "/tasktape/tuesday-cassette.png",
-    color: "from-pink-100 to-pink-50",
-    gradientBg: "radial-gradient(135% 115% at 50% -10%, rgb(252,231,243) 0%, rgb(251,207,232) 28%, rgb(249,186,220) 52%, rgb(252,231,243) 78%, rgb(253,242,248) 100%)",
-    accent: "rgb(219, 39, 119)",
-    accentBg: "bg-pink-600",
-    spineColor: "bg-pink-200",
+    accentRgb: "219, 39, 119",
+    spineColor: "bg-pink-300",
     motto: "take small steps, make steady progress",
     dayNumber: "002",
   },
@@ -56,11 +47,8 @@ const TAPES = [
     spine: "/tasktape/wednesday-spine.png",
     cover: "/tasktape/wednesday-cover.png",
     cassette: "/tasktape/wednesday-cassette.png",
-    color: "from-yellow-100 to-amber-50",
-    gradientBg: "radial-gradient(135% 115% at 50% -10%, rgb(254,249,195) 0%, rgb(254,240,138) 28%, rgb(253,224,71) 52%, rgb(254,249,195) 78%, rgb(254,252,232) 100%)",
-    accent: "rgb(161, 98, 7)",
-    accentBg: "bg-amber-700",
-    spineColor: "bg-yellow-200",
+    accentRgb: "217, 167, 43",
+    spineColor: "bg-yellow-300",
     motto: "stay consistent, build your momentum",
     dayNumber: "003",
   },
@@ -71,11 +59,8 @@ const TAPES = [
     spine: "/tasktape/thursday-spine.png",
     cover: "/tasktape/thursday-cover.png",
     cassette: "/tasktape/thursday-cassette.png",
-    color: "from-green-100 to-emerald-50",
-    gradientBg: "radial-gradient(135% 115% at 50% -10%, rgb(220,252,231) 0%, rgb(187,247,208) 28%, rgb(134,239,172) 52%, rgb(220,252,231) 78%, rgb(240,253,244) 100%)",
-    accent: "rgb(21, 128, 61)",
-    accentBg: "bg-green-700",
-    spineColor: "bg-green-200",
+    accentRgb: "34, 197, 94",
+    spineColor: "bg-green-300",
     motto: "grow your habits, achieve your goals",
     dayNumber: "004",
   },
@@ -86,11 +71,8 @@ const TAPES = [
     spine: "/tasktape/friday-spine.png",
     cover: "/tasktape/friday-cover.png",
     cassette: "/tasktape/friday-cassette.png",
-    color: "from-orange-100 to-orange-50",
-    gradientBg: "radial-gradient(135% 115% at 50% -10%, rgb(255,237,213) 0%, rgb(254,215,170) 28%, rgb(253,186,116) 52%, rgb(255,237,213) 78%, rgb(255,247,237) 100%)",
-    accent: "rgb(194, 65, 12)",
-    accentBg: "bg-orange-700",
-    spineColor: "bg-orange-200",
+    accentRgb: "234, 88, 12",
+    spineColor: "bg-orange-300",
     motto: "finish strong, feel proud",
     dayNumber: "005",
   },
@@ -101,15 +83,16 @@ const TAPES = [
     spine: "/tasktape/saturday-spine.png",
     cover: "/tasktape/saturday-cover.png",
     cassette: "/tasktape/saturday-cassette.png",
-    color: "from-blue-100 to-blue-50",
-    gradientBg: "radial-gradient(135% 115% at 50% -10%, rgb(219,234,254) 0%, rgb(191,219,254) 28%, rgb(147,197,253) 52%, rgb(219,234,254) 78%, rgb(239,246,255) 100%)",
-    accent: "rgb(29, 78, 216)",
-    accentBg: "bg-blue-700",
-    spineColor: "bg-blue-200",
+    accentRgb: "59, 130, 246",
+    spineColor: "bg-blue-300",
     motto: "stay positive, make it happen",
     dayNumber: "006",
   },
 ];
+
+function getGradientBg(accentRgb: string): string {
+  return `radial-gradient(135% 115% at 50% -10%, rgba(${accentRgb}, 0.75) 0%, rgba(${accentRgb}, 0.45) 28%, rgba(${accentRgb}, 0.24) 52%, rgba(${accentRgb}, 0.106) 78%, rgb(239, 238, 236) 100%)`;
+}
 
 interface DayTabsProps {
   selectedDay: number;
@@ -127,11 +110,12 @@ function DayTabs({ selectedDay, onSelectDay }: DayTabsProps) {
             onClick={() => onSelectDay(tape.index)}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
               isActive
-                ? "bg-foreground text-background shadow-lg"
-                : "border border-black/10 text-foreground/60 hover:text-foreground hover:border-black/20"
+                ? "text-white shadow-lg"
+                : "border border-black/10 text-black/60 hover:text-black hover:border-black/20"
             }`}
+            style={isActive ? { backgroundColor: `rgb(${tape.accentRgb})` } : undefined}
           >
-            <span className={`w-0.5 h-4 rounded-full ${tape.spineColor}`} />
+            <span className={`w-0.5 h-4 rounded-full ${isActive ? "bg-white/60" : tape.spineColor}`} />
             {tape.short}
           </button>
         );
@@ -151,8 +135,8 @@ function CassetteDisplay({ selectedDay }: CassetteDisplayProps) {
     <div className="relative flex flex-col items-center justify-center h-full min-h-[300px] lg:min-h-[400px]">
       {/* Glow effect behind cassette */}
       <div
-        className="absolute w-64 h-64 rounded-full blur-[64px] opacity-60 pointer-events-none"
-        style={{ background: tape.accent, opacity: 0.2 }}
+        className="absolute w-64 h-64 rounded-full blur-[64px] pointer-events-none"
+        style={{ background: `rgba(${tape.accentRgb}, 0.2)` }}
       />
 
       {/* Cover art - tilted behind */}
@@ -185,4 +169,4 @@ function CassetteDisplay({ selectedDay }: CassetteDisplayProps) {
   );
 }
 
-export { TAPES, DayTabs, CassetteDisplay };
+export { TAPES, DayTabs, CassetteDisplay, getGradientBg };

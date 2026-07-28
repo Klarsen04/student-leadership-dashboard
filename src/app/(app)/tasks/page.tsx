@@ -18,7 +18,7 @@ import {
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PriorityDot } from "@/components/PriorityDot";
 import { TASK_PRIORITIES } from "@/lib/utils";
-import { TAPES, DayTabs, CassetteDisplay } from "@/components/tasks/TapeShelf";
+import { TAPES, DayTabs, CassetteDisplay, getGradientBg } from "@/components/tasks/TapeShelf";
 
 interface Task {
   id: string;
@@ -347,7 +347,7 @@ export default function TasksPage() {
         />
         <div
           className="absolute w-80 h-80 rounded-full blur-[80px] pointer-events-none opacity-40"
-          style={{ background: tape.accent }}
+          style={{ background: `rgb(${tape.accentRgb})` }}
         />
 
         {/* Remaining spines visible in background */}
@@ -407,35 +407,35 @@ export default function TasksPage() {
   return (
     <div
       className="min-h-screen -m-4 md:-m-8 p-4 md:p-8 flex flex-col overflow-hidden transition-all duration-700"
-      style={{ background: tape.gradientBg }}
+      style={{ background: getGradientBg(tape.accentRgb) }}
     >
       {/* Header */}
       <header className="flex items-center justify-between shrink-0 mb-4 lg:mb-6">
         <button
           onClick={backToTapeOpen}
-          className="flex items-center gap-2 text-foreground/50 text-sm font-medium hover:text-foreground transition-colors"
+          className="flex items-center gap-2 text-black/50 text-sm font-medium hover:text-black transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
           Back
         </button>
         <div className="flex items-center gap-3">
           <Image src="/tasktape/logo.svg" alt="logo" width={54} height={32} className="h-8 w-[54px] object-contain" />
-          <span className="text-foreground/70 text-xl" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}>
+          <span className="text-black/70 text-xl" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}>
             Task Tape
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setWeekOffset((w) => w - 1)} className="p-1.5 rounded-md hover:bg-black/5 text-foreground/50 hover:text-foreground transition-colors">
+          <button onClick={() => setWeekOffset((w) => w - 1)} className="p-1.5 rounded-md hover:bg-black/5 text-black/50 hover:text-black transition-colors">
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <span className="text-xs text-foreground/50 font-medium min-w-[100px] text-center">
+          <span className="text-xs text-black/50 font-medium min-w-[100px] text-center">
             {format(weekStart, "MMM d")} – {format(addDays(weekStart, 6), "MMM d")}
           </span>
-          <button onClick={() => setWeekOffset((w) => w + 1)} className="p-1.5 rounded-md hover:bg-black/5 text-foreground/50 hover:text-foreground transition-colors">
+          <button onClick={() => setWeekOffset((w) => w + 1)} className="p-1.5 rounded-md hover:bg-black/5 text-black/50 hover:text-black transition-colors">
             <ChevronRight className="w-4 h-4" />
           </button>
           {!isCurrentWeek && (
-            <button onClick={() => { setWeekOffset(0); setSelectedDay(new Date().getDay()); }} className="text-xs px-2 py-0.5 rounded-full bg-foreground text-background hover:opacity-90 ml-1">Today</button>
+            <button onClick={() => { setWeekOffset(0); setSelectedDay(new Date().getDay()); }} className="text-xs px-2 py-0.5 rounded-full bg-black text-white hover:opacity-90 ml-1">Today</button>
           )}
         </div>
       </header>
@@ -450,29 +450,29 @@ export default function TasksPage() {
           <div className="flex flex-col items-center gap-2 shrink-0">
             {focusRunning ? (
               <div className="flex flex-col items-center gap-2">
-                <div className="text-3xl font-mono font-bold text-foreground">{formatTimer(focusTime - focusElapsed)}</div>
+                <div className="text-3xl font-mono font-bold text-black">{formatTimer(focusTime - focusElapsed)}</div>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setFocusRunning(false)} className="h-12 flex items-center gap-2.5 px-7 rounded-full bg-foreground text-background font-medium shadow-lg hover:opacity-90 transition-opacity">
+                  <button onClick={() => setFocusRunning(false)} className="h-12 flex items-center gap-2.5 px-7 rounded-full bg-black text-white font-medium shadow-lg hover:opacity-90 transition-opacity">
                     <Pause className="w-4 h-4" /> Pause
                   </button>
                   <button onClick={() => { if (focusElapsed > 60 && focusTask) { const h = Math.round((focusElapsed / 3600) * 10) / 10; const cur = focusTask.hours || 0; fetch("/api/tasks", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: focusTask.id, hours: cur + h }) }).then(() => { setTasks((p) => p.map((t) => t.id === focusTask.id ? { ...t, hours: cur + h } : t)); toast.success(`Logged ${h}h`); }); } setFocusRunning(false); setFocusElapsed(0); }} className="h-12 w-12 flex items-center justify-center rounded-full border border-black/10 hover:bg-black/5 transition-colors">
                     <RotateCcw className="w-4 h-4" />
                   </button>
                 </div>
-                {focusTask && <p className="text-xs text-foreground/40">Focusing on: {focusTask.title}</p>}
+                {focusTask && <p className="text-xs text-black/40">Focusing on: {focusTask.title}</p>}
               </div>
             ) : (
               <div className="flex flex-col items-center gap-2.5">
-                <button onClick={() => { if (focusTask && focusTask.status === "todo") updateTaskStatus(focusTask, "in_progress"); setFocusRunning(true); }} className="h-13 flex items-center gap-2.5 py-3.5 px-7 rounded-full bg-foreground text-background font-medium shadow-lg hover:opacity-90 transition-opacity">
+                <button onClick={() => { if (focusTask && focusTask.status === "todo") updateTaskStatus(focusTask, "in_progress"); setFocusRunning(true); }} className="h-13 flex items-center gap-2.5 py-3.5 px-7 rounded-full bg-black text-white font-medium shadow-lg hover:opacity-90 transition-opacity">
                   <Play className="w-4 h-4" /> Start Focus Session
                 </button>
-                <p className="text-xs text-foreground/35">or press play on any task to begin</p>
+                <p className="text-xs text-black/35">or press play on any task to begin</p>
                 <div className="flex items-center gap-1.5">
                   {[15, 25, 45, 60].map((m) => (
-                    <button key={m} onClick={() => { setFocusTime(m * 60); setFocusElapsed(0); }} className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${focusTime === m * 60 ? "bg-foreground/10 text-foreground font-semibold" : "text-foreground/40 hover:text-foreground/60"}`}>{m}m</button>
+                    <button key={m} onClick={() => { setFocusTime(m * 60); setFocusElapsed(0); }} className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${focusTime === m * 60 ? "bg-black/10 text-black font-semibold" : "text-black/40 hover:text-black/60"}`}>{m}m</button>
                   ))}
                 </div>
-                <select value={focusTask?.id || ""} onChange={(e) => setFocusTask(tasks.find((t) => t.id === e.target.value) || null)} className="text-xs text-foreground/50 bg-transparent border-0 focus:outline-none cursor-pointer text-center">
+                <select value={focusTask?.id || ""} onChange={(e) => setFocusTask(tasks.find((t) => t.id === e.target.value) || null)} className="text-xs text-black/50 bg-transparent border-0 focus:outline-none cursor-pointer text-center">
                   <option value="">No task selected</option>
                   {[...todoTasks, ...inProgressTasks].map((t) => (<option key={t.id} value={t.id}>{t.title}</option>))}
                 </select>
@@ -486,16 +486,16 @@ export default function TasksPage() {
           <DayTabs selectedDay={activeDayIndex} onSelectDay={(d) => { setSelectedDay(d); router.replace(`/tasks?day=${d}`, { scroll: false }); }} />
           <div className="flex items-end justify-between mb-4">
             <div>
-              <h2 className="text-4xl lg:text-5xl font-bold tracking-tight text-foreground" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}>{tape.day}</h2>
-              <p className="mt-1 text-sm text-foreground/40">{totalDayTasks} {totalDayTasks === 1 ? "task" : "tasks"} · {doneTasks.length} done</p>
+              <h2 className="text-4xl lg:text-5xl font-bold tracking-tight text-black" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}>{tape.day}</h2>
+              <p className="mt-1 text-sm text-black/40">{totalDayTasks} {totalDayTasks === 1 ? "task" : "tasks"} · {doneTasks.length} done</p>
             </div>
             <div className="text-right">
-              <p className="text-4xl font-bold text-foreground">{completionPercent}%</p>
-              <p className="text-xs text-foreground/40 uppercase tracking-wider">Complete</p>
+              <p className="text-4xl font-bold text-black">{completionPercent}%</p>
+              <p className="text-xs text-black/40 uppercase tracking-wider">Complete</p>
             </div>
           </div>
           <div className="h-1.5 rounded-full bg-black/5 mb-5 overflow-hidden">
-            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${completionPercent}%`, backgroundColor: tape.accent }} />
+            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${completionPercent}%`, backgroundColor: `rgb(${tape.accentRgb})` }} />
           </div>
 
           {overdueTasks.length > 0 && (
@@ -509,7 +509,7 @@ export default function TasksPage() {
                 {overdueTasks.slice(0, 3).map((task) => (
                   <div key={task.id} className="flex items-center gap-2 rounded-lg bg-white/60 p-2">
                     <button onClick={() => updateTaskStatus(task, "done")} className="w-5 h-5 rounded-full border-2 border-red-300 hover:border-red-500 shrink-0 transition-colors" />
-                    <span className="text-sm text-foreground/80 truncate flex-1">{task.title}</span>
+                    <span className="text-sm text-black/80 truncate flex-1">{task.title}</span>
                   </div>
                 ))}
               </div>
@@ -517,14 +517,14 @@ export default function TasksPage() {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 flex-1">
-            <KanbanColumn title="To Do" count={todoTasks.length} accent={tape.accent} dotColor="bg-foreground/60" tasks={todoTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={(t) => { setFocusTask(t); setFocusRunning(true); if (t.status === "todo") updateTaskStatus(t, "in_progress"); }} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="todo" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} nextStatus="in_progress" prevStatus={null} />
-            <KanbanColumn title="In Progress" count={inProgressTasks.length} accent={tape.accent} dotColor="bg-amber-500" tasks={inProgressTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={(t) => { setFocusTask(t); setFocusRunning(true); }} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="in_progress" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} nextStatus="done" prevStatus="todo" />
-            <KanbanColumn title="Done" count={doneTasks.length} accent={tape.accent} dotColor="bg-green-500" tasks={doneTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={() => {}} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="done" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} nextStatus={null} prevStatus="in_progress" />
+            <KanbanColumn title="To Do" count={todoTasks.length} accent={`rgb(${tape.accentRgb})`} dotColor="bg-black/60" tasks={todoTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={(t) => { setFocusTask(t); setFocusRunning(true); if (t.status === "todo") updateTaskStatus(t, "in_progress"); }} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="todo" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} nextStatus="in_progress" prevStatus={null} />
+            <KanbanColumn title="In Progress" count={inProgressTasks.length} accent={`rgb(${tape.accentRgb})`} dotColor="bg-amber-500" tasks={inProgressTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={(t) => { setFocusTask(t); setFocusRunning(true); }} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="in_progress" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} nextStatus="done" prevStatus="todo" />
+            <KanbanColumn title="Done" count={doneTasks.length} accent={`rgb(${tape.accentRgb})`} dotColor="bg-green-500" tasks={doneTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={() => {}} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="done" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} nextStatus={null} prevStatus="in_progress" />
           </div>
 
           <div className="mt-4 p-5 rounded-3xl bg-white/60 border border-black/5 shadow-sm relative">
-            <label className="text-[11px] font-semibold text-foreground/35 uppercase tracking-wider">Thoughts of the Day</label>
-            <textarea value={dailyNote} onChange={(e) => saveDailyNote(e.target.value)} placeholder="What made today feel like today..." className="w-full mt-2 bg-transparent text-sm text-foreground/80 leading-relaxed resize-none focus:outline-none min-h-[80px] placeholder:text-foreground/25" />
+            <label className="text-[11px] font-semibold text-black/35 uppercase tracking-wider">Thoughts of the Day</label>
+            <textarea value={dailyNote} onChange={(e) => saveDailyNote(e.target.value)} placeholder="What made today feel like today..." className="w-full mt-2 bg-transparent text-sm text-black/80 leading-relaxed resize-none focus:outline-none min-h-[80px] placeholder:text-black/25" />
           </div>
         </section>
       </main>
@@ -536,7 +536,7 @@ export default function TasksPage() {
         </DialogContent>
       </Dialog>
 
-      <button onClick={() => setShowFullAdd(true)} className="fixed bottom-6 right-6 h-12 px-5 rounded-full bg-foreground text-background shadow-lg hover:scale-105 hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2 font-medium text-sm z-50">
+      <button onClick={() => setShowFullAdd(true)} className="fixed bottom-6 right-6 h-12 px-5 rounded-full bg-black text-white shadow-lg hover:scale-105 hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2 font-medium text-sm z-50">
         <Plus className="w-5 h-5" /> Add Task
       </button>
 
@@ -563,14 +563,14 @@ function KanbanColumn({ title, count, accent, dotColor, tasks, onStatusChange, o
       <div className="flex items-center justify-between pb-2.5 px-1">
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full ${dotColor}`} />
-          <span className="text-xs font-semibold text-foreground/55 uppercase tracking-wider">{title}</span>
+          <span className="text-xs font-semibold text-black/55 uppercase tracking-wider">{title}</span>
         </div>
-        <span className="min-w-[22px] py-0.5 px-2 rounded-full text-[11px] font-semibold text-foreground/40 text-center bg-black/5">{count}</span>
+        <span className="min-w-[22px] py-0.5 px-2 rounded-full text-[11px] font-semibold text-black/40 text-center bg-black/5">{count}</span>
       </div>
       <div className={`flex-1 p-2.5 rounded-2xl border bg-black/[0.03] flex flex-col min-h-[200px] transition-all ${dragOver ? "ring-2 ring-black/10 bg-black/[0.06] scale-[1.01]" : "border-black/5"}`} onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={(e) => { e.preventDefault(); setDragOver(false); const id = e.dataTransfer.getData("text/plain"); if (id) onDrop(id, columnStatus); }}>
         <div className="flex-1 overflow-auto pr-0.5 space-y-2">
           {tasks.length === 0 && !dragOver && addingTo !== columnStatus && (
-            <p className="text-[11px] text-foreground/25 text-center py-6">{columnStatus === "todo" ? "No tasks yet" : columnStatus === "in_progress" ? "No tape playing" : "Nothing finished yet"}</p>
+            <p className="text-[11px] text-black/25 text-center py-6">{columnStatus === "todo" ? "No tasks yet" : columnStatus === "in_progress" ? "No tape playing" : "Nothing finished yet"}</p>
           )}
           {tasks.map((task) => (
             <TaskCard key={task.id} task={task} accent={accent} onStatusChange={onStatusChange} onPriorityChange={onPriorityChange} onDelete={onDelete} onEdit={onEdit} onStartFocus={onStartFocus} nextStatus={nextStatus} prevStatus={prevStatus} />
@@ -582,7 +582,7 @@ function KanbanColumn({ title, count, accent, dotColor, tasks, onStatusChange, o
             <Button size="sm" type="submit" className="h-8 px-2" disabled={!newTaskTitle.trim()}><Plus className="w-3 h-3" /></Button>
           </form>
         ) : (
-          <button onClick={() => { setAddingTo(columnStatus); setNewTaskTitle(""); }} className="h-10 mt-2 border-2 border-dashed border-black/10 flex rounded-xl justify-center items-center gap-2 text-foreground/40 text-xs font-medium hover:bg-black/[0.03] hover:border-black/15 hover:text-foreground/60 transition-all w-full">
+          <button onClick={() => { setAddingTo(columnStatus); setNewTaskTitle(""); }} className="h-10 mt-2 border-2 border-dashed border-black/10 flex rounded-xl justify-center items-center gap-2 text-black/40 text-xs font-medium hover:bg-black/[0.03] hover:border-black/15 hover:text-black/60 transition-all w-full">
             <Plus className="w-3.5 h-3.5" /> Add a task
           </button>
         )}
@@ -602,17 +602,17 @@ function TaskCard({ task, accent, onStatusChange, onDelete, onPriorityChange, on
         </button>
         <div className="flex-1 min-w-0">
           <button onClick={() => onEdit(task)} className="text-left w-full">
-            <p className={`text-sm font-medium leading-tight line-clamp-2 ${isDone ? "line-through text-foreground/40" : "text-foreground"}`}>{task.title}</p>
+            <p className={`text-sm font-medium leading-tight line-clamp-2 ${isDone ? "line-through text-black/40" : "text-black"}`}>{task.title}</p>
           </button>
           <div className="flex items-center justify-between mt-2.5">
             <div className="flex items-center gap-1.5">
-              {task.hours && <span className="text-[11px] text-foreground/35">{task.hours * 60} min</span>}
-              {task.recurrence && <RotateCcw className="w-3 h-3 text-foreground/30" />}
+              {task.hours && <span className="text-[11px] text-black/35">{task.hours * 60} min</span>}
+              {task.recurrence && <RotateCcw className="w-3 h-3 text-black/30" />}
               <button onClick={() => { const idx = priorities.indexOf(task.priority); onPriorityChange(task, priorities[(idx + 1) % priorities.length]); }} className="hover:opacity-70"><PriorityDot priority={task.priority} /></button>
             </div>
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              {!isDone && <button onClick={() => onStartFocus(task)} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-black/5 transition-colors" title="Start focus"><Play className="w-3.5 h-3.5 text-foreground/50" /></button>}
-              <button onClick={() => onDelete(task)} className="w-7 h-7 flex items-center justify-center rounded-full bg-black/5 text-foreground/40 hover:bg-red-50 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+              {!isDone && <button onClick={() => onStartFocus(task)} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-black/5 transition-colors" title="Start focus"><Play className="w-3.5 h-3.5 text-black/50" /></button>}
+              <button onClick={() => onDelete(task)} className="w-7 h-7 flex items-center justify-center rounded-full bg-black/5 text-black/40 hover:bg-red-50 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
             </div>
           </div>
         </div>
