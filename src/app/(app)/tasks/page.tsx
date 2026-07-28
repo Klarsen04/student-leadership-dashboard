@@ -217,7 +217,7 @@ export default function TasksPage() {
 
   if (loading) {
     return (
-      <div className="h-full min-h-screen flex items-center justify-center" style={{ background: "rgb(239, 239, 239)" }}>
+      <div className="h-full min-h-screen flex items-center justify-center relative z-20" style={{ background: "rgb(239, 239, 239)" }}>
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 animate-pulse" />
           <span className="text-sm text-black/40">Loading your tapes...</span>
@@ -231,7 +231,7 @@ export default function TasksPage() {
   // ========================
   if (view === "shelf") {
     return (
-      <div className="min-h-screen -m-4 md:-m-8 flex flex-col overflow-hidden" style={{ background: "rgb(239, 239, 239)" }}>
+      <div className="min-h-screen -m-4 md:-m-8 flex flex-col overflow-hidden relative z-20" style={{ background: "rgb(239, 239, 239)" }}>
         {/* Header */}
         <header className="flex relative z-20 pt-8 md:pt-12 pb-2 px-5 md:px-16 justify-between items-start shrink-0">
           <div className="flex flex-col items-start gap-1.5">
@@ -325,7 +325,7 @@ export default function TasksPage() {
   // ========================
   if (view === "tape-open") {
     return (
-      <div className="min-h-screen -m-4 md:-m-8 flex flex-col items-center justify-center overflow-hidden relative" style={{ background: "rgb(239, 239, 239)" }}>
+      <div className="min-h-screen -m-4 md:-m-8 flex flex-col items-center justify-center overflow-hidden relative z-20" style={{ background: "rgb(239, 239, 239)" }}>
         {/* Back button */}
         <button
           onClick={backToShelf}
@@ -406,8 +406,8 @@ export default function TasksPage() {
   // ========================
   return (
     <div
-      className="min-h-screen -m-4 md:-m-8 p-4 md:p-8 flex flex-col overflow-hidden transition-all duration-700"
-      style={{ background: getGradientBg(tape.accentRgb) }}
+      className="min-h-screen -m-4 md:-m-8 p-4 md:p-8 flex flex-col overflow-hidden transition-all duration-700 relative z-20"
+      style={{ background: getGradientBg(tape.accentRgb), isolation: "isolate" }}
     >
       {/* Header */}
       <header className="flex items-center justify-between shrink-0 mb-4 lg:mb-6">
@@ -499,7 +499,7 @@ export default function TasksPage() {
           </div>
 
           {overdueTasks.length > 0 && (
-            <div className="rounded-2xl border border-red-200 bg-red-50/50 p-3 mb-4">
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-3 mb-4">
               <div className="flex items-center gap-2 mb-2">
                 <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                 <span className="text-xs font-bold uppercase tracking-wider text-red-600">Overdue</span>
@@ -507,7 +507,7 @@ export default function TasksPage() {
               </div>
               <div className="space-y-1">
                 {overdueTasks.slice(0, 3).map((task) => (
-                  <div key={task.id} className="flex items-center gap-2 rounded-lg bg-white/60 p-2">
+                  <div key={task.id} className="flex items-center gap-2 rounded-lg bg-white p-2">
                     <button onClick={() => updateTaskStatus(task, "done")} className="w-5 h-5 rounded-full border-2 border-red-300 hover:border-red-500 shrink-0 transition-colors" />
                     <span className="text-sm text-black/80 truncate flex-1">{task.title}</span>
                   </div>
@@ -522,7 +522,7 @@ export default function TasksPage() {
             <KanbanColumn title="Done" count={doneTasks.length} accent={`rgb(${tape.accentRgb})`} dotColor="bg-green-500" tasks={doneTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={() => {}} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="done" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} nextStatus={null} prevStatus="in_progress" />
           </div>
 
-          <div className="mt-4 p-5 rounded-3xl bg-white/60 border border-black/5 shadow-sm relative">
+          <div className="mt-4 p-5 rounded-3xl bg-white border border-black/5 shadow-sm relative">
             <label className="text-[11px] font-semibold text-black/35 uppercase tracking-wider">Thoughts of the Day</label>
             <textarea value={dailyNote} onChange={(e) => saveDailyNote(e.target.value)} placeholder="What made today feel like today..." className="w-full mt-2 bg-transparent text-sm text-black/80 leading-relaxed resize-none focus:outline-none min-h-[80px] placeholder:text-black/25" />
           </div>
@@ -567,7 +567,7 @@ function KanbanColumn({ title, count, accent, dotColor, tasks, onStatusChange, o
         </div>
         <span className="min-w-[22px] py-0.5 px-2 rounded-full text-[11px] font-semibold text-black/40 text-center bg-black/5">{count}</span>
       </div>
-      <div className={`flex-1 p-2.5 rounded-2xl border bg-black/[0.03] flex flex-col min-h-[200px] transition-all ${dragOver ? "ring-2 ring-black/10 bg-black/[0.06] scale-[1.01]" : "border-black/5"}`} onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={(e) => { e.preventDefault(); setDragOver(false); const id = e.dataTransfer.getData("text/plain"); if (id) onDrop(id, columnStatus); }}>
+      <div className={`flex-1 p-2.5 rounded-2xl border bg-[rgb(232,231,229)] flex flex-col min-h-[200px] transition-all ${dragOver ? "ring-2 ring-black/10 bg-[rgb(225,224,222)] scale-[1.01]" : "border-black/5"}`} onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={(e) => { e.preventDefault(); setDragOver(false); const id = e.dataTransfer.getData("text/plain"); if (id) onDrop(id, columnStatus); }}>
         <div className="flex-1 overflow-auto pr-0.5 space-y-2">
           {tasks.length === 0 && !dragOver && addingTo !== columnStatus && (
             <p className="text-[11px] text-black/25 text-center py-6">{columnStatus === "todo" ? "No tasks yet" : columnStatus === "in_progress" ? "No tape playing" : "Nothing finished yet"}</p>
@@ -578,7 +578,7 @@ function KanbanColumn({ title, count, accent, dotColor, tasks, onStatusChange, o
         </div>
         {addingTo === columnStatus ? (
           <form onSubmit={(e) => { e.preventDefault(); onQuickAdd(columnStatus); }} className="flex gap-2 mt-2">
-            <Input autoFocus value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} placeholder="Task name..." className="h-8 text-sm bg-white/80 border-black/10" onBlur={() => { if (!newTaskTitle) setAddingTo(null); }} />
+            <Input autoFocus value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} placeholder="Task name..." className="h-8 text-sm bg-white border-black/10" onBlur={() => { if (!newTaskTitle) setAddingTo(null); }} />
             <Button size="sm" type="submit" className="h-8 px-2" disabled={!newTaskTitle.trim()}><Plus className="w-3 h-3" /></Button>
           </form>
         ) : (
@@ -595,7 +595,7 @@ function TaskCard({ task, accent, onStatusChange, onDelete, onPriorityChange, on
   const isDone = task.status === "done";
   const priorities = ["low", "medium", "high", "urgent"];
   return (
-    <div draggable onDragStart={(e) => { e.dataTransfer.setData("text/plain", task.id); e.dataTransfer.effectAllowed = "move"; }} className={`group relative p-3 rounded-xl bg-white/80 border border-black/5 shadow-sm transition-all duration-200 hover:shadow-md hover:bg-white cursor-grab active:cursor-grabbing active:scale-[0.97] ${isDone ? "opacity-50" : ""}`}>
+    <div draggable onDragStart={(e) => { e.dataTransfer.setData("text/plain", task.id); e.dataTransfer.effectAllowed = "move"; }} className={`group relative p-3 rounded-xl bg-white border border-black/5 shadow-sm transition-all duration-200 hover:shadow-md hover:bg-white cursor-grab active:cursor-grabbing active:scale-[0.97] ${isDone ? "opacity-50" : ""}`}>
       <div className="flex items-start gap-2">
         <button onClick={() => { if (isDone && prevStatus) onStatusChange(task, prevStatus); else if (nextStatus) onStatusChange(task, nextStatus); }} className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isDone ? "border-transparent text-white" : "border-black/25 hover:border-black/50"}`} style={isDone ? { backgroundColor: accent } : undefined}>
           {isDone && <Check className="w-3 h-3" />}

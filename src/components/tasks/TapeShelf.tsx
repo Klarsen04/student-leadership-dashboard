@@ -90,8 +90,20 @@ const TAPES = [
   },
 ];
 
+function blendOver(accentRgb: string, opacity: number): string {
+  const [r, g, b] = accentRgb.split(",").map((s) => parseInt(s.trim()));
+  const br = Math.round(r * opacity + 239 * (1 - opacity));
+  const bg = Math.round(g * opacity + 238 * (1 - opacity));
+  const bb = Math.round(b * opacity + 236 * (1 - opacity));
+  return `rgb(${br}, ${bg}, ${bb})`;
+}
+
 function getGradientBg(accentRgb: string): string {
-  return `radial-gradient(135% 115% at 50% -10%, rgba(${accentRgb}, 0.75) 0%, rgba(${accentRgb}, 0.45) 28%, rgba(${accentRgb}, 0.24) 52%, rgba(${accentRgb}, 0.106) 78%, rgb(239, 238, 236) 100%)`;
+  const s0 = blendOver(accentRgb, 0.75);
+  const s1 = blendOver(accentRgb, 0.45);
+  const s2 = blendOver(accentRgb, 0.24);
+  const s3 = blendOver(accentRgb, 0.106);
+  return `radial-gradient(135% 115% at 50% -10%, ${s0} 0%, ${s1} 28%, ${s2} 52%, ${s3} 78%, rgb(239, 238, 236) 100%)`;
 }
 
 interface DayTabsProps {
