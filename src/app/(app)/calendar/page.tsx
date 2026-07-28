@@ -87,11 +87,21 @@ interface ScheduleConflict {
   class1: ClassBlock;
   class2: ClassBlock;
   day: string;
+  overlapStart: string;
+  overlapEnd: string;
 }
 
 function getMinutesFromTime(time: string): number {
   const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
+}
+
+function minutesToTimeStr(mins: number): string {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
+  return m > 0 ? `${h12}:${m.toString().padStart(2, "0")} ${period}` : `${h12} ${period}`;
 }
 
 function findConflicts(classes: ClassBlock[]): ScheduleConflict[] {
@@ -107,12 +117,20 @@ function findConflicts(classes: ClassBlock[]): ScheduleConflict[] {
       const a = classes[i], b = classes[j];
       const aDays = a.days.flatMap(d => CLASS_DAY_MAP[d] || []);
       const bDays = b.days.flatMap(d => CLASS_DAY_MAP[d] || []);
-      const overlap = aDays.filter(d => bDays.includes(d));
-      if (overlap.length > 0) {
+      const sharedDays = aDays.filter(d => bDays.includes(d));
+      if (sharedDays.length > 0) {
         const aStart = getMinutesFromTime(a.startTime), aEnd = getMinutesFromTime(a.endTime);
         const bStart = getMinutesFromTime(b.startTime), bEnd = getMinutesFromTime(b.endTime);
         if (aStart < bEnd && bStart < aEnd) {
-          overlap.forEach(d => conflicts.push({ class1: a, class2: b, day: DAY_LABELS[d] }));
+          const overlapStartMins = Math.max(aStart, bStart);
+          const overlapEndMins = Math.min(aEnd, bEnd);
+          sharedDays.forEach(d => conflicts.push({
+            class1: a,
+            class2: b,
+            day: DAY_LABELS[d],
+            overlapStart: minutesToTimeStr(overlapStartMins),
+            overlapEnd: minutesToTimeStr(overlapEndMins),
+          }));
         }
       }
     }
@@ -608,39 +626,60 @@ export default function CalendarPage() {
       {/* Next Up Banner + Conflicts */}
       <div className="max-w-7xl mx-auto mb-4 space-y-2">
         {nextUp && (
-          <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-white border border-black/5 shadow-sm">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: nextUp.cls.color }}>
-              <GraduationCap className="w-4 h-4 text-white" />
+          <div className="flex items-center gap-4 px-4 py-3 rounded-xl border border-black/5 shadow-sm relative overflow-hidden" style={{ background: "linear-gradient(135deg, #faf9f7 0%, #f5f3ff 100%)" }}>
+            <div className="absolute inset-0 opacity-[0.03]" style={{ background: `linear-gradient(90deg, ${nextUp.cls.color} 0%, transparent 60%)` }} />
+            <div className="relative w-10 h-10 rounded-xl flex items-center justify-center shadow-sm" style={{ background: nextUp.cls.color }}>
+              <GraduationCap className="w-5 h-5 text-white" />
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-black/50 font-medium">Next Up</p>
-              <p className="text-sm font-semibold text-black truncate">{nextUp.cls.title}</p>
+            <div className="relative flex-1 min-w-0">
+              <p className="text-[10px] uppercase tracking-wider text-black/40 font-semibold">Next Up</p>
+              <p className="text-sm font-bold text-black truncate">{nextUp.cls.title}</p>
+              {nextUp.cls.professor && (
+                <p className="text-[11px] text-black/40 truncate">{nextUp.cls.professor}</p>
+              )}
             </div>
-            <div className="flex items-center gap-3 text-xs text-black/60 shrink-0">
+            <div className="relative flex items-center gap-3 text-xs text-black/60 shrink-0">
               {nextUp.cls.location && (
-                <span className="flex items-center gap-1">
-                  <MapPin className="w-3 h-3" />{nextUp.cls.location}
+                <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-black/[0.03]">
+                  <MapPin className="w-3 h-3 text-black/40" />{nextUp.cls.location}
                 </span>
               )}
-              <span className="flex items-center gap-1">
-                <Clock className="w-3 h-3" />{nextUp.cls.startTime}
+              <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-black/[0.03]">
+                <Clock className="w-3 h-3 text-black/40" />{nextUp.cls.startTime}
               </span>
-              <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-semibold text-xs">
-                in {formatCountdown(nextUp.minutesUntil)}
+              <span className="px-2.5 py-1 rounded-full font-bold text-xs text-white shadow-sm" style={{ background: nextUp.cls.color }}>
+                {formatCountdown(nextUp.minutesUntil)}
               </span>
             </div>
           </div>
         )}
         {conflicts.length > 0 && (
-          <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-50 border border-amber-200">
-            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-            <p className="text-xs text-amber-800">
-              <span className="font-semibold">Schedule conflict:</span>{" "}
-              {conflicts.slice(0, 2).map((c, i) => (
-                <span key={i}>{i > 0 && " • "}{c.class1.title} & {c.class2.title} ({c.day})</span>
+          <div className="rounded-xl bg-amber-50 border border-amber-200 overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <p className="text-xs font-semibold text-amber-800">
+                {conflicts.length} time {conflicts.length === 1 ? "conflict" : "conflicts"} detected
+              </p>
+            </div>
+            <div className="px-4 pb-2.5 space-y-1.5">
+              {conflicts.slice(0, 3).map((c, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs text-amber-900/80">
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full" style={{ background: c.class1.color }} />
+                    <span className="font-medium">{c.class1.title}</span>
+                  </div>
+                  <span className="text-amber-600">×</span>
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full" style={{ background: c.class2.color }} />
+                    <span className="font-medium">{c.class2.title}</span>
+                  </div>
+                  <span className="text-amber-700/60 ml-auto">{c.day} · {c.overlapStart}–{c.overlapEnd}</span>
+                </div>
               ))}
-              {conflicts.length > 2 && <span> +{conflicts.length - 2} more</span>}
-            </p>
+              {conflicts.length > 3 && (
+                <p className="text-[10px] text-amber-600 pl-3">+{conflicts.length - 3} more conflicts</p>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -699,16 +738,19 @@ export default function CalendarPage() {
               <div className="mt-4 pt-3 border-t border-black/5">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-[10px] uppercase tracking-wider font-semibold text-black/40">Classes</p>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold text-purple-600">{totalCredits} cr</span>
-                    <span className="text-[10px] text-black/30">•</span>
-                    <span className="text-[10px] text-black/40">{weeklyHours.toFixed(1)}h/wk</span>
-                  </div>
+                </div>
+                {/* Credit stats */}
+                <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-purple-50/60 border border-purple-100">
+                  <GraduationCap className="w-3.5 h-3.5 text-purple-500" />
+                  <span className="text-[11px] font-bold text-purple-700">{totalCredits} credits</span>
+                  <span className="text-[10px] text-purple-400">•</span>
+                  <span className="text-[11px] text-purple-600">{weeklyHours.toFixed(1)}h/wk</span>
                 </div>
                 {classes.map((cls) => (
-                  <div key={cls.id} className="flex items-center gap-2 py-1 group cursor-pointer" onClick={() => setSelectedClass(cls)}>
+                  <div key={cls.id} className="flex items-center gap-2 py-1.5 group cursor-pointer rounded-md px-1 -mx-1 hover:bg-black/[0.02] transition-colors" onClick={() => setSelectedClass(cls)}>
                     <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: cls.color }} />
                     <span className="text-xs text-black/70 flex-1 truncate">{cls.title}</span>
+                    <span className="text-[9px] text-black/30 group-hover:hidden">{cls.days.join(", ")}</span>
                     <button onClick={(e) => { e.stopPropagation(); deleteClass(cls.id); }} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-500 transition-opacity">
                       <X className="w-3 h-3" />
                     </button>
@@ -738,7 +780,7 @@ export default function CalendarPage() {
             <DialogTitle>Add Class</DialogTitle>
             <DialogDescription>Add a recurring class to your schedule</DialogDescription>
           </DialogHeader>
-          <ClassForm onSaved={addClass} onCancel={() => setShowAddClass(false)} />
+          {showAddClass && <ClassForm onSaved={addClass} onCancel={() => setShowAddClass(false)} />}
         </DialogContent>
       </Dialog>
 
@@ -781,62 +823,57 @@ export default function CalendarPage() {
       {/* Class Detail Dialog */}
       <Dialog open={!!selectedClass} onOpenChange={(open) => { if (!open) setSelectedClass(null); }}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-sm" style={{ background: selectedClass?.color }} />
-                {selectedClass?.title}
-              </div>
-            </DialogTitle>
-            <DialogDescription>Class details</DialogDescription>
-          </DialogHeader>
           {selectedClass && (
-            <div className="space-y-3">
+            <>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-sm" style={{ background: selectedClass.color }}>
+                  <GraduationCap className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <DialogHeader className="p-0 space-y-0">
+                    <DialogTitle className="text-lg">{selectedClass.title}</DialogTitle>
+                    <DialogDescription className="text-xs">{selectedClass.creditHours} credit{selectedClass.creditHours !== 1 ? "s" : ""} · {selectedClass.days.join(", ")}</DialogDescription>
+                  </DialogHeader>
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="flex items-center gap-2 text-sm">
-                  <User className="w-4 h-4 text-black/40" />
-                  <div>
-                    <p className="text-black/50 text-xs">Professor</p>
-                    <p className="font-medium text-black">{selectedClass.professor || "—"}</p>
+                <div className="p-3 rounded-xl bg-black/[0.02] border border-black/5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <User className="w-3.5 h-3.5 text-black/30" />
+                    <p className="text-[10px] uppercase tracking-wider text-black/40 font-semibold">Professor</p>
                   </div>
+                  <p className="font-medium text-sm text-black pl-5">{selectedClass.professor || "Not specified"}</p>
                 </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <MapPin className="w-4 h-4 text-black/40" />
-                  <div>
-                    <p className="text-black/50 text-xs">Location</p>
-                    <p className="font-medium text-black">{selectedClass.location || "—"}</p>
+                <div className="p-3 rounded-xl bg-black/[0.02] border border-black/5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <MapPin className="w-3.5 h-3.5 text-black/30" />
+                    <p className="text-[10px] uppercase tracking-wider text-black/40 font-semibold">Location</p>
                   </div>
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="flex items-center gap-2 text-sm">
-                  <Clock className="w-4 h-4 text-black/40" />
-                  <div>
-                    <p className="text-black/50 text-xs">Time</p>
-                    <p className="font-medium text-black">{selectedClass.startTime} – {selectedClass.endTime}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <GraduationCap className="w-4 h-4 text-black/40" />
-                  <div>
-                    <p className="text-black/50 text-xs">Credits</p>
-                    <p className="font-medium text-black">{selectedClass.creditHours}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <BookOpen className="w-4 h-4 text-black/40" />
-                  <div>
-                    <p className="text-black/50 text-xs">Days</p>
-                    <p className="font-medium text-black">{selectedClass.days.join(", ")}</p>
-                  </div>
+                  <p className="font-medium text-sm text-black pl-5">{selectedClass.location || "Not specified"}</p>
                 </div>
               </div>
-              <div className="pt-3 border-t flex items-center gap-2">
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <div className="p-3 rounded-xl bg-black/[0.02] border border-black/5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Clock className="w-3.5 h-3.5 text-black/30" />
+                    <p className="text-[10px] uppercase tracking-wider text-black/40 font-semibold">Schedule</p>
+                  </div>
+                  <p className="font-medium text-sm text-black pl-5">{selectedClass.startTime} – {selectedClass.endTime}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-black/[0.02] border border-black/5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <GraduationCap className="w-3.5 h-3.5 text-black/30" />
+                    <p className="text-[10px] uppercase tracking-wider text-black/40 font-semibold">Credits</p>
+                  </div>
+                  <p className="font-medium text-sm text-black pl-5">{selectedClass.creditHours} credit hours</p>
+                </div>
+              </div>
+              <div className="pt-4 mt-4 border-t border-black/5 flex items-center gap-2">
                 <Button variant="destructive" size="sm" onClick={() => { deleteClass(selectedClass.id); setSelectedClass(null); }}>
                   <Trash2 className="w-4 h-4 mr-1" />Remove Class
                 </Button>
               </div>
-            </div>
+            </>
           )}
         </DialogContent>
       </Dialog>
@@ -956,23 +993,27 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
                   );
                 })}
                 {/* Class blocks */}
-                {dayClasses.map((cls) => (
-                  <button
-                    key={cls.id}
-                    onClick={() => onClassClick(cls)}
-                    className="absolute left-1 right-1 rounded-lg px-2 py-1 overflow-hidden shadow-sm border border-white/30 text-left cursor-pointer hover:shadow-md transition-shadow"
-                    style={{
-                      top: `${timeToY(cls.startTime)}px`,
-                      height: `${hourHeight(cls.startTime, cls.endTime)}px`,
-                      background: cls.color,
-                      opacity: 0.9,
-                    }}
-                  >
-                    <p className="text-[11px] font-bold text-white truncate drop-shadow-sm">{cls.title}</p>
-                    <p className="text-[9px] text-white/80 truncate">{cls.location}</p>
-                    <p className="text-[9px] text-white/70">{cls.startTime} - {cls.endTime}</p>
-                  </button>
-                ))}
+                {dayClasses.map((cls, idx) => {
+                  const blockHeight = hourHeight(cls.startTime, cls.endTime);
+                  const isCompact = blockHeight < 42;
+                  return (
+                    <button
+                      key={cls.id}
+                      onClick={() => onClassClick(cls)}
+                      className="absolute left-1 right-1 rounded-lg px-2 py-1 overflow-hidden shadow-sm text-left cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all border-l-[3px]"
+                      style={{
+                        top: `${timeToY(cls.startTime)}px`,
+                        height: `${blockHeight}px`,
+                        background: `${cls.color}18`,
+                        borderLeftColor: cls.color,
+                      }}
+                    >
+                      <p className="text-[11px] font-bold truncate" style={{ color: cls.color }}>{cls.title}</p>
+                      {!isCompact && <p className="text-[9px] text-black/50 truncate">{cls.location}</p>}
+                      {!isCompact && <p className="text-[9px] text-black/40">{cls.startTime} - {cls.endTime}</p>}
+                    </button>
+                  );
+                })}
                 {/* Event blocks */}
                 {dayEvents.map((ev) => {
                   const start = new Date(ev.startTime);
