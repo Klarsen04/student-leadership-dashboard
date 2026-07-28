@@ -897,6 +897,49 @@ export default function CalendarPage() {
   );
 }
 
+/* ---------- Collision layout: positions overlapping items side-by-side ---------- */
+interface LayoutItem { id: string; startMin: number; endMin: number; }
+interface LayoutResult { col: number; totalCols: number; }
+
+function computeColumns(items: LayoutItem[]): Map<string, LayoutResult> {
+  const sorted = [...items].sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
+  const result = new Map<string, LayoutResult>();
+  const groups: LayoutItem[][] = [];
+
+  for (const item of sorted) {
+    let placed = false;
+    for (const group of groups) {
+      if (group.every(g => g.endMin <= item.startMin || g.startMin >= item.endMin)) {
+        group.push(item);
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) groups.push([item]);
+  }
+
+  // Assign columns using greedy coloring
+  const columns: LayoutItem[][] = [];
+  for (const item of sorted) {
+    let col = 0;
+    while (col < columns.length) {
+      if (columns[col].every(c => c.endMin <= item.startMin || c.startMin >= item.endMin)) break;
+      col++;
+    }
+    if (col >= columns.length) columns.push([]);
+    columns[col].push(item);
+  }
+
+  // Find connected groups to determine totalCols per item
+  for (const item of sorted) {
+    const col = columns.findIndex(c => c.includes(item));
+    const overlapping = sorted.filter(o => o.startMin < item.endMin && o.endMin > item.startMin);
+    const maxCol = Math.max(...overlapping.map(o => columns.findIndex(c => c.includes(o))));
+    result.set(item.id, { col, totalCols: maxCol + 1 });
+  }
+  return result;
+}
+
 /* ---------- Time Grid View (Day / 3-Day / 5-Day / Week) ---------- */
 function TimeGridView({ events, currentDate, view, onEventClick, getColor, classes, onClassClick }: {
   events: CalendarEvent[]; currentDate: Date; view: View; onEventClick: (e: CalendarEvent) => void; getColor: (category: string) => string; classes: ClassBlock[]; onClassClick: (cls: ClassBlock) => void;
@@ -904,8 +947,10 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
   const dayCount = view === "day" ? 1 : view === "3day" ? 3 : view === "5day" ? 5 : 7;
   const weekStart = view === "5day" || view === "week" ? startOfWeek(currentDate, { weekStartsOn: 1 }) : currentDate;
   const days = Array.from({ length: dayCount }, (_, i) => addDays(weekStart, i));
-  const hours = Array.from({ length: 15 }, (_, i) => i + 7); // 7 AM to 9 PM
-  const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const START_HOUR = 6;
+  const END_HOUR = 23;
+  const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => i + START_HOUR);
+  const HOUR_PX = 56;
   const CLASS_DAY_MAP: Record<string, number[]> = {
     MWF: [1, 3, 5], TuTh: [2, 4], MW: [1, 3], TuThF: [2, 4, 5],
     Mon: [1], Tue: [2], Wed: [3], Thu: [4], Fri: [5], Sat: [6], Sun: [0],
@@ -913,27 +958,22 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
 
   const getClassesForDay = (day: Date) => {
     const dow = getDay(day);
-    return classes.filter((cls) => {
-      return cls.days.some((d) => (CLASS_DAY_MAP[d] || []).includes(dow));
-    });
+    return classes.filter((cls) => cls.days.some((d) => (CLASS_DAY_MAP[d] || []).includes(dow)));
   };
 
   const getEventsForDay = (day: Date) => {
-    return events.filter((e) => {
-      const s = new Date(e.startTime);
-      return isSameDay(s, day);
-    });
+    return events.filter((e) => isSameDay(new Date(e.startTime), day));
   };
 
   const timeToY = (timeStr: string) => {
     const [h, m] = timeStr.split(":").map(Number);
-    return ((h - 7) + m / 60) * 56;
+    return Math.max(0, ((h - START_HOUR) + m / 60) * HOUR_PX);
   };
 
   const hourHeight = (startStr: string, endStr: string) => {
     const [sh, sm] = startStr.split(":").map(Number);
     const [eh, em] = endStr.split(":").map(Number);
-    return Math.max(28, ((eh - sh) + (em - sm) / 60) * 56);
+    return Math.max(28, ((eh - sh) + (em - sm) / 60) * HOUR_PX);
   };
 
   return (
@@ -969,6 +1009,23 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
             const dayClasses = getClassesForDay(day);
             const dayEvents = getEventsForDay(day);
             const gaps = findGaps(classes, day);
+
+            // Compute side-by-side layout for overlapping classes
+            const classItems: LayoutItem[] = dayClasses.map(cls => ({
+              id: cls.id,
+              startMin: getMinutesFromTime(cls.startTime),
+              endMin: getMinutesFromTime(cls.endTime),
+            }));
+            const classLayout = computeColumns(classItems);
+
+            // Compute side-by-side layout for overlapping events
+            const eventItems: LayoutItem[] = dayEvents.map(ev => {
+              const s = new Date(ev.startTime);
+              const e = new Date(ev.endTime);
+              return { id: ev.id, startMin: s.getHours() * 60 + s.getMinutes(), endMin: e.getHours() * 60 + e.getMinutes() };
+            });
+            const eventLayout = computeColumns(eventItems);
+
             return (
               <div key={day.toISOString()} className="relative border-l border-black/5">
                 {hours.map((hour) => (
@@ -976,8 +1033,8 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
                 ))}
                 {/* Gap indicators */}
                 {gaps.map((gap, i) => {
-                  const top = ((gap.start / 60) - 7) * 56;
-                  const height = ((gap.end - gap.start) / 60) * 56;
+                  const top = ((gap.start / 60) - START_HOUR) * HOUR_PX;
+                  const height = ((gap.end - gap.start) / 60) * HOUR_PX;
                   if (top < 0) return null;
                   const gapMins = gap.end - gap.start;
                   return (
@@ -992,19 +1049,24 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
                     </div>
                   );
                 })}
-                {/* Class blocks */}
-                {dayClasses.map((cls, idx) => {
+                {/* Class blocks — side-by-side when overlapping */}
+                {dayClasses.map((cls) => {
                   const blockHeight = hourHeight(cls.startTime, cls.endTime);
                   const isCompact = blockHeight < 42;
+                  const layout = classLayout.get(cls.id) || { col: 0, totalCols: 1 };
+                  const widthPct = 100 / layout.totalCols;
+                  const leftPct = layout.col * widthPct;
                   return (
                     <button
                       key={cls.id}
                       onClick={() => onClassClick(cls)}
-                      className="absolute left-1 right-1 rounded-lg px-2 py-1 overflow-hidden shadow-sm text-left cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all border-l-[3px]"
+                      className="absolute rounded-lg px-2 py-1 overflow-hidden shadow-sm text-left cursor-pointer hover:shadow-md hover:brightness-95 transition-all border-l-[3px]"
                       style={{
                         top: `${timeToY(cls.startTime)}px`,
                         height: `${blockHeight}px`,
-                        background: `${cls.color}18`,
+                        left: `calc(${leftPct}% + 2px)`,
+                        width: `calc(${widthPct}% - 4px)`,
+                        background: `${cls.color}20`,
                         borderLeftColor: cls.color,
                       }}
                     >
@@ -1014,22 +1076,25 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
                     </button>
                   );
                 })}
-                {/* Event blocks */}
+                {/* Event blocks — side-by-side when overlapping */}
                 {dayEvents.map((ev) => {
                   const start = new Date(ev.startTime);
                   const end = new Date(ev.endTime);
                   const startHour = start.getHours() + start.getMinutes() / 60;
                   const endHour = end.getHours() + end.getMinutes() / 60;
-                  const top = (startHour - 7) * 56;
-                  const height = Math.max(28, (endHour - startHour) * 56);
-                  if (top < 0) return null;
+                  const top = Math.max(0, (startHour - START_HOUR) * HOUR_PX);
+                  const maxY = (END_HOUR - START_HOUR) * HOUR_PX;
+                  const height = Math.min(Math.max(28, (endHour - startHour) * HOUR_PX), maxY - top);
+                  const layout = eventLayout.get(ev.id) || { col: 0, totalCols: 1 };
+                  const widthPct = 100 / layout.totalCols;
+                  const leftPct = layout.col * widthPct;
                   const colorClass = getColor(ev.category);
                   return (
                     <button
                       key={ev.id}
                       onClick={() => onEventClick(ev)}
-                      className={`absolute left-1 right-1 rounded-lg px-2 py-1 text-left border border-white/20 shadow-sm hover:shadow-md transition-shadow cursor-pointer overflow-hidden`}
-                      style={{ top: `${top}px`, height: `${height}px`, background: "white" }}
+                      className="absolute rounded-lg px-2 py-1 text-left border border-black/5 shadow-sm hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
+                      style={{ top: `${top}px`, height: `${height}px`, left: `calc(${leftPct}% + 2px)`, width: `calc(${widthPct}% - 4px)`, background: "white" }}
                     >
                       <div className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-lg ${colorClass}`} />
                       <p className="text-[11px] font-semibold text-black truncate ml-1.5">{ev.title}</p>
