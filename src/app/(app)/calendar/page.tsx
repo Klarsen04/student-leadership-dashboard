@@ -31,6 +31,10 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { BlurFade } from "@/components/ui/blur-fade";
 import { NumberTicker } from "@/components/ui/number-ticker";
 import { ShineBorder } from "@/components/ui/shine-border";
+import { AnimatedTabs } from "@/components/ui/animated-tabs";
+import { ActivityRing } from "@/components/ui/activity-ring";
+import { BorderBeam } from "@/components/ui/border-beam";
+import { AnimatedGradientText } from "@/components/ui/gradient-text";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface CalendarEvent {
@@ -517,8 +521,10 @@ export default function CalendarPage() {
           <div className="flex items-center gap-3">
             <SeasonalIcon month={monthIdx} size={40} />
             <div>
-              <h1 className="text-3xl font-bold text-black" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}>
-                {format(currentDate, "MMMM yyyy")}
+              <h1 className="text-3xl font-bold" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}>
+                <AnimatedGradientText colorFrom="#1f1f1f" colorTo="#6b21a8" speed={6}>
+                  {format(currentDate, "MMMM yyyy")}
+                </AnimatedGradientText>
               </h1>
               <p className="text-black/50 text-sm">
                 {view === "day" ? format(currentDate, "EEEE, MMMM d")
@@ -545,19 +551,17 @@ export default function CalendarPage() {
 
         {/* View Selector */}
         <div className="flex items-center justify-between mt-4">
-          <div className="flex items-center gap-1 bg-white border border-black/10 rounded-full p-1 shadow-sm">
-            {(["day", "3day", "5day", "week", "month"] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => setView(v)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                  view === v ? "bg-black text-white shadow-sm" : "text-black/60 hover:text-black hover:bg-black/5"
-                }`}
-              >
-                {v === "3day" ? "3-Day" : v === "5day" ? "5-Day" : v.charAt(0).toUpperCase() + v.slice(1)}
-              </button>
-            ))}
-          </div>
+          <AnimatedTabs
+            tabs={[
+              { id: "day", label: "Day" },
+              { id: "3day", label: "3-Day" },
+              { id: "5day", label: "5-Day" },
+              { id: "week", label: "Week" },
+              { id: "month", label: "Month" },
+            ]}
+            activeTab={view}
+            onTabChange={(id) => setView(id as View)}
+          />
           <div className="flex items-center gap-1">
             <button onClick={() => navigate(-1)} className="p-2 rounded-full hover:bg-black/5 text-black/60 transition-colors">
               <ChevronLeft className="w-4 h-4" />
@@ -735,20 +739,24 @@ export default function CalendarPage() {
         <aside className="hidden lg:block w-64 shrink-0">
           <BlurFade delay={0.2} direction="right" duration={0.5}>
           <div className="bg-white rounded-2xl shadow-sm border border-black/5 p-4 sticky top-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-black">Tasks</h3>
-              <div className="flex items-center gap-1 text-orange-500">
-                <Flame className="w-3.5 h-3.5" />
-                <span className="text-xs font-bold">{streak}</span>
+            <div className="flex items-center gap-3 mb-4">
+              <ActivityRing percentage={taskGroups.pct} size={52} strokeWidth={5} color="#22c55e">
+                <span className="text-[10px] font-bold text-green-600">{taskGroups.pct}%</span>
+              </ActivityRing>
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-black">Tasks</h3>
+                <p className="text-[10px] text-black/40">
+                  {tasks.filter(t => t.status === "done").length}/{tasks.length} complete
+                </p>
               </div>
-            </div>
-            <div className="mb-3">
-              <div className="flex items-center justify-between text-xs text-black/50 mb-1">
-                <span>Progress</span><span>{taskGroups.pct}%</span>
-              </div>
-              <div className="h-2 bg-black/5 rounded-full overflow-hidden">
-                <div className="h-full bg-green-400 rounded-full transition-all" style={{ width: `${taskGroups.pct}%` }} />
-              </div>
+              <motion.div
+                className="flex items-center gap-1 px-2 py-1 rounded-full bg-orange-50"
+                animate={{ scale: streak > 0 ? [1, 1.1, 1] : 1 }}
+                transition={{ duration: 0.6, delay: 0.5 }}
+              >
+                <Flame className="w-3 h-3 text-orange-500" />
+                <span className="text-[10px] font-bold text-orange-600">{streak}</span>
+              </motion.div>
             </div>
             {[
               { label: "Today", items: taskGroups.today },
@@ -1017,7 +1025,8 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-black/5 overflow-hidden">
+    <div className="bg-white rounded-2xl shadow-sm border border-black/5 overflow-hidden relative">
+      <BorderBeam size={100} duration={10} colorFrom="#a855f7" colorTo="#ec4899" borderWidth={2} />
       {/* Day headers */}
       <div className="grid border-b border-black/5" style={{ gridTemplateColumns: `3.5rem repeat(${dayCount}, 1fr)` }}>
         <div className="p-2" />
