@@ -44,6 +44,9 @@ import { GlowCard } from "@/components/ui/glow-card";
 import { AuroraGlow } from "@/components/ui/aurora-glow";
 import { MiniCalendar } from "@/components/ui/mini-calendar";
 import { EventHoverCard, EventHoverProvider } from "@/components/ui/event-hover-card";
+import { UnscheduledPanel } from "@/components/ui/unscheduled-panel";
+import { KeyboardShortcuts } from "@/components/ui/keyboard-shortcuts";
+import { TimeTracker } from "@/components/ui/time-tracker";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface CalendarEvent {
@@ -336,6 +339,7 @@ export default function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<View>("week");
   const [showAdd, setShowAdd] = useState(false);
+  const [defaultEventTime, setDefaultEventTime] = useState<{ start: string; end: string } | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [editingEvent, setEditingEvent] = useState(false);
   const [classes, setClasses] = useState<ClassBlock[]>([]);
@@ -351,6 +355,18 @@ export default function CalendarPage() {
   const [calendarToDelete, setCalendarToDelete] = useState<string | null>(null);
   const [selectedClass, setSelectedClass] = useState<ClassBlock | null>(null);
   const { calendars, addCalendar, deleteCalendar, addTag, deleteTag, getCalendarColor, getTagsForCalendar, COLOR_OPTIONS } = useCalendars();
+
+  const handleTimeSlotClick = (date: Date, hour: number) => {
+    const startDate = new Date(date);
+    startDate.setHours(hour, 0, 0, 0);
+    const endDate = new Date(date);
+    endDate.setHours(hour + 1, 0, 0, 0);
+    setDefaultEventTime({
+      start: format(startDate, "yyyy-MM-dd'T'HH:mm"),
+      end: format(endDate, "yyyy-MM-dd'T'HH:mm"),
+    });
+    setShowAdd(true);
+  };
 
   useEffect(() => { setClasses(getStoredClasses()); }, []);
 
@@ -780,7 +796,7 @@ export default function CalendarPage() {
             </BlurFade>
           ) : (
             <BlurFade key={`grid-${view}-${currentDate.toISOString()}`} duration={0.3}>
-              <TimeGridView events={filteredEvents} currentDate={currentDate} view={view} onEventClick={setSelectedEvent} getColor={getCalendarColor} classes={classes} onClassClick={setSelectedClass} />
+              <TimeGridView events={filteredEvents} currentDate={currentDate} view={view} onEventClick={setSelectedEvent} getColor={getCalendarColor} classes={classes} onClassClick={setSelectedClass} onTimeSlotClick={handleTimeSlotClick} />
             </BlurFade>
           )}
         </div>
@@ -796,6 +812,10 @@ export default function CalendarPage() {
               events={filteredEvents}
             />
           </BlurFade>
+          {/* Unscheduled Tasks Panel (ClickUp-style) */}
+          <UnscheduledPanel
+            tasks={tasks.filter(t => !t.dueDate).map(t => ({ id: t.id, title: t.title, priority: t.priority, status: t.status }))}
+          />
           {/* Task Panel */}
           <BlurFade delay={0.2} direction="right" duration={0.5}>
           <GlowCard glowColor="rgba(168, 85, 247, 0.08)">
@@ -874,13 +894,13 @@ export default function CalendarPage() {
       </div>
 
       {/* Add Event Dialog */}
-      <Dialog open={showAdd} onOpenChange={setShowAdd}>
+      <Dialog open={showAdd} onOpenChange={(open) => { setShowAdd(open); if (!open) setDefaultEventTime(null); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Event</DialogTitle>
             <DialogDescription>Create a new calendar event</DialogDescription>
           </DialogHeader>
-          <EventForm calendars={calendars} onSaved={() => { setShowAdd(false); fetchEvents(); }} onCancel={() => setShowAdd(false)} />
+          <EventForm calendars={calendars} defaultStartTime={defaultEventTime?.start} defaultEndTime={defaultEventTime?.end} onSaved={() => { setShowAdd(false); setDefaultEventTime(null); fetchEvents(); }} onCancel={() => { setShowAdd(false); setDefaultEventTime(null); }} />
         </DialogContent>
       </Dialog>
 
@@ -1004,6 +1024,25 @@ export default function CalendarPage() {
           setCalendarToDelete(null);
         }
       }} />
+
+      {/* Keyboard Shortcuts (ClickUp-style) */}
+      <KeyboardShortcuts onAction={(action) => {
+        switch (action) {
+          case "new-event": setShowAdd(true); break;
+          case "new-class": setShowAddClass(true); break;
+          case "today": setCurrentDate(new Date()); break;
+          case "day": setView("day"); break;
+          case "3day": setView("3day"); break;
+          case "5day": setView("5day"); break;
+          case "week": setView("week"); break;
+          case "month": setView("month"); break;
+          case "prev": navigate(-1); break;
+          case "next": navigate(1); break;
+        }
+      }} />
+
+      {/* Time Tracker Widget (ClickUp-style floating timer) */}
+      <TimeTracker isVisible={true} taskName={nextUp?.cls.title} />
     </div>
     </ClickSpark>
   );
@@ -1053,8 +1092,8 @@ function computeColumns(items: LayoutItem[]): Map<string, LayoutResult> {
 }
 
 /* ---------- Time Grid View (Day / 3-Day / 5-Day / Week) ---------- */
-function TimeGridView({ events, currentDate, view, onEventClick, getColor, classes, onClassClick }: {
-  events: CalendarEvent[]; currentDate: Date; view: View; onEventClick: (e: CalendarEvent) => void; getColor: (category: string) => string; classes: ClassBlock[]; onClassClick: (cls: ClassBlock) => void;
+function TimeGridView({ events, currentDate, view, onEventClick, getColor, classes, onClassClick, onTimeSlotClick }: {
+  events: CalendarEvent[]; currentDate: Date; view: View; onEventClick: (e: CalendarEvent) => void; getColor: (category: string) => string; classes: ClassBlock[]; onClassClick: (cls: ClassBlock) => void; onTimeSlotClick: (date: Date, hour: number) => void;
 }) {
   const dayCount = view === "day" ? 1 : view === "3day" ? 3 : view === "5day" ? 5 : 7;
   const weekStart = view === "5day" || view === "week" ? startOfWeek(currentDate, { weekStartsOn: 1 }) : currentDate;
@@ -1143,7 +1182,7 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
             return (
               <div key={day.toISOString()} className="relative border-l border-black/5">
                 {hours.map((hour) => (
-                  <div key={hour} className="h-14 border-b border-black/5" />
+                  <div key={hour} className="h-14 border-b border-black/5 cursor-pointer hover:bg-purple-50 transition-colors" onClick={() => onTimeSlotClick(day, hour)} />
                 ))}
                 {/* Current time indicator */}
                 <CurrentTimeLine startHour={START_HOUR} hourHeight={HOUR_PX} dayCount={dayCount} isToday={isDateToday(day)} />
@@ -1315,11 +1354,11 @@ function MonthViewCute({ events, currentDate, onEventClick, getColor, classes, o
 }
 
 /* ---------- Event Form ---------- */
-function EventForm({ calendars, event, onSaved, onCancel }: { calendars: SubCalendar[]; event?: CalendarEvent; onSaved: () => void; onCancel: () => void }) {
+function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defaultEndTime }: { calendars: SubCalendar[]; event?: CalendarEvent; onSaved: () => void; onCancel: () => void; defaultStartTime?: string; defaultEndTime?: string }) {
   const [form, setForm] = useState({
     title: event?.title || "",
-    startTime: event ? format(new Date(event.startTime), "yyyy-MM-dd'T'HH:mm") : "",
-    endTime: event ? format(new Date(event.endTime), "yyyy-MM-dd'T'HH:mm") : "",
+    startTime: event ? format(new Date(event.startTime), "yyyy-MM-dd'T'HH:mm") : (defaultStartTime || ""),
+    endTime: event ? format(new Date(event.endTime), "yyyy-MM-dd'T'HH:mm") : (defaultEndTime || ""),
     role: event?.role || "",
     category: event?.category || calendars[0]?.name || "",
     location: event?.location || "",

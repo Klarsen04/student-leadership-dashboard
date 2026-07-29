@@ -1,4 +1,6 @@
-# Student Leadership OS
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Quick Start
 
@@ -9,87 +11,98 @@ npx prisma db push
 npm run dev
 ```
 
+The dev server runs at http://localhost:3000. Auth is required for all app routes — use the credentials provider with email/password.
+
+## Commands
+
+```bash
+npm run dev          # Start dev server
+npm run build        # Build (prisma generate + next build)
+npm run lint         # ESLint
+npx prisma db push  # Apply schema changes to SQLite
+npx prisma studio   # Browse database GUI
+npx tsc --noEmit --skipLibCheck  # Type-check without building
+```
+
+No test framework is configured.
+
 ## Stack
 
-- Next.js 15 (App Router, standalone output)
-- TypeScript 5.3
-- Tailwind CSS 3.4 with shadcn/ui components
-- Prisma + SQLite (libsql adapter)
-- NextAuth 4.24 (Credentials, Google, Azure AD)
-- Vercel deployment
+- **Framework:** Next.js 15 (App Router, `output: "standalone"`)
+- **Language:** TypeScript 5.3
+- **Styling:** Tailwind CSS 3.4 + shadcn/ui components
+- **Animation:** framer-motion (BlurFade, NumberTicker, ShineBorder in `src/components/ui/`)
+- **Database:** SQLite via Prisma (libsql adapter, `prisma/dev.db`)
+- **Auth:** NextAuth 4.24 (Credentials, Google, Azure AD)
+- **Deployment:** Vercel
 
 ## Architecture
 
 ```
 src/
   app/
-    (app)/          # Authenticated routes (dashboard, tasks, goals, calendar, etc.)
-    (auth)/         # Login/register
-    api/            # REST API routes
+    (app)/          # Authenticated routes — protected by middleware
+    (auth)/         # Login/register — public
+    api/            # REST API routes (CRUD for tasks, events, goals, reflections)
   components/
-    ui/             # shadcn/ui base components
-    tasks/          # TapeShelf, CassetteDisplay, DayTabs
-  lib/              # Utilities, hooks, auth config
+    ui/             # shadcn/ui base + magic-ui animated components
+    tasks/          # TapeShelf (cassette-themed task board)
+  lib/              # Auth config, Prisma client, hooks, validations
+  middleware.ts     # CSP headers + auth redirect for protected paths
+prisma/
+  schema.prisma     # Models: User, Event, Task, Goal, Reflection, Person, Interaction
+  dev.db            # SQLite database file
 ```
+
+### Auth Flow
+Middleware (`src/middleware.ts`) checks for `next-auth.session-token` cookie on protected paths (`/dashboard`, `/calendar`, `/analytics`, `/reflections`). Missing token → redirect to `/login`. CSP nonce is generated per-request and injected via `x-nonce` header.
+
+### Client-Side Storage
+Some features use localStorage instead of the database:
+- **Classes** (`leadership-os-classes`): Recurring class schedule blocks
+- **Sub-calendars** (`leadership-os-calendars`): Calendar groupings and tags
+- Hooks in `src/lib/use*.ts` manage these
+
+### Calendar Architecture
+The calendar page (`src/app/(app)/calendar/page.tsx`) is a large client component (~1300 lines) containing:
+- 5 views: Day, 3-Day, 5-Day (Class Schedule), Week, Month
+- Collision detection algorithm for side-by-side overlapping class/event layout
+- Time grid from 6 AM to 11 PM
+- "Next Up" banner with countdown, conflict detection, gap indicators
+- Seasonal SVG icons and monthly color themes
+
+### TaskTape System
+The tasks page uses a cassette tape metaphor:
+1. **Shelf** — 7 tape spines (one per day)
+2. **Tape Open** — 3D cassette animation
+3. **Board** — Kanban columns + notes
+
+URL: `/tasks` = shelf, `/tasks?day=0-6` = board. Assets in `/public/tasktape/`.
 
 ## Key Patterns
 
 ### Light-themed pages (Tasks, Calendar)
-
-These pages force a light background even though the app uses dark mode:
-- Use `text-black/XX` NOT `text-foreground/XX`
+These pages force light backgrounds regardless of the app's dark theme:
+- Use `text-black/XX` not `text-foreground/XX`
 - Use fully opaque backgrounds (no `rgba()` transparency)
-- Add `relative z-20` to the page container to sit above AnimatedBackground
-- Use `getGradientBg(accentRgb)` from TapeShelf.tsx for pre-blended gradients
+- Add `relative z-20` to sit above `AnimatedBackground`
 
-### TaskTape Integration
-
-Three-view state machine at `/tasks`:
-1. **Shelf** — Gray background, 7 tape spines, "PLAY. PLAN. DONE."
-2. **Tape Open** — 3D cassette centered with glow + "Open X's Tasks" button
-3. **Board** — Two-panel: cassette+focus (left), Kanban+notes (right)
-
-URL: `/tasks` = shelf, `/tasks?day=0-6` = board
-
-Assets in `/public/tasktape/` (spine, cover, cassette PNGs per day + SVG logo)
-
-### Calendar
-
-5 views (Day, 3-Day, 5-Day, Week, Month) with:
-- Class management (localStorage key: `leadership-os-classes`)
-- Sub-calendars (localStorage key: `leadership-os-calendars`)
-- Task sidebar with streak counter
-- Seasonal SVG illustrations per month
+### API Routes
+All CRUD APIs follow the same pattern: GET (list/filter), POST (create), PATCH (update), DELETE (by id query param). Validation via Zod schemas in `src/lib/validations.ts`.
 
 ### Fonts
+Instrument Serif loaded as CSS variable `--font-instrument-serif`. Used for decorative headings on tasks and calendar pages via inline `fontFamily` style.
 
-Instrument Serif loaded via `next/font/google` as CSS variable `--font-instrument-serif`. Used for decorative headings on tasks and calendar pages.
+### UI Components
+The project uses shadcn/ui as the base component library (`src/components/ui/`). Animation components from magic-ui patterns are also available: `BlurFade`, `NumberTicker`, `ShineBorder`. framer-motion is installed for `motion` elements.
 
-## API Routes
+## Environment Variables
 
-| Route | Methods | Purpose |
-|-------|---------|---------|
-| /api/tasks | GET, POST, PATCH, DELETE | Task CRUD |
-| /api/tasks/generate | POST | Generate recurring tasks |
-| /api/calendar | GET, POST, PATCH, DELETE | Event CRUD + sync |
-| /api/goals | GET, POST, PATCH, DELETE | Goal CRUD |
-| /api/reflections | GET, POST, PATCH, DELETE | Reflection CRUD |
-| /api/analytics | GET | Aggregated analytics |
-| /api/notifications | GET | Upcoming events + due tasks |
-| /api/export | GET | Data export (JSON/CSV) |
+Required in `.env.local`:
+- `NEXTAUTH_URL` — Base URL (http://localhost:3000 for dev)
+- `NEXTAUTH_SECRET` — Session encryption key
+- `DATABASE_URL` — SQLite path (default: `file:./dev.db`)
 
-## Build & Deploy
-
-```bash
-npx next build          # Build (standalone output)
-npx prisma db push      # Apply schema changes
-```
-
-Deployed on Vercel with `output: "standalone"` in next.config.js.
-
-## Reference Resources
-
-- AI Agent System Prompt: `/AI_AGENT_SYSTEM_PROMPT.md` (engineering standards)
-- Reference repos: `~/repos/` (shadcn-ui, magic-ui, motion, tremor, etc.)
-- Site cloner: `~/ditto.site` (capture any URL as Next.js app)
-- TaskTape original: captured via ditto at `~/ditto.site/runs/tasktape.replit.app-tasks/`
+Optional (for OAuth):
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+- `AZURE_AD_CLIENT_ID`, `AZURE_AD_CLIENT_SECRET`, `AZURE_AD_TENANT_ID`
