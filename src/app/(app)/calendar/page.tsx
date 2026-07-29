@@ -51,6 +51,10 @@ import { WeekStats } from "@/components/ui/week-stats";
 import { FocusSuggestion } from "@/components/ui/focus-suggestion";
 import { CommandPalette } from "@/components/ui/command-palette";
 import { TaskDetailPanel } from "@/components/ui/task-detail-panel";
+import { ScheduleHeatmap } from "@/components/ui/schedule-heatmap";
+import { ExportButton } from "@/components/ui/export-button";
+import { QuickNote } from "@/components/ui/quick-note";
+import { FocusModeToggle } from "@/components/ui/focus-mode";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface CalendarEvent {
@@ -358,6 +362,7 @@ export default function CalendarPage() {
   const [newCalColor, setNewCalColor] = useState("bg-blue-500");
   const [calendarToDelete, setCalendarToDelete] = useState<string | null>(null);
   const [selectedClass, setSelectedClass] = useState<ClassBlock | null>(null);
+  const [focusMode, setFocusMode] = useState(false);
   const { calendars, addCalendar, deleteCalendar, addTag, deleteTag, getCalendarColor, getTagsForCalendar, COLOR_OPTIONS } = useCalendars();
 
   const handleTimeSlotClick = (date: Date, hour: number) => {
@@ -415,6 +420,18 @@ export default function CalendarPage() {
       return sum + meetingsPerWeek * durationHrs;
     }, 0);
   }, [classes]);
+
+  const focusGaps = useMemo(() => {
+    const weekStart2 = startOfWeek(currentDate, { weekStartsOn: 1 });
+    const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    const allGaps: { start: number; end: number; day: string }[] = [];
+    for (let i = 0; i < 7; i++) {
+      const day = addDays(weekStart2, i);
+      const dayGaps = findGaps(classes, day);
+      dayGaps.forEach((g) => allGaps.push({ ...g, day: DAY_NAMES[i] }));
+    }
+    return allGaps;
+  }, [classes, currentDate]);
 
   const fetchEvents = async () => {
     let start: Date, end: Date;
@@ -614,6 +631,8 @@ export default function CalendarPage() {
                 <Plus className="w-4 h-4 mr-1" /> Event
               </Button>
             </motion.div>
+            <ExportButton onExport={(format) => toast.success(`Exporting as ${format}...`)} />
+            <QuickNote onSave={(note) => toast.success(`Note saved: "${note.slice(0, 30)}${note.length > 30 ? "..." : ""}"`)} />
           </div>
         </div>
 
@@ -647,6 +666,7 @@ export default function CalendarPage() {
             >
               Today
             </motion.button>
+            <FocusModeToggle isActive={focusMode} onToggle={() => setFocusMode(!focusMode)} />
             <motion.button
               onClick={() => navigate(1)}
               className="p-2 rounded-full hover:bg-black/5 text-black/60 transition-colors"
@@ -657,6 +677,15 @@ export default function CalendarPage() {
             </motion.button>
           </div>
         </div>
+
+        {/* Week Stats */}
+        <WeekStats
+          totalClasses={classes.length}
+          totalEvents={filteredEvents.filter(e => !e.id.startsWith("task_")).length}
+          totalHours={weeklyHours}
+          busyPercentage={Math.min(100, Math.round((weeklyHours / 40) * 100))}
+          className="mt-3"
+        />
 
         {/* Calendar & Tag Filters */}
         <div className="flex gap-2 flex-wrap items-center mt-3">
@@ -781,6 +810,13 @@ export default function CalendarPage() {
         )}
       </div>
 
+      {/* Focus Suggestion */}
+      {(view === "week" || view === "5day") && (
+        <div className="max-w-7xl mx-auto mb-4">
+          <FocusSuggestion gaps={focusGaps} />
+        </div>
+      )}
+
       {/* Main Content */}
       <div className="max-w-7xl mx-auto flex gap-4">
         {/* Calendar Area */}
@@ -815,6 +851,10 @@ export default function CalendarPage() {
               onDateSelect={(date) => { setCurrentDate(date); setView("day"); }}
               events={filteredEvents}
             />
+          </BlurFade>
+          {/* Schedule Heatmap */}
+          <BlurFade delay={0.18} direction="right" duration={0.4}>
+            <ScheduleHeatmap classes={classes} events={filteredEvents} />
           </BlurFade>
           {/* Unscheduled Tasks Panel (ClickUp-style) */}
           <UnscheduledPanel
