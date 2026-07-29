@@ -507,7 +507,11 @@ export default function CalendarPage() {
   };
 
   const filteredEvents = events.filter((e) => {
-    if (selectedCalendar && e.category !== selectedCalendar) return false;
+    const isTask = e.id.startsWith("task_");
+    if (selectedCalendar) {
+      if (isTask) return false;
+      if (e.category !== selectedCalendar) return false;
+    }
     if (activeTag && e.role !== activeTag) return false;
     return true;
   });
@@ -773,37 +777,6 @@ export default function CalendarPage() {
                 </motion.span>
               </div>
             </div>
-          </BlurFade>
-        )}
-        {conflicts.length > 0 && (
-          <BlurFade delay={0.2} duration={0.4}>
-          <div className="rounded-xl bg-amber-50 border border-amber-200 overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-2">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-              <p className="text-xs font-semibold text-amber-800">
-                {conflicts.length} time {conflicts.length === 1 ? "conflict" : "conflicts"} detected
-              </p>
-            </div>
-            <div className="px-4 pb-2.5 space-y-1.5">
-              {conflicts.slice(0, 3).map((c, i) => (
-                <div key={i} className="flex items-center gap-2 text-xs text-amber-900/80">
-                  <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full" style={{ background: c.class1.color }} />
-                    <span className="font-medium">{c.class1.title}</span>
-                  </div>
-                  <span className="text-amber-600">×</span>
-                  <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full" style={{ background: c.class2.color }} />
-                    <span className="font-medium">{c.class2.title}</span>
-                  </div>
-                  <span className="text-amber-700/60 ml-auto">{c.day} · {c.overlapStart}–{c.overlapEnd}</span>
-                </div>
-              ))}
-              {conflicts.length > 3 && (
-                <p className="text-[10px] text-amber-600 pl-3">+{conflicts.length - 3} more conflicts</p>
-              )}
-            </div>
-          </div>
           </BlurFade>
         )}
       </div>

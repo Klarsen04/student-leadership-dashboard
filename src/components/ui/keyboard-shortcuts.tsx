@@ -61,7 +61,7 @@ export function KeyboardShortcuts({ onAction }: KeyboardShortcutsProps) {
       {/* Floating shortcut hint button */}
       <motion.button
         onClick={() => setShowPanel(true)}
-        className="fixed bottom-4 right-4 z-40 flex items-center gap-1.5 px-3 py-2 rounded-full bg-black/80 text-white text-xs font-medium shadow-lg backdrop-blur-sm border border-white/10 hover:bg-black/90 transition-colors"
+        className="fixed bottom-4 left-4 z-40 flex items-center gap-1.5 px-3 py-2 rounded-full bg-black/80 text-white text-xs font-medium shadow-lg backdrop-blur-sm border border-white/10 hover:bg-black/90 transition-colors"
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         initial={{ opacity: 0, y: 20 }}
