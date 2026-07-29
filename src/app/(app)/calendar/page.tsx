@@ -35,6 +35,9 @@ import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import { ActivityRing } from "@/components/ui/activity-ring";
 import { BorderBeam } from "@/components/ui/border-beam";
 import { AnimatedGradientText } from "@/components/ui/gradient-text";
+import { ClickSpark } from "@/components/ui/click-spark";
+import { ParticlesBg } from "@/components/ui/particles-bg";
+import { CurrentTimeLine } from "@/components/ui/current-time-line";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface CalendarEvent {
@@ -514,9 +517,13 @@ export default function CalendarPage() {
   const monthIdx = currentDate.getMonth();
 
   return (
+    <ClickSpark sparkColor="#a855f7" sparkCount={10} sparkSize={6}>
     <div className="min-h-screen -m-4 md:-m-8 p-4 md:p-8 relative z-20" style={{ background: "#faf9f7" }}>
+      {/* Floating particles background */}
+      <ParticlesBg quantity={30} color="#a855f7" size={1} speed={0.2} className="opacity-40" />
+
       {/* Header */}
-      <header className="max-w-7xl mx-auto mb-6">
+      <header className="max-w-7xl mx-auto mb-6 relative">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
             <SeasonalIcon month={monthIdx} size={40} />
@@ -563,15 +570,30 @@ export default function CalendarPage() {
             onTabChange={(id) => setView(id as View)}
           />
           <div className="flex items-center gap-1">
-            <button onClick={() => navigate(-1)} className="p-2 rounded-full hover:bg-black/5 text-black/60 transition-colors">
+            <motion.button
+              onClick={() => navigate(-1)}
+              className="p-2 rounded-full hover:bg-black/5 text-black/60 transition-colors"
+              whileHover={{ x: -3, scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+            >
               <ChevronLeft className="w-4 h-4" />
-            </button>
-            <button onClick={() => setCurrentDate(new Date())} className="px-3 py-1.5 rounded-full text-xs font-medium text-black/70 hover:bg-black/5 transition-colors">
+            </motion.button>
+            <motion.button
+              onClick={() => setCurrentDate(new Date())}
+              className="px-3 py-1.5 rounded-full text-xs font-medium text-black/70 hover:bg-purple-50 hover:text-purple-700 transition-colors"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
               Today
-            </button>
-            <button onClick={() => navigate(1)} className="p-2 rounded-full hover:bg-black/5 text-black/60 transition-colors">
+            </motion.button>
+            <motion.button
+              onClick={() => navigate(1)}
+              className="p-2 rounded-full hover:bg-black/5 text-black/60 transition-colors"
+              whileHover={{ x: 3, scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+            >
               <ChevronRight className="w-4 h-4" />
-            </button>
+            </motion.button>
           </div>
         </div>
 
@@ -942,6 +964,7 @@ export default function CalendarPage() {
         }
       }} />
     </div>
+    </ClickSpark>
   );
 }
 
@@ -1080,6 +1103,8 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
                 {hours.map((hour) => (
                   <div key={hour} className="h-14 border-b border-black/5" />
                 ))}
+                {/* Current time indicator */}
+                <CurrentTimeLine startHour={START_HOUR} hourHeight={HOUR_PX} dayCount={dayCount} isToday={isDateToday(day)} />
                 {/* Gap indicators */}
                 {gaps.map((gap, i) => {
                   const top = ((gap.start / 60) - START_HOUR) * HOUR_PX;
@@ -1098,18 +1123,18 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
                     </div>
                   );
                 })}
-                {/* Class blocks — side-by-side when overlapping */}
-                {dayClasses.map((cls) => {
+                {/* Class blocks — side-by-side when overlapping, staggered entrance */}
+                {dayClasses.map((cls, idx) => {
                   const blockHeight = hourHeight(cls.startTime, cls.endTime);
                   const isCompact = blockHeight < 42;
                   const layout = classLayout.get(cls.id) || { col: 0, totalCols: 1 };
                   const widthPct = 100 / layout.totalCols;
                   const leftPct = layout.col * widthPct;
                   return (
-                    <button
+                    <motion.button
                       key={cls.id}
                       onClick={() => onClassClick(cls)}
-                      className="absolute rounded-lg px-2 py-1 overflow-hidden shadow-sm text-left cursor-pointer hover:shadow-md hover:brightness-95 transition-all border-l-[3px]"
+                      className="absolute rounded-lg px-2 py-1 overflow-hidden shadow-sm text-left cursor-pointer hover:shadow-lg transition-shadow border-l-[3px]"
                       style={{
                         top: `${timeToY(cls.startTime)}px`,
                         height: `${blockHeight}px`,
@@ -1118,11 +1143,15 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
                         background: `${cls.color}20`,
                         borderLeftColor: cls.color,
                       }}
+                      initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      transition={{ duration: 0.4, delay: idx * 0.08, ease: "easeOut" }}
+                      whileHover={{ scale: 1.03, y: -2 }}
                     >
                       <p className="text-[11px] font-bold truncate" style={{ color: cls.color }}>{cls.title}</p>
                       {!isCompact && <p className="text-[9px] text-black/50 truncate">{cls.location}</p>}
                       {!isCompact && <p className="text-[9px] text-black/40">{cls.startTime} - {cls.endTime}</p>}
-                    </button>
+                    </motion.button>
                   );
                 })}
                 {/* Event blocks — side-by-side when overlapping */}
