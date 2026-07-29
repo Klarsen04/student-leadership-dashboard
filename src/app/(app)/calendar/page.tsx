@@ -41,6 +41,7 @@ import { CurrentTimeLine } from "@/components/ui/current-time-line";
 import { Marquee } from "@/components/ui/marquee";
 import { NoiseOverlay } from "@/components/ui/noise-overlay";
 import { GlowCard } from "@/components/ui/glow-card";
+import { AuroraGlow } from "@/components/ui/aurora-glow";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface CalendarEvent {
@@ -522,6 +523,8 @@ export default function CalendarPage() {
   return (
     <ClickSpark sparkColor="#a855f7" sparkCount={10} sparkSize={6}>
     <div className="min-h-screen -m-4 md:-m-8 p-4 md:p-8 relative z-20" style={{ background: "#faf9f7" }}>
+      {/* ClickUp-style aurora glow behind header */}
+      <AuroraGlow className="z-0" opacity={0.6} />
       {/* Film grain overlay for cinematic depth */}
       <NoiseOverlay opacity={0.02} />
       {/* Floating particles background */}
