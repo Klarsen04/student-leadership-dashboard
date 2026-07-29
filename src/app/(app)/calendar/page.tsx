@@ -42,6 +42,8 @@ import { Marquee } from "@/components/ui/marquee";
 import { NoiseOverlay } from "@/components/ui/noise-overlay";
 import { GlowCard } from "@/components/ui/glow-card";
 import { AuroraGlow } from "@/components/ui/aurora-glow";
+import { MiniCalendar } from "@/components/ui/mini-calendar";
+import { EventHoverCard, EventHoverProvider } from "@/components/ui/event-hover-card";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface CalendarEvent {
@@ -785,8 +787,18 @@ export default function CalendarPage() {
 
         {/* Task Sidebar */}
         <aside className="hidden lg:block w-64 shrink-0">
+          <div className="sticky top-4 space-y-3">
+          {/* Mini Calendar Widget (ClickUp-style) */}
+          <BlurFade delay={0.15} direction="right" duration={0.4}>
+            <MiniCalendar
+              currentDate={currentDate}
+              onDateSelect={(date) => { setCurrentDate(date); setView("day"); }}
+              events={filteredEvents}
+            />
+          </BlurFade>
+          {/* Task Panel */}
           <BlurFade delay={0.2} direction="right" duration={0.5}>
-          <GlowCard className="sticky top-4" glowColor="rgba(168, 85, 247, 0.08)">
+          <GlowCard glowColor="rgba(168, 85, 247, 0.08)">
           <div className="bg-white rounded-2xl shadow-sm border border-black/5 p-4">
             <div className="flex items-center gap-3 mb-4">
               <ActivityRing percentage={taskGroups.pct} size={52} strokeWidth={5} color="#22c55e">
@@ -857,6 +869,7 @@ export default function CalendarPage() {
           </div>
           </GlowCard>
           </BlurFade>
+          </div>
         </aside>
       </div>
 
@@ -1076,6 +1089,7 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
   };
 
   return (
+    <EventHoverProvider>
     <div className="bg-white rounded-2xl shadow-sm border border-black/5 overflow-hidden relative">
       <BorderBeam size={100} duration={10} colorFrom="#a855f7" colorTo="#ec4899" borderWidth={2} />
       {/* Day headers */}
@@ -1159,27 +1173,35 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
                   const widthPct = 100 / layout.totalCols;
                   const leftPct = layout.col * widthPct;
                   return (
-                    <motion.button
+                    <EventHoverCard
                       key={cls.id}
-                      onClick={() => onClassClick(cls)}
-                      className="absolute rounded-lg px-2 py-1 overflow-hidden shadow-sm text-left cursor-pointer hover:shadow-lg transition-shadow border-l-[3px]"
-                      style={{
-                        top: `${timeToY(cls.startTime)}px`,
-                        height: `${blockHeight}px`,
-                        left: `calc(${leftPct}% + 2px)`,
-                        width: `calc(${widthPct}% - 4px)`,
-                        background: `${cls.color}20`,
-                        borderLeftColor: cls.color,
-                      }}
-                      initial={{ opacity: 0, scale: 0.8, y: 10 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      transition={{ duration: 0.4, delay: idx * 0.08, ease: "easeOut" }}
-                      whileHover={{ scale: 1.03, y: -2 }}
+                      title={cls.title}
+                      timeRange={`${cls.startTime} – ${cls.endTime}`}
+                      location={cls.location}
+                      category="Class"
+                      colorAccent={cls.color}
                     >
-                      <p className="text-[11px] font-bold truncate" style={{ color: cls.color }}>{cls.title}</p>
-                      {!isCompact && <p className="text-[9px] text-black/50 truncate">{cls.location}</p>}
-                      {!isCompact && <p className="text-[9px] text-black/40">{cls.startTime} - {cls.endTime}</p>}
-                    </motion.button>
+                      <motion.button
+                        onClick={() => onClassClick(cls)}
+                        className="absolute rounded-lg px-2 py-1 overflow-hidden shadow-sm text-left cursor-pointer hover:shadow-lg transition-shadow border-l-[3px]"
+                        style={{
+                          top: `${timeToY(cls.startTime)}px`,
+                          height: `${blockHeight}px`,
+                          left: `calc(${leftPct}% + 2px)`,
+                          width: `calc(${widthPct}% - 4px)`,
+                          background: `${cls.color}20`,
+                          borderLeftColor: cls.color,
+                        }}
+                        initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        transition={{ duration: 0.4, delay: idx * 0.08, ease: "easeOut" }}
+                        whileHover={{ scale: 1.03, y: -2 }}
+                      >
+                        <p className="text-[11px] font-bold truncate" style={{ color: cls.color }}>{cls.title}</p>
+                        {!isCompact && <p className="text-[9px] text-black/50 truncate">{cls.location}</p>}
+                        {!isCompact && <p className="text-[9px] text-black/40">{cls.startTime} - {cls.endTime}</p>}
+                      </motion.button>
+                    </EventHoverCard>
                   );
                 })}
                 {/* Event blocks — side-by-side when overlapping */}
@@ -1196,16 +1218,23 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
                   const leftPct = layout.col * widthPct;
                   const colorClass = getColor(ev.category);
                   return (
-                    <button
+                    <EventHoverCard
                       key={ev.id}
-                      onClick={() => onEventClick(ev)}
-                      className="absolute rounded-lg px-2 py-1 text-left border border-black/5 shadow-sm hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
-                      style={{ top: `${top}px`, height: `${height}px`, left: `calc(${leftPct}% + 2px)`, width: `calc(${widthPct}% - 4px)`, background: "white" }}
+                      title={ev.title}
+                      timeRange={`${format(start, "h:mm a")} – ${format(end, "h:mm a")}`}
+                      location={ev.location}
+                      category={ev.category}
                     >
-                      <div className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-lg ${colorClass}`} />
-                      <p className="text-[11px] font-semibold text-black truncate ml-1.5">{ev.title}</p>
-                      <p className="text-[9px] text-black/50 ml-1.5">{format(start, "h:mm a")}</p>
-                    </button>
+                      <button
+                        onClick={() => onEventClick(ev)}
+                        className="absolute rounded-lg px-2 py-1 text-left border border-black/5 shadow-sm hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
+                        style={{ top: `${top}px`, height: `${height}px`, left: `calc(${leftPct}% + 2px)`, width: `calc(${widthPct}% - 4px)`, background: "white" }}
+                      >
+                        <div className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-lg ${colorClass}`} />
+                        <p className="text-[11px] font-semibold text-black truncate ml-1.5">{ev.title}</p>
+                        <p className="text-[9px] text-black/50 ml-1.5">{format(start, "h:mm a")}</p>
+                      </button>
+                    </EventHoverCard>
                   );
                 })}
               </div>
@@ -1214,6 +1243,7 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
         </div>
       </div>
     </div>
+    </EventHoverProvider>
   );
 }
 
