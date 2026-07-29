@@ -38,6 +38,9 @@ import { AnimatedGradientText } from "@/components/ui/gradient-text";
 import { ClickSpark } from "@/components/ui/click-spark";
 import { ParticlesBg } from "@/components/ui/particles-bg";
 import { CurrentTimeLine } from "@/components/ui/current-time-line";
+import { Marquee } from "@/components/ui/marquee";
+import { NoiseOverlay } from "@/components/ui/noise-overlay";
+import { GlowCard } from "@/components/ui/glow-card";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface CalendarEvent {
@@ -519,6 +522,8 @@ export default function CalendarPage() {
   return (
     <ClickSpark sparkColor="#a855f7" sparkCount={10} sparkSize={6}>
     <div className="min-h-screen -m-4 md:-m-8 p-4 md:p-8 relative z-20" style={{ background: "#faf9f7" }}>
+      {/* Film grain overlay for cinematic depth */}
+      <NoiseOverlay opacity={0.02} />
       {/* Floating particles background */}
       <ParticlesBg quantity={30} color="#a855f7" size={1} speed={0.2} className="opacity-40" />
 
@@ -657,6 +662,24 @@ export default function CalendarPage() {
         )}
       </header>
 
+      {/* Infinite marquee ticker */}
+      {classes.length > 0 && (
+        <div className="max-w-7xl mx-auto mb-3 overflow-hidden rounded-xl bg-black/[0.02] border border-black/5">
+          <Marquee speed={25} pauseOnHover className="py-2">
+            {classes.map((cls) => (
+              <span key={cls.id} className="flex items-center gap-2 px-4 text-xs text-black/50">
+                <span className="w-2 h-2 rounded-full" style={{ background: cls.color }} />
+                <span className="font-medium text-black/70">{cls.title}</span>
+                <span>·</span>
+                <span>{cls.days.join("/")}</span>
+                <span>·</span>
+                <span>{cls.startTime}–{cls.endTime}</span>
+              </span>
+            ))}
+          </Marquee>
+        </div>
+      )}
+
       {/* Next Up Banner + Conflicts */}
       <div className="max-w-7xl mx-auto mb-4 space-y-2">
         {nextUp && (
@@ -760,7 +783,8 @@ export default function CalendarPage() {
         {/* Task Sidebar */}
         <aside className="hidden lg:block w-64 shrink-0">
           <BlurFade delay={0.2} direction="right" duration={0.5}>
-          <div className="bg-white rounded-2xl shadow-sm border border-black/5 p-4 sticky top-4">
+          <GlowCard className="sticky top-4" glowColor="rgba(168, 85, 247, 0.08)">
+          <div className="bg-white rounded-2xl shadow-sm border border-black/5 p-4">
             <div className="flex items-center gap-3 mb-4">
               <ActivityRing percentage={taskGroups.pct} size={52} strokeWidth={5} color="#22c55e">
                 <span className="text-[10px] font-bold text-green-600">{taskGroups.pct}%</span>
@@ -828,6 +852,7 @@ export default function CalendarPage() {
               </div>
             )}
           </div>
+          </GlowCard>
           </BlurFade>
         </aside>
       </div>
