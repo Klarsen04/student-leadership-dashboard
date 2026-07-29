@@ -14,7 +14,7 @@ import {
   isTomorrow,
   isThisWeek,
 } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, Trash2, Pencil, X, BookOpen, Flame, AlertTriangle, Clock, MapPin, User, GraduationCap } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Trash2, Pencil, X, BookOpen, Flame, AlertTriangle, Clock, MapPin, User, GraduationCap, Calendar as CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +47,10 @@ import { EventHoverCard, EventHoverProvider } from "@/components/ui/event-hover-
 import { UnscheduledPanel } from "@/components/ui/unscheduled-panel";
 import { KeyboardShortcuts } from "@/components/ui/keyboard-shortcuts";
 import { TimeTracker } from "@/components/ui/time-tracker";
+import { WeekStats } from "@/components/ui/week-stats";
+import { FocusSuggestion } from "@/components/ui/focus-suggestion";
+import { CommandPalette } from "@/components/ui/command-palette";
+import { TaskDetailPanel } from "@/components/ui/task-detail-panel";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface CalendarEvent {
@@ -366,6 +370,33 @@ export default function CalendarPage() {
       end: format(endDate, "yyyy-MM-dd'T'HH:mm"),
     });
     setShowAdd(true);
+  };
+
+  const handleEventDrop = async (eventId: string, newDate: Date, newHour: number) => {
+    const event = events.find((e) => e.id === eventId);
+    if (!event) return;
+    const oldStart = new Date(event.startTime);
+    const oldEnd = new Date(event.endTime);
+    const durationMs = oldEnd.getTime() - oldStart.getTime();
+    const newStart = new Date(newDate);
+    newStart.setHours(newHour, 0, 0, 0);
+    const newEnd = new Date(newStart.getTime() + durationMs);
+    try {
+      const res = await fetch("/api/calendar", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: eventId,
+          startTime: newStart.toISOString(),
+          endTime: newEnd.toISOString(),
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("Event rescheduled");
+      fetchEvents();
+    } catch {
+      toast.error("Failed to reschedule event");
+    }
   };
 
   useEffect(() => { setClasses(getStoredClasses()); }, []);
@@ -796,7 +827,7 @@ export default function CalendarPage() {
             </BlurFade>
           ) : (
             <BlurFade key={`grid-${view}-${currentDate.toISOString()}`} duration={0.3}>
-              <TimeGridView events={filteredEvents} currentDate={currentDate} view={view} onEventClick={setSelectedEvent} getColor={getCalendarColor} classes={classes} onClassClick={setSelectedClass} onTimeSlotClick={handleTimeSlotClick} />
+              <TimeGridView events={filteredEvents} currentDate={currentDate} view={view} onEventClick={setSelectedEvent} getColor={getCalendarColor} classes={classes} onClassClick={setSelectedClass} onTimeSlotClick={handleTimeSlotClick} onEventDrop={handleEventDrop} />
             </BlurFade>
           )}
         </div>
@@ -1043,6 +1074,19 @@ export default function CalendarPage() {
 
       {/* Time Tracker Widget (ClickUp-style floating timer) */}
       <TimeTracker isVisible={true} taskName={nextUp?.cls.title} />
+
+      {/* Command Palette (Cmd+K) */}
+      <CommandPalette commands={[
+        { id: "new-event", label: "Create new event", icon: <Plus className="w-4 h-4" />, action: () => setShowAdd(true), category: "Actions" },
+        { id: "new-class", label: "Add a class", icon: <BookOpen className="w-4 h-4" />, action: () => setShowAddClass(true), category: "Actions" },
+        { id: "today", label: "Go to today", icon: <CalendarIcon className="w-4 h-4" />, action: () => setCurrentDate(new Date()), category: "Navigation" },
+        { id: "day-view", label: "Switch to Day view", icon: <CalendarIcon className="w-4 h-4" />, action: () => setView("day"), category: "Views" },
+        { id: "week-view", label: "Switch to Week view", icon: <CalendarIcon className="w-4 h-4" />, action: () => setView("week"), category: "Views" },
+        { id: "month-view", label: "Switch to Month view", icon: <CalendarIcon className="w-4 h-4" />, action: () => setView("month"), category: "Views" },
+        { id: "5day-view", label: "Switch to 5-Day view", icon: <BookOpen className="w-4 h-4" />, action: () => setView("5day"), category: "Views" },
+        { id: "prev", label: "Previous period", icon: <ChevronLeft className="w-4 h-4" />, action: () => navigate(-1), category: "Navigation" },
+        { id: "next", label: "Next period", icon: <ChevronRight className="w-4 h-4" />, action: () => navigate(1), category: "Navigation" },
+      ]} />
     </div>
     </ClickSpark>
   );
@@ -1092,9 +1136,11 @@ function computeColumns(items: LayoutItem[]): Map<string, LayoutResult> {
 }
 
 /* ---------- Time Grid View (Day / 3-Day / 5-Day / Week) ---------- */
-function TimeGridView({ events, currentDate, view, onEventClick, getColor, classes, onClassClick, onTimeSlotClick }: {
-  events: CalendarEvent[]; currentDate: Date; view: View; onEventClick: (e: CalendarEvent) => void; getColor: (category: string) => string; classes: ClassBlock[]; onClassClick: (cls: ClassBlock) => void; onTimeSlotClick: (date: Date, hour: number) => void;
+function TimeGridView({ events, currentDate, view, onEventClick, getColor, classes, onClassClick, onTimeSlotClick, onEventDrop }: {
+  events: CalendarEvent[]; currentDate: Date; view: View; onEventClick: (e: CalendarEvent) => void; getColor: (category: string) => string; classes: ClassBlock[]; onClassClick: (cls: ClassBlock) => void; onTimeSlotClick: (date: Date, hour: number) => void; onEventDrop?: (eventId: string, newDate: Date, newHour: number) => void;
 }) {
+  const [draggedEventId, setDraggedEventId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ dayIdx: number; hour: number } | null>(null);
   const dayCount = view === "day" ? 1 : view === "3day" ? 3 : view === "5day" ? 5 : 7;
   const weekStart = view === "5day" || view === "week" ? startOfWeek(currentDate, { weekStartsOn: 1 }) : currentDate;
   const days = Array.from({ length: dayCount }, (_, i) => addDays(weekStart, i));
@@ -1158,7 +1204,7 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
           </div>
 
           {/* Day columns */}
-          {days.map((day) => {
+          {days.map((day, dayIdx) => {
             const dayClasses = getClassesForDay(day);
             const dayEvents = getEventsForDay(day);
             const gaps = findGaps(classes, day);
@@ -1182,7 +1228,32 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
             return (
               <div key={day.toISOString()} className="relative border-l border-black/5">
                 {hours.map((hour) => (
-                  <div key={hour} className="h-14 border-b border-black/5 cursor-pointer hover:bg-purple-50 transition-colors" onClick={() => onTimeSlotClick(day, hour)} />
+                  <div
+                    key={hour}
+                    className={`h-14 border-b border-black/5 cursor-pointer transition-colors ${
+                      draggedEventId && dropTarget?.dayIdx === dayIdx && dropTarget?.hour === hour
+                        ? "bg-blue-100 ring-1 ring-inset ring-blue-300"
+                        : "hover:bg-purple-50"
+                    }`}
+                    onClick={() => onTimeSlotClick(day, hour)}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "move";
+                      setDropTarget({ dayIdx, hour });
+                    }}
+                    onDragLeave={() => {
+                      setDropTarget((prev) => prev?.dayIdx === dayIdx && prev?.hour === hour ? null : prev);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const eventId = e.dataTransfer.getData("text/plain");
+                      if (eventId && onEventDrop) {
+                        onEventDrop(eventId, day, hour);
+                      }
+                      setDraggedEventId(null);
+                      setDropTarget(null);
+                    }}
+                  />
                 ))}
                 {/* Current time indicator */}
                 <CurrentTimeLine startHour={START_HOUR} hourHeight={HOUR_PX} dayCount={dayCount} isToday={isDateToday(day)} />
@@ -1256,6 +1327,7 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
                   const widthPct = 100 / layout.totalCols;
                   const leftPct = layout.col * widthPct;
                   const colorClass = getColor(ev.category);
+                  const isDraggable = !ev.id.startsWith("task_");
                   return (
                     <EventHoverCard
                       key={ev.id}
@@ -1265,8 +1337,21 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
                       category={ev.category}
                     >
                       <button
+                        draggable={isDraggable}
+                        onDragStart={(e) => {
+                          if (!isDraggable) return;
+                          e.dataTransfer.setData("text/plain", ev.id);
+                          e.dataTransfer.effectAllowed = "move";
+                          setDraggedEventId(ev.id);
+                        }}
+                        onDragEnd={() => {
+                          setDraggedEventId(null);
+                          setDropTarget(null);
+                        }}
                         onClick={() => onEventClick(ev)}
-                        className="absolute rounded-lg px-2 py-1 text-left border border-black/5 shadow-sm hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
+                        className={`absolute rounded-lg px-2 py-1 text-left border border-black/5 shadow-sm hover:shadow-md transition-shadow cursor-pointer overflow-hidden ${
+                          draggedEventId === ev.id ? "opacity-50 ring-2 ring-blue-400" : ""
+                        }`}
                         style={{ top: `${top}px`, height: `${height}px`, left: `calc(${leftPct}% + 2px)`, width: `calc(${widthPct}% - 4px)`, background: "white" }}
                       >
                         <div className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-lg ${colorClass}`} />
