@@ -5,6 +5,10 @@
 @source inline("bg-{purple,blue,emerald,amber,rose,cyan}-500/10");
 @source inline("border-{purple,blue,emerald,amber,rose,cyan}-500/20");
 
+/* ilamy calendar ships no CSS; Tailwind v4 skips node_modules by default, so scan its
+   dist for the utility classes it uses (else the calendar renders unstyled). */
+@source "../../node_modules/@ilamy/calendar/dist";
+
 @layer base {
   :root {
     --background: 0 0% 99%;
