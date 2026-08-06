@@ -249,7 +249,7 @@ function saveClasses(classes: ClassBlock[]) {
 /* ---------- Seasonal SVG Illustrations ---------- */
 function SeasonalIcon({ month, size = 32 }: { month: number; size?: number }) {
   const s = size;
-  const icons: Record<number, JSX.Element> = {
+  const icons: Record<number, React.JSX.Element> = {
     0: ( // Snowflake
       <svg width={s} height={s} viewBox="0 0 32 32" fill="none">
         <line x1="16" y1="4" x2="16" y2="28" stroke="#93c5fd" strokeWidth="2" strokeLinecap="round"/>

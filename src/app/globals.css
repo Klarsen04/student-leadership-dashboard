@@ -1,6 +1,9 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../../tailwind.config.ts";
+
+/* v4 replacement for config `safelist` — protect dynamically-composed color utilities from purge */
+@source inline("bg-{purple,blue,emerald,amber,rose,cyan}-500/10");
+@source inline("border-{purple,blue,emerald,amber,rose,cyan}-500/20");
 
 @layer base {
   :root {
@@ -69,32 +72,31 @@
   }
 }
 
-@layer utilities {
-  .glass {
-    background: hsl(var(--glass-bg));
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid hsl(var(--glass-border));
-  }
-  .glass-card {
-    background: hsl(var(--glass-card-bg));
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid hsl(var(--glass-card-border));
-    box-shadow: 0 10px 40px hsl(var(--glass-card-shadow));
-  }
-  .gradient-text {
-    @apply bg-gradient-to-r from-purple-500 via-violet-500 to-blue-500 bg-clip-text text-transparent;
-  }
-  :root .gradient-text {
-    @apply from-purple-600 via-violet-600 to-blue-600;
-  }
-  .glow {
-    box-shadow: 0 0 20px hsl(258 90% 66% / 0.15), 0 0 60px hsl(258 90% 66% / 0.05);
-  }
-  .glow-sm {
-    box-shadow: 0 0 10px hsl(258 90% 66% / 0.1), 0 0 30px hsl(258 90% 66% / 0.03);
-  }
+/* v4: custom utilities must be registered with @utility so they can be used with @apply */
+@utility glass {
+  background: hsl(var(--glass-bg));
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid hsl(var(--glass-border));
+}
+@utility glass-card {
+  background: hsl(var(--glass-card-bg));
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid hsl(var(--glass-card-border));
+  box-shadow: 0 10px 40px hsl(var(--glass-card-shadow));
+}
+@utility gradient-text {
+  @apply bg-gradient-to-r from-purple-500 via-violet-500 to-blue-500 bg-clip-text text-transparent;
+}
+:root .gradient-text {
+  @apply from-purple-600 via-violet-600 to-blue-600;
+}
+@utility glow {
+  box-shadow: 0 0 20px hsl(258 90% 66% / 0.15), 0 0 60px hsl(258 90% 66% / 0.05);
+}
+@utility glow-sm {
+  box-shadow: 0 0 10px hsl(258 90% 66% / 0.1), 0 0 30px hsl(258 90% 66% / 0.03);
 }
 
 @layer components {
