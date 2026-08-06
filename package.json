@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@aikidosec/firewall": "1.8.31",
+    "@dayflow/plugin-drag": "^1.5.7",
+    "@dayflow/react": "^3.6.7",
     "@libsql/client": "^0.5.6",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@prisma/adapter-libsql": "^5.22.0",
@@ -34,7 +36,7 @@
     "clsx": "^2.1.0",
     "date-fns": "^3.3.1",
     "framer-motion": "^12.43.0",
-    "lucide-react": "^0.312.0",
+    "lucide-react": "^1.28.0",
     "next": "15.5.18",
     "next-auth": "^4.24.5",
     "next-themes": "^0.4.6",
@@ -48,12 +50,12 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^20.11.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@tailwindcss/postcss": "^4.0.0",
     "postcss": "^8.4.33",
     "prisma": "^5.22.0",
     "tailwindcss": "^4.0.0",
