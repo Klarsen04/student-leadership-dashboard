@@ -11,7 +11,9 @@ import {
   createEventsPlugin,
   createEvent,
 } from "@dayflow/react";
-import "@dayflow/core/dist/styles.css";
+// Scoped copy of DayFlow's stylesheet — global resets are bound to `.dayflow-scope`
+// so they can't leak into the rest of the app. Regenerate via scripts/scope-vendor-css.mjs.
+import "./dayflow.scoped.css";
 import type { CalendarEngineProps, EngineView } from "./types";
 
 // DayFlow has no "3day/5day"; map those onto its closest native views.
@@ -85,7 +87,7 @@ export default function DayFlowEngine({
   });
 
   return (
-    <div className="dayflow-engine relative z-20 h-[70vh] rounded-2xl overflow-hidden border border-black/10 bg-white">
+    <div className="dayflow-scope dayflow-engine relative z-20 h-[70vh] rounded-2xl overflow-hidden border border-black/10 bg-white">
       <DayFlowCalendar calendar={calendar} />
     </div>
   );
