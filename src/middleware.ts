@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const protectedPaths = ["/dashboard", "/calendar", "/analytics", "/reflections"];
+const protectedPaths = ["/dashboard", "/calendar", "/analytics", "/reflections", "/quest"];
 
 function generateNonce() {
   const array = new Uint8Array(16);

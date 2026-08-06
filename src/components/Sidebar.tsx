@@ -25,6 +25,7 @@ const nav = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/calendar", label: "Calendar", icon: Calendar },
   { href: "/goals", label: "Goals", icon: Target },
+  { href: "/quest", label: "Quest", icon: Sparkles },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/reflections", label: "Reflections", icon: BookOpen },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
