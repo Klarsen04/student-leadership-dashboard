@@ -47,7 +47,7 @@ export default function FullCalendarEngine({
   const fcView = (view === "month" || view === "week" || view === "day" ? view : "week") as any;
 
   return (
-    <div className="relative z-20 rounded-2xl overflow-hidden border border-black/10 bg-white">
+    <div className="fullcal-scope relative z-20 rounded-2xl overflow-hidden border border-black/10 bg-white">
       <CalendarProvider
         events={fcEvents}
         users={[DEFAULT_USER]}

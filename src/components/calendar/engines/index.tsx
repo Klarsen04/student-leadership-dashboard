@@ -3,6 +3,7 @@
 import { lazy, Suspense, type ComponentType } from "react";
 import type { CalendarEngine } from "@/lib/useCalendars";
 import type { CalendarEngineProps } from "./types";
+import "./engine-theme.css";
 
 export type { CalendarEngineProps, EngineEvent, EngineClass, EngineView } from "./types";
 

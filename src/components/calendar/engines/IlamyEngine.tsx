@@ -46,7 +46,7 @@ export default function IlamyEngine({
   );
 
   return (
-    <div className="relative z-20 h-[70vh] rounded-2xl overflow-hidden border border-black/10 bg-white">
+    <div className="ilamy-scope relative z-20 h-[70vh] rounded-2xl overflow-hidden border border-black/10 bg-white">
       <IlamyCalendar
         events={ilamyEvents as any}
         initialView={VIEW_MAP[view] as any}
