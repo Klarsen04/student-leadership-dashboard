@@ -9,13 +9,15 @@ export type { CalendarEngineProps, EngineEvent, EngineClass, EngineView } from "
 // Each non-default engine is lazy-loaded so its bundle only ships when a calendar uses it.
 const DayFlowEngine = lazy(() => import("./DayFlowEngine"));
 const IlamyEngine = lazy(() => import("./IlamyEngine"));
+const FullCalendarEngine = lazy(() => import("./FullCalendarEngine"));
 
 // Registry maps an engine id to its renderer. "default" is null — the page renders its
 // own original views (MonthViewCute / TimeGridView) for that case.
 const ENGINE_COMPONENTS: Partial<Record<CalendarEngine, ComponentType<CalendarEngineProps>>> = {
   dayflow: DayFlowEngine,
   ilamy: IlamyEngine,
-  // "full-calendar", "mina" grafted next.
+  "full-calendar": FullCalendarEngine,
+  // "mina" grafted next.
 };
 
 export function hasEngine(engine: CalendarEngine): boolean {
