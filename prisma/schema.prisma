@@ -50,6 +50,63 @@ model User {
   goals         Goal[]
   tasks         Task[]
   checkIns      DailyCheckIn[]
+  // RPG stats (Habitica-inspired gamification of the goals system)
+  xp            Int      @default(0)
+  level         Int      @default(1)
+  hp            Int      @default(50)
+  maxHp         Int      @default(50)
+  gold          Int      @default(0)
+  lastActiveDay String?  // YYYY-MM-DD of last daily-rollover processed
+  habits        Habit[]
+  dailies       Daily[]
+  rewards       Reward[]
+}
+
+// A positive/negative habit — tap + or - any number of times per day.
+model Habit {
+  id        String   @id @default(cuid())
+  title     String
+  notes     String?
+  positive  Boolean  @default(true)  // has a + button
+  negative  Boolean  @default(false) // has a - button
+  upCount   Int      @default(0)
+  downCount Int      @default(0)
+  color     String   @default("bg-purple-500")
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// A recurring daily task with a streak and HP stakes for misses.
+model Daily {
+  id            String   @id @default(cuid())
+  title         String
+  notes         String?
+  streak        Int      @default(0)
+  bestStreak    Int      @default(0)
+  completedToday Boolean @default(false)
+  lastCompleted String?  // YYYY-MM-DD
+  difficulty    String   @default("medium") // trivial|easy|medium|hard -> XP/HP weight
+  color         String   @default("bg-blue-500")
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// A custom reward the user buys with earned gold.
+model Reward {
+  id        String   @id @default(cuid())
+  title     String
+  notes     String?
+  cost      Int      @default(10)
+  timesBought Int    @default(0)
+  color     String   @default("bg-amber-500")
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model VerificationToken {
