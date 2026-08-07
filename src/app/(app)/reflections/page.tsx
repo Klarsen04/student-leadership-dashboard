@@ -10,9 +10,13 @@ import {
   ChevronDown,
   ChevronRight,
   Check,
+  Sparkles,
+  BookOpen,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PODS, getPod, type Pod } from "@/lib/pods";
+import { INSPIRE_STORIES, type InspireStory } from "@/lib/inspireStories";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { RainbowArc, HeartFlower, SeedMascot } from "@/components/reflections/PeaceDecor";
 
@@ -41,6 +45,7 @@ interface Reflection {
 }
 
 type Screen = "welcome" | "flow" | "done";
+type Tab = "reflect" | "inspire";
 
 function formatReflectionDate(type: string, dateStr: string): string {
   const date = new Date(dateStr);
@@ -63,20 +68,26 @@ function parseQA(raw: string | null): QA[] {
   }
 }
 
-// Which pods already have a reflection logged for the current period.
-function usedPodTypes(reflections: Reflection[]): Set<string> {
+// Is a date within the current period for a given reflection type?
+function inCurrentPeriod(type: string, d: Date, now: Date): boolean {
+  if (type === "weekly") {
+    const ws = startOfWeek(now, { weekStartsOn: 0 });
+    const we = endOfWeek(now, { weekStartsOn: 0 });
+    return d >= ws && d <= we;
+  }
+  if (type === "monthly") {
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  }
+  return d.toDateString() === now.toDateString(); // daily
+}
+
+// Which pods already have a reflection logged for their current period.
+function usedPodIds(reflections: Reflection[]): Set<string> {
   const now = new Date();
   const used = new Set<string>();
   for (const ref of reflections) {
-    const d = new Date(ref.date);
-    if (ref.type === "daily" && d.toDateString() === now.toDateString()) used.add("daily");
-    else if (ref.type === "weekly") {
-      const ws = startOfWeek(now, { weekStartsOn: 0 });
-      const we = endOfWeek(now, { weekStartsOn: 0 });
-      if (d >= ws && d <= we) used.add("weekly");
-    } else if (ref.type === "monthly" && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
-      used.add("monthly");
-    }
+    if (!ref.podId) continue;
+    if (inCurrentPeriod(ref.type, new Date(ref.date), now)) used.add(ref.podId);
   }
   return used;
 }
@@ -85,6 +96,7 @@ export default function ReflectionsPage() {
   const [reflections, setReflections] = useState<Reflection[]>([]);
   const [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState<Screen>("welcome");
+  const [tab, setTab] = useState<Tab>("reflect");
   const [activePod, setActivePod] = useState<Pod | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Reflection | null>(null);
   const [editTarget, setEditTarget] = useState<Reflection | null>(null);
@@ -103,7 +115,7 @@ export default function ReflectionsPage() {
     fetchReflections();
   }, []);
 
-  const usedTypes = useMemo(() => usedPodTypes(reflections), [reflections]);
+  const usedPods = useMemo(() => usedPodIds(reflections), [reflections]);
 
   const startPod = (pod: Pod) => {
     setActivePod(pod);
@@ -133,20 +145,36 @@ export default function ReflectionsPage() {
       style={{ background: CREAM, color: "#1a1a1a" }}
     >
       {screen === "welcome" && (
-        <WelcomeScreen
-          reflections={reflections}
-          loading={loading}
-          usedTypes={usedTypes}
-          onStartPod={startPod}
-          onEdit={setEditTarget}
-          onDelete={setDeleteTarget}
-        />
+        <div className="w-full max-w-4xl flex flex-col items-center">
+          {/* Tab switcher */}
+          <div className="mt-2 mb-2 inline-flex items-center gap-1 rounded-full bg-white border border-black/5 p-1 shadow-sm">
+            <TabButton active={tab === "reflect"} onClick={() => setTab("reflect")} icon={<BookOpen className="w-4 h-4" />}>
+              Reflect
+            </TabButton>
+            <TabButton active={tab === "inspire"} onClick={() => setTab("inspire")} icon={<Sparkles className="w-4 h-4" />}>
+              Get inspired
+            </TabButton>
+          </div>
+
+          {tab === "reflect" ? (
+            <WelcomeScreen
+              reflections={reflections}
+              loading={loading}
+              usedPods={usedPods}
+              onStartPod={startPod}
+              onEdit={setEditTarget}
+              onDelete={setDeleteTarget}
+            />
+          ) : (
+            <GetInspired />
+          )}
+        </div>
       )}
 
       {screen === "flow" && activePod && (
         <GuidedFlow
           pod={activePod}
-          alreadyLogged={usedTypes.has(activePod.type)}
+          alreadyLogged={usedPods.has(activePod.id)}
           onCancel={() => setScreen("welcome")}
           onSaved={onSaved}
         />
@@ -184,22 +212,22 @@ export default function ReflectionsPage() {
 function WelcomeScreen({
   reflections,
   loading,
-  usedTypes,
+  usedPods,
   onStartPod,
   onEdit,
   onDelete,
 }: {
   reflections: Reflection[];
   loading: boolean;
-  usedTypes: Set<string>;
+  usedPods: Set<string>;
   onStartPod: (pod: Pod) => void;
   onEdit: (r: Reflection) => void;
   onDelete: (r: Reflection) => void;
 }) {
   return (
-    <div className="w-full max-w-4xl flex flex-col items-center">
+    <div className="w-full flex flex-col items-center">
       {/* Hero */}
-      <div className="text-center pt-6 md:pt-12 animate-fade-in">
+      <div className="text-center pt-4 md:pt-8 animate-fade-in">
         <p className="text-lg text-black/60" style={MARKER}>
           hi! welcome to
         </p>
@@ -234,7 +262,7 @@ function WelcomeScreen({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
           {PODS.map((pod) => {
-            const done = usedTypes.has(pod.type);
+            const done = usedPods.has(pod.id);
             return (
               <button
                 key={pod.id}
@@ -469,14 +497,22 @@ function GuidedFlow({
           questions: JSON.stringify(qa),
         }),
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.error || "Failed to save");
+      if (res.ok) {
+        toast.success("Reflection saved 🌱");
+        onSaved();
+        return;
       }
-      toast.success("Reflection saved 🌱");
-      onSaved();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save reflection");
+      const err = await res.json().catch(() => null);
+      // Duplicate for this period: the entry already exists, so send the user
+      // back to their reflections rather than stranding them on this screen.
+      if (res.status === 409) {
+        toast.info(err?.error || "You already reflected in this pod for this period.");
+        onCancel();
+        return;
+      }
+      toast.error(err?.error || "Failed to save reflection");
+    } catch {
+      toast.error("Failed to save reflection. Check your connection and try again.");
     } finally {
       setSaving(false);
     }
@@ -651,7 +687,7 @@ function DoneScreen({ pod, onHome }: { pod: Pod; onHome: () => void }) {
         className="mt-8 inline-flex items-center gap-2 px-7 py-3 rounded-full text-black font-semibold shadow-md hover:brightness-105 hover:-translate-y-0.5 transition-all"
         style={{ background: GRASS, ...MARKER }}
       >
-        Back to reflections
+        <ArrowLeft className="w-5 h-5" /> Back to reflections
       </button>
     </div>
   );
@@ -759,6 +795,155 @@ function EditDialog({
             {saving ? "Saving…" : "Save changes"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tab switcher button
+// ---------------------------------------------------------------------------
+function TabButton({
+  active,
+  onClick,
+  icon,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold transition-all"
+      style={
+        active
+          ? { background: MARIGOLD, color: "#1a1a1a", ...MARKER }
+          : { background: "transparent", color: "rgba(0,0,0,0.5)", ...MARKER }
+      }
+    >
+      {icon}
+      {children}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Get Inspired: a collection of short reflective reads
+// ---------------------------------------------------------------------------
+function GetInspired() {
+  const [openStory, setOpenStory] = useState<InspireStory | null>(null);
+
+  return (
+    <div className="w-full flex flex-col items-center">
+      {/* Hero over a soft dreamy gradient */}
+      <div
+        className="w-full rounded-3xl px-6 py-10 text-center animate-fade-in"
+        style={{ background: "linear-gradient(135deg, #ffe3f1 0%, #e5e0ff 45%, #d6f0ff 100%)" }}
+      >
+        <h1 className="text-3xl md:text-5xl font-bold" style={MARKER}>
+          Welcome here!
+        </h1>
+        <p className="mt-3 text-black/60 max-w-md mx-auto">
+          We&apos;ve gathered some stories for you. We hope these snippets of writing inspire you
+          in one way or another :)
+        </p>
+      </div>
+
+      {/* Story grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6 w-full mb-8">
+        {INSPIRE_STORIES.map((story) => (
+          <button
+            key={story.id}
+            onClick={() => setOpenStory(story)}
+            className="group text-left rounded-3xl bg-white border border-black/5 p-5 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all"
+          >
+            <div className="flex items-start gap-4">
+              <div
+                className={`shrink-0 w-14 h-14 rounded-2xl bg-gradient-to-br ${story.accent} flex items-center justify-center text-2xl`}
+              >
+                {story.emoji}
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-lg font-semibold leading-snug" style={MARKER}>
+                  {story.title}
+                </h3>
+                <p className="text-sm text-black/50 mt-1 leading-relaxed">{story.teaser}</p>
+                {story.tw && (
+                  <p className="mt-2 text-[11px] italic text-amber-800/80">
+                    Content note: {story.tw}
+                  </p>
+                )}
+                <span className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-black/70 group-hover:gap-2 transition-all">
+                  Click here to read <ArrowRight className="w-4 h-4" />
+                </span>
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {openStory && <StoryReader story={openStory} onClose={() => setOpenStory(null)} />}
+    </div>
+  );
+}
+
+function StoryReader({ story, onClose }: { story: InspireStory; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="w-full max-w-xl max-h-[88vh] overflow-y-auto rounded-3xl bg-white p-6 md:p-8 shadow-xl"
+        style={{ color: "#1a1a1a" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div
+              className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${story.accent} flex items-center justify-center text-xl`}
+            >
+              {story.emoji}
+            </div>
+            <h2 className="text-2xl font-bold leading-snug" style={MARKER}>
+              {story.title}
+            </h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="shrink-0 p-1.5 rounded-full text-black/40 hover:bg-black/5 hover:text-black transition-colors"
+            aria-label="Close story"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {story.tw && (
+          <p className="mt-3 text-xs italic text-amber-800 bg-amber-100 border border-amber-200 rounded-xl px-3 py-2">
+            Content note: this piece includes {story.tw}. Read with care 💛
+          </p>
+        )}
+
+        <div className="mt-4 space-y-3">
+          {story.body.map((para, i) => (
+            <p key={i} className="text-[15px] leading-relaxed text-black/80">
+              {para}
+            </p>
+          ))}
+        </div>
+
+        <button
+          onClick={onClose}
+          className="mt-6 inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-black font-semibold shadow-md hover:brightness-105 transition-all"
+          style={{ background: GRASS, ...MARKER }}
+        >
+          <ArrowLeft className="w-4 h-4" /> Back to stories
+        </button>
       </div>
     </div>
   );
