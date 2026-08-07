@@ -495,7 +495,6 @@ function SmartPrompts({ type }: { type: string }) {
           reflectionStreak: data.reflectionStreak || 0,
           recentMood: data.wellness?.[0]?.mood || null,
           recentEnergy: data.wellness?.[0]?.energy || null,
-          goalsActive: data.goalsActive || 0,
           tasksCompleted: data.tasksCompleted || 0,
           dayOfWeek: new Date().getDay(),
         };

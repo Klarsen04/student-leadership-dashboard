@@ -17,7 +17,7 @@ export default function PrivacyPage() {
         <h3>Information you provide directly</h3>
         <ul>
           <li>Account information: name, email address, and password (if using email sign-up)</li>
-          <li>Content you create: tasks, goals, reflections, and calendar events</li>
+          <li>Content you create: tasks, reflections, and calendar events</li>
         </ul>
 
         <h3>Information from third-party sign-in</h3>
@@ -39,7 +39,7 @@ export default function PrivacyPage() {
         <p>We use collected information exclusively to:</p>
         <ul>
           <li>Authenticate your identity and maintain your session</li>
-          <li>Display your calendar events alongside your tasks and goals</li>
+          <li>Display your calendar events alongside your tasks</li>
           <li>Store and retrieve content you create within the app</li>
           <li>Provide data export functionality for your personal records</li>
         </ul>

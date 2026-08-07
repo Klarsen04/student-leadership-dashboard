@@ -119,7 +119,6 @@ export async function POST() {
             priority: parent.priority,
             role: parent.role,
             hours: parent.hours,
-            goalId: parent.goalId,
             dueDate: new Date(dateStr + "T00:00:00.000Z"),
             parentTaskId: parent.id,
             userId: session.user.id,

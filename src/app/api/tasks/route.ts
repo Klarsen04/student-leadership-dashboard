@@ -25,7 +25,6 @@ export async function GET(req: NextRequest) {
   const [rawTasks, total] = await Promise.all([
     prisma.task.findMany({
       where,
-      include: { goal: true },
       orderBy: [{ dueDate: "asc" }],
       skip: (page - 1) * limit,
       take: limit,
@@ -83,7 +82,6 @@ export async function POST(req: NextRequest) {
       priority: data.priority,
       role: data.role,
       hours: data.hours ?? null,
-      goalId: data.goalId || null,
       recurrence: data.recurrence || null,
       recurrenceEnd: data.recurrenceEnd ? new Date(data.recurrenceEnd) : null,
       userId: session.user.id,
@@ -114,7 +112,6 @@ export async function PATCH(req: NextRequest) {
   if (fields.status !== undefined) data.status = fields.status;
   if (fields.role !== undefined) data.role = fields.role;
   if (fields.hours !== undefined) data.hours = fields.hours;
-  if (fields.goalId !== undefined) data.goalId = fields.goalId;
   if (fields.recurrence !== undefined) data.recurrence = fields.recurrence;
   if (fields.recurrenceEnd !== undefined) data.recurrenceEnd = fields.recurrenceEnd ? new Date(fields.recurrenceEnd) : null;
 

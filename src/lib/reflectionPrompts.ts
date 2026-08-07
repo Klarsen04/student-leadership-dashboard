@@ -31,11 +31,6 @@ const LOW_ENERGY_PROMPTS = [
   "When do you feel most alive? How can you get more of that?",
 ];
 
-const GOAL_PROMPTS = [
-  "Which goal feels closest to a breakthrough?",
-  "What obstacle is between you and your next milestone?",
-  "Is there a goal that no longer excites you? It's okay to pivot.",
-];
 
 export interface PromptContext {
   hour: number;
@@ -43,7 +38,6 @@ export interface PromptContext {
   reflectionStreak: number;
   recentMood: number | null;
   recentEnergy: number | null;
-  goalsActive: number;
   tasksCompleted: number;
   dayOfWeek: number;
 }
@@ -65,10 +59,6 @@ export function generatePrompts(ctx: PromptContext): string[] {
 
   if (ctx.recentEnergy !== null && ctx.recentEnergy <= 4) {
     prompts.push(pickRandom(LOW_ENERGY_PROMPTS, 1)[0]);
-  }
-
-  if (ctx.goalsActive > 0) {
-    prompts.push(pickRandom(GOAL_PROMPTS, 1)[0]);
   }
 
   return prompts.slice(0, 4);

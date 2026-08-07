@@ -27,8 +27,6 @@ interface AnalyticsData {
   taskStreak: number;
   reflectionStreak: number;
   reflectionCount: number;
-  goalsActive: number;
-  goalsProgress: number;
   wellness: { date: string; type: string; energy: number | null; mood: number | null }[];
   daily?: DailyEntry[];
 }
@@ -223,36 +221,6 @@ export default function AnalyticsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
-            {/* Goals ring */}
-            <div className="flex items-center gap-5">
-              <div className="relative w-20 h-20">
-                <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
-                  <circle cx="40" cy="40" r="34" fill="none" stroke="hsl(230 20% 18%)" strokeWidth="6" />
-                  <circle
-                    cx="40" cy="40" r="34" fill="none"
-                    stroke="url(#progressGradient)"
-                    strokeWidth="6"
-                    strokeLinecap="round"
-                    strokeDasharray={`${(data.goalsProgress / 100) * 213.6} 213.6`}
-                    className="transition-all duration-1000"
-                  />
-                  <defs>
-                    <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <stop offset="0%" stopColor="hsl(258 90% 66%)" />
-                      <stop offset="100%" stopColor="hsl(217 91% 60%)" />
-                    </linearGradient>
-                  </defs>
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-lg font-bold">{data.goalsProgress}%</span>
-                </div>
-              </div>
-              <div>
-                <p className="font-semibold">Goals Progress</p>
-                <p className="text-sm text-muted-foreground">{data.goalsActive} active goal{data.goalsActive !== 1 ? "s" : ""}</p>
-              </div>
-            </div>
-
             {/* Task stats */}
             <div className="grid grid-cols-2 gap-3">
               <div className="stat-card text-center">

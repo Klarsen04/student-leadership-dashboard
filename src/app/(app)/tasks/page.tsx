@@ -30,7 +30,6 @@ interface Task {
   role: string;
   hours: number | null;
   recurrence: string | null;
-  goal: { id: string; title: string } | null;
   createdAt: string;
 }
 
