@@ -10,6 +10,7 @@ import {
   TrendingUp,
   Flame,
   Plus,
+  Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -211,9 +212,9 @@ export default function DashboardPage() {
                 <CheckSquare className="w-5 h-5 text-blue-400 mx-auto mb-2 group-hover:scale-110 transition-transform" />
                 <p className="text-xs font-medium">New Task</p>
               </Link>
-              <Link href="/goals" className="stat-card text-center group">
-                <Target className="w-5 h-5 text-purple-400 mx-auto mb-2 group-hover:scale-110 transition-transform" />
-                <p className="text-xs font-medium">Set Goal</p>
+              <Link href="/calendar" className="stat-card text-center group">
+                <Calendar className="w-5 h-5 text-purple-400 mx-auto mb-2 group-hover:scale-110 transition-transform" />
+                <p className="text-xs font-medium">Calendar</p>
               </Link>
               <Link href="/reflections" className="stat-card text-center group">
                 <Clock className="w-5 h-5 text-emerald-400 mx-auto mb-2 group-hover:scale-110 transition-transform" />

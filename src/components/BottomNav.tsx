@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
   CheckSquare,
-  Target,
   BookOpen,
   Menu,
   Calendar,
@@ -20,7 +19,6 @@ import { useState, useRef, useEffect } from "react";
 const primaryNav = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
-  { href: "/goals", label: "Goals", icon: Target },
   { href: "/reflections", label: "Reflect", icon: BookOpen },
 ];
 

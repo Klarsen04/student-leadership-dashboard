@@ -47,7 +47,6 @@ model User {
   events        Event[]
   people        Person[]
   reflections   Reflection[]
-  goals         Goal[]
   tasks         Task[]
   checkIns      DailyCheckIn[]
 }
@@ -112,21 +111,6 @@ model Interaction {
   createdAt DateTime @default(now())
 }
 
-model Goal {
-  id          String   @id @default(cuid())
-  title       String
-  description String?
-  category    String
-  targetDate  DateTime?
-  progress    Int      @default(0)
-  status      String   @default("active")
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tasks       Task[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
 model Task {
   id            String    @id @default(cuid())
   title         String
@@ -136,8 +120,6 @@ model Task {
   status        String    @default("todo")
   role          String    @default("Student")
   hours         Float?
-  goalId        String?
-  goal          Goal?     @relation(fields: [goalId], references: [id])
   recurrence    String?
   recurrenceEnd DateTime?
   parentTaskId  String?
@@ -170,6 +152,8 @@ model Reflection {
   mood      Int?
   energy    Int?
   gratitude String?
+  podId     String?  // which themed pod this reflection came from (e.g. "essentials")
+  questions String?  // JSON array of { question, answer } pairs from the guided flow
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())

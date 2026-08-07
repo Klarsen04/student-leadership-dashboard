@@ -14,7 +14,7 @@ export default function TermsPage() {
         <h2>1. Description of Service</h2>
         <p>
           Student Leadership OS is a personal productivity application designed to help
-          students manage their leadership roles, tasks, goals, calendar events, and
+          students manage their leadership roles, tasks, calendar events, and
           reflections. The service is provided free of charge.
         </p>
 
@@ -37,7 +37,7 @@ export default function TermsPage() {
         <h2>4. Your Content</h2>
         <p>
           You retain full ownership of all content you create within the service, including
-          tasks, goals, reflections, calendar events, and any other data you input.
+          tasks, reflections, calendar events, and any other data you input.
         </p>
         <p>
           By using the service, you grant us a limited license to store and display your

@@ -14,7 +14,7 @@ import {
   isTomorrow,
   isThisWeek,
 } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, Trash2, Pencil, X, BookOpen, Flame, AlertTriangle, Clock, MapPin, User, GraduationCap, Calendar as CalendarIcon } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Trash2, Pencil, X, BookOpen, Flame, AlertTriangle, Clock, MapPin, User, GraduationCap, Calendar as CalendarIcon, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +26,8 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { useCalendars, SubCalendar } from "@/lib/useCalendars";
+import { useCalendars, SubCalendar, CALENDAR_ENGINES } from "@/lib/useCalendars";
+import { CalendarEngineHost, hasEngine } from "@/components/calendar/engines";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { BlurFade } from "@/components/ui/blur-fade";
 import { NumberTicker } from "@/components/ui/number-ticker";
@@ -249,7 +250,7 @@ function saveClasses(classes: ClassBlock[]) {
 /* ---------- Seasonal SVG Illustrations ---------- */
 function SeasonalIcon({ month, size = 32 }: { month: number; size?: number }) {
   const s = size;
-  const icons: Record<number, JSX.Element> = {
+  const icons: Record<number, React.JSX.Element> = {
     0: ( // Snowflake
       <svg width={s} height={s} viewBox="0 0 32 32" fill="none">
         <line x1="16" y1="4" x2="16" y2="28" stroke="#93c5fd" strokeWidth="2" strokeLinecap="round"/>
@@ -363,7 +364,11 @@ export default function CalendarPage() {
   const [calendarToDelete, setCalendarToDelete] = useState<string | null>(null);
   const [selectedClass, setSelectedClass] = useState<ClassBlock | null>(null);
   const [focusMode, setFocusMode] = useState(false);
-  const { calendars, addCalendar, deleteCalendar, addTag, deleteTag, getCalendarColor, getTagsForCalendar, COLOR_OPTIONS } = useCalendars();
+  const { calendars, addCalendar, deleteCalendar, setEngine, getEngineFor, addTag, deleteTag, getCalendarColor, getTagsForCalendar, COLOR_OPTIONS } = useCalendars();
+
+  // The engine to render depends on which sub-calendar is selected ("All" -> default).
+  const activeEngine = getEngineFor(selectedCalendar);
+  const useCustomEngine = hasEngine(activeEngine);
 
   const handleTimeSlotClick = (date: Date, hour: number) => {
     const startDate = new Date(date);
@@ -721,6 +726,33 @@ export default function CalendarPage() {
           )}
         </div>
 
+        {/* Calendar-type picker — choose which view engine renders the selected calendar */}
+        {selectedCalendar && (() => {
+          const cal = calendars.find((c) => c.name === selectedCalendar);
+          if (!cal) return null;
+          return (
+            <div className="flex gap-2 flex-wrap items-center mt-2">
+              <span className="text-[11px] font-medium text-black/40 flex items-center gap-1">
+                <LayoutGrid className="w-3 h-3" /> Calendar type:
+              </span>
+              {CALENDAR_ENGINES.map((eng) => (
+                <button
+                  key={eng.id}
+                  title={eng.description}
+                  onClick={() => setEngine(cal.id, eng.id)}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
+                    cal.engine === eng.id
+                      ? "bg-purple-600 text-white shadow-sm"
+                      : "bg-black/5 text-black/60 hover:bg-black/10"
+                  }`}
+                >
+                  {eng.label}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
+
         {/* Tags */}
         {currentTags.length > 0 && (
           <div className="flex gap-2 flex-wrap items-center mt-2">
@@ -830,6 +862,52 @@ export default function CalendarPage() {
               />
               <p className="mt-2 text-sm">Loading schedule...</p>
             </div>
+          ) : useCustomEngine ? (
+            <BlurFade key={`engine-${activeEngine}-${view}`} duration={0.3}>
+              <CalendarEngineHost
+                engine={activeEngine}
+                events={filteredEvents}
+                classes={classes}
+                currentDate={currentDate}
+                view={view}
+                getColor={getCalendarColor}
+                onEventClick={setSelectedEvent}
+                onClassClick={setSelectedClass}
+                onTimeSlotClick={handleTimeSlotClick}
+                onEventDrop={handleEventDrop}
+                onEventCreate={async (ev) => {
+                  try {
+                    await fetch("/api/calendar", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        title: ev.title || "Untitled",
+                        startTime: ev.startTime,
+                        endTime: ev.endTime,
+                        category: selectedCalendar || "Personal",
+                      }),
+                    });
+                    fetchEvents();
+                  } catch { toast.error("Failed to create event"); }
+                }}
+                onEventUpdate={async (ev) => {
+                  try {
+                    await fetch("/api/calendar", {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ id: ev.id, title: ev.title, startTime: ev.startTime, endTime: ev.endTime }),
+                    });
+                    fetchEvents();
+                  } catch { toast.error("Failed to update event"); }
+                }}
+                onEventDelete={async (id) => {
+                  try {
+                    await fetch(`/api/calendar?id=${id}`, { method: "DELETE" });
+                    fetchEvents();
+                  } catch { toast.error("Failed to delete event"); }
+                }}
+              />
+            </BlurFade>
           ) : view === "month" ? (
             <BlurFade key={`month-${currentDate.getMonth()}`} duration={0.3}>
               <MonthViewCute events={filteredEvents} currentDate={currentDate} onEventClick={setSelectedEvent} getColor={getCalendarColor} classes={classes} onClassClick={setSelectedClass} />

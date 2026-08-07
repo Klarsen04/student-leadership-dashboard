@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
   Calendar,
-  Target,
   CheckSquare,
   BookOpen,
   BarChart3,
@@ -24,7 +23,6 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 const nav = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/calendar", label: "Calendar", icon: Calendar },
-  { href: "/goals", label: "Goals", icon: Target },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/reflections", label: "Reflections", icon: BookOpen },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },

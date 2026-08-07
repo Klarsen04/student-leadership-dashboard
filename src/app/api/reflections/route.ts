@@ -54,17 +54,20 @@ export async function POST(req: NextRequest) {
     periodEnd = endOfMonth(now);
   }
 
+  // Guard against duplicates within the period. When a pod is specified, the
+  // guard is per-pod (so different pods can be done the same day); otherwise
+  // it falls back to per-type for legacy/untyped entries.
   const existing = await prisma.reflection.findFirst({
     where: {
       userId: session.user.id,
-      type: data.type,
+      ...(data.podId ? { podId: data.podId } : { type: data.type }),
       date: { gte: periodStart, lte: periodEnd },
     },
   });
 
   if (existing) {
     return NextResponse.json(
-      { error: `You already have a ${data.type} reflection for this period. Edit the existing one instead.` },
+      { error: "You already reflected in this pod for this period. Edit the existing entry instead.", code: "DUPLICATE" },
       { status: 409 }
     );
   }
@@ -77,6 +80,8 @@ export async function POST(req: NextRequest) {
       mood: data.mood,
       energy: data.energy,
       gratitude: data.gratitude,
+      podId: data.podId ?? null,
+      questions: data.questions ?? null,
       userId: session.user.id,
     },
   });
@@ -100,6 +105,7 @@ export async function PATCH(req: NextRequest) {
   if (fields.energy !== undefined) data.energy = fields.energy;
   if (fields.gratitude !== undefined) data.gratitude = fields.gratitude || null;
   if (fields.type !== undefined) data.type = fields.type;
+  if (fields.questions !== undefined) data.questions = fields.questions || null;
 
   const reflection = await prisma.reflection.update({
     where: { id, userId: session.user.id },

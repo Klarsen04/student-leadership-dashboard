@@ -23,9 +23,9 @@ export async function GET(req: NextRequest) {
     end = endOfWeek(now, { weekStartsOn: 0 });
   }
 
-  let events: any[] = [], tasks: any[] = [], reflections: any[] = [], goals: any[] = [], allTasks: any[] = [], allReflections: any[] = [];
+  let events: any[] = [], tasks: any[] = [], reflections: any[] = [], allTasks: any[] = [], allReflections: any[] = [];
   try {
-    [events, tasks, reflections, goals, allTasks, allReflections] = await Promise.all([
+    [events, tasks, reflections, allTasks, allReflections] = await Promise.all([
       prisma.event.findMany({
         where: { userId: session.user.id, startTime: { lte: end }, endTime: { gte: start } },
       }),
@@ -35,9 +35,6 @@ export async function GET(req: NextRequest) {
       prisma.reflection.findMany({
         where: { userId: session.user.id, date: { gte: start, lte: end } },
         orderBy: { date: "asc" },
-      }),
-      prisma.goal.findMany({
-        where: { userId: session.user.id, status: "active" },
       }),
       prisma.task.findMany({
         where: { userId: session.user.id, status: "done" },
@@ -61,8 +58,6 @@ export async function GET(req: NextRequest) {
       taskStreak: 0,
       reflectionStreak: 0,
       reflectionCount: 0,
-      goalsActive: 0,
-      goalsProgress: 0,
       wellness: [],
     });
   }
@@ -169,8 +164,6 @@ export async function GET(req: NextRequest) {
     taskStreak,
     reflectionStreak,
     reflectionCount: reflections.length,
-    goalsActive: goals.length,
-    goalsProgress: goals.length > 0 ? Math.round(goals.reduce((sum, g) => sum + g.progress, 0) / goals.length) : 0,
     wellness,
     daily,
   });

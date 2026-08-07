@@ -7,7 +7,6 @@ export const createTaskSchema = z.object({
   priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
   role: z.string().max(50).default("Personal"),
   hours: z.number().min(0).max(24).nullable().optional(),
-  goalId: z.string().optional(),
   recurrence: z.enum(["daily", "weekdays", "weekly", "biweekly", "monthly"]).nullable().optional(),
   recurrenceEnd: z.string().nullable().optional(),
 });
@@ -21,26 +20,8 @@ export const updateTaskSchema = z.object({
   status: z.enum(["todo", "in_progress", "done"]).optional(),
   role: z.string().max(50).optional(),
   hours: z.number().min(0).max(24).nullable().optional(),
-  goalId: z.string().nullable().optional(),
   recurrence: z.enum(["daily", "weekdays", "weekly", "biweekly", "monthly"]).nullable().optional(),
   recurrenceEnd: z.string().nullable().optional(),
-});
-
-export const createGoalSchema = z.object({
-  title: z.string().min(1).max(500),
-  description: z.string().max(2000).optional(),
-  category: z.string().min(1).max(50),
-  targetDate: z.string().optional(),
-});
-
-export const updateGoalSchema = z.object({
-  id: z.string().min(1),
-  title: z.string().min(1).max(500).optional(),
-  description: z.string().max(2000).nullable().optional(),
-  category: z.string().max(50).optional(),
-  targetDate: z.string().nullable().optional(),
-  progress: z.number().min(0).max(100).optional(),
-  status: z.enum(["active", "completed", "paused"]).optional(),
 });
 
 export const createPersonSchema = z.object({
@@ -89,6 +70,8 @@ export const createReflectionSchema = z.object({
   mood: z.number().min(1).max(10).optional(),
   energy: z.number().min(1).max(10).optional(),
   gratitude: z.string().max(2000).optional(),
+  podId: z.string().max(50).optional(),
+  questions: z.string().max(10000).optional(),
 });
 
 export const createCheckInSchema = z.object({

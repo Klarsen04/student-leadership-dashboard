@@ -14,9 +14,11 @@ function generateNonce() {
 }
 
 function setSecurityHeaders(response: NextResponse, nonce: string) {
+  // webpack HMR evaluates strings as JS in dev; allow eval only outside production.
+  const devEval = process.env.NODE_ENV !== "production" ? " 'unsafe-eval'" : "";
   const csp = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' https://va.vercel-scripts.com`,
+    `script-src 'self' 'nonce-${nonce}'${devEval} https://va.vercel-scripts.com`,
     `style-src 'self' 'nonce-${nonce}'`,
     "img-src 'self' data: blob:",
     "font-src 'self'",
