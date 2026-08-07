@@ -152,6 +152,8 @@ model Reflection {
   mood      Int?
   energy    Int?
   gratitude String?
+  podId     String?  // which themed pod this reflection came from (e.g. "essentials")
+  questions String?  // JSON array of { question, answer } pairs from the guided flow
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())

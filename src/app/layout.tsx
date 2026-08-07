@@ -1,7 +1,7 @@
 import "./globals.css";
 import { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
-import { Inter, Instrument_Serif } from "next/font/google";
+import { Inter, Instrument_Serif, Fredoka } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
 import { SessionProvider } from "@/components/SessionProvider";
@@ -10,6 +10,7 @@ import { Toaster } from "sonner";
 
 const inter = Inter({ subsets: ["latin"] });
 const instrumentSerif = Instrument_Serif({ weight: "400", subsets: ["latin"], variable: "--font-instrument-serif" });
+const fredoka = Fredoka({ weight: ["400", "500", "600", "700"], subsets: ["latin"], variable: "--font-fredoka" });
 
 export const metadata: Metadata = {
   title: "Student Leadership OS",
@@ -40,7 +41,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
       </head>
-      <body className={`${inter.className} ${instrumentSerif.variable}`}>
+      <body className={`${inter.className} ${instrumentSerif.variable} ${fredoka.variable}`}>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem nonce={nonce}>
           <SessionProvider>{children}</SessionProvider>
           <Toaster richColors position="bottom-right" />

@@ -77,6 +77,8 @@ export async function POST(req: NextRequest) {
       mood: data.mood,
       energy: data.energy,
       gratitude: data.gratitude,
+      podId: data.podId ?? null,
+      questions: data.questions ?? null,
       userId: session.user.id,
     },
   });
@@ -100,6 +102,7 @@ export async function PATCH(req: NextRequest) {
   if (fields.energy !== undefined) data.energy = fields.energy;
   if (fields.gratitude !== undefined) data.gratitude = fields.gratitude || null;
   if (fields.type !== undefined) data.type = fields.type;
+  if (fields.questions !== undefined) data.questions = fields.questions || null;
 
   const reflection = await prisma.reflection.update({
     where: { id, userId: session.user.id },

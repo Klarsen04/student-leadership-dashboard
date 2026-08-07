@@ -70,6 +70,8 @@ export const createReflectionSchema = z.object({
   mood: z.number().min(1).max(10).optional(),
   energy: z.number().min(1).max(10).optional(),
   gratitude: z.string().max(2000).optional(),
+  podId: z.string().max(50).optional(),
+  questions: z.string().max(10000).optional(),
 });
 
 export const createCheckInSchema = z.object({
