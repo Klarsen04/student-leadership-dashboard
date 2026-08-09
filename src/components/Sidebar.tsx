@@ -140,7 +140,7 @@ export function Sidebar() {
             </div>
           </div>
           <motion.button
-            onClick={() => signOut({ callbackUrl: "/login" })}
+            onClick={() => signOut({ callbackUrl: "/" })}
             className="nav-item nav-item-inactive w-full"
             whileHover={micro.reduce ? undefined : { x: 3 }}
             whileTap={micro.reduce ? undefined : { scale: 0.98 }}
