@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { format, startOfWeek, endOfWeek } from "date-fns";
 import {
   ArrowLeft,
@@ -98,6 +100,7 @@ function usedPodIds(reflections: Reflection[]): Set<string> {
 }
 
 export default function ReflectionsPage() {
+  const router = useRouter();
   const [reflections, setReflections] = useState<Reflection[]>([]);
   const [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState<Screen>("welcome");
@@ -132,8 +135,8 @@ export default function ReflectionsPage() {
   };
 
   const onSaved = () => {
-    setScreen("done");
-    fetchReflections();
+    // Redirect to the dedicated confirmation page after a successful save.
+    router.push("/reflections/saved");
   };
 
   const deleteReflection = async () => {
@@ -155,14 +158,23 @@ export default function ReflectionsPage() {
     >
       {screen === "welcome" && (
         <div className="w-full max-w-4xl flex flex-col items-center">
-          {/* Tab switcher */}
-          <div className="mt-2 mb-2 inline-flex items-center gap-1 rounded-full bg-white border border-black/5 p-1 shadow-sm">
-            <TabButton active={tab === "reflect"} onClick={() => setTab("reflect")} icon={<BookOpen className="w-4 h-4" />}>
-              Reflect
-            </TabButton>
-            <TabButton active={tab === "inspire"} onClick={() => setTab("inspire")} icon={<Sparkles className="w-4 h-4" />}>
-              Get inspired
-            </TabButton>
+          {/* Tab switcher + history link */}
+          <div className="mt-2 mb-2 flex items-center gap-2">
+            <div className="inline-flex items-center gap-1 rounded-full bg-white border border-black/5 p-1 shadow-sm">
+              <TabButton active={tab === "reflect"} onClick={() => setTab("reflect")} icon={<BookOpen className="w-4 h-4" />}>
+                Reflect
+              </TabButton>
+              <TabButton active={tab === "inspire"} onClick={() => setTab("inspire")} icon={<Sparkles className="w-4 h-4" />}>
+                Get inspired
+              </TabButton>
+            </div>
+            <Link
+              href="/reflections/history"
+              className="inline-flex items-center gap-1.5 min-h-[44px] px-4 rounded-full bg-white border border-black/5 shadow-sm text-sm font-semibold text-black/60 hover:text-black hover:-translate-y-0.5 transition-all"
+              style={MARKER}
+            >
+              <BookOpen className="w-4 h-4" /> My reflections
+            </Link>
           </div>
 
           {tab === "reflect" ? (
@@ -622,12 +634,18 @@ function GuidedFlow({
               animate={{
                 width: i === step ? 28 : 8,
                 backgroundColor: filled ? MARIGOLD : "rgba(0,0,0,0.12)",
-                scale: filled && i === step ? [1, 1.25, 1] : 1,
+                // 3-keyframe "pop" — springs only support 2 keyframes, so give
+                // scale its own tween while width/color stay springy.
+                scale: reduce ? 1 : filled && i === step ? [1, 1.25, 1] : 1,
               }}
               transition={
                 reduce
                   ? { duration: 0 }
-                  : { type: "spring", stiffness: 320, damping: 22 }
+                  : {
+                      width: { type: "spring", stiffness: 320, damping: 22 },
+                      backgroundColor: { type: "spring", stiffness: 320, damping: 22 },
+                      scale: { duration: 0.4, ease: "easeOut" },
+                    }
               }
             />
           );

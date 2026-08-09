@@ -47,6 +47,17 @@ export async function POST() {
       await prisma.$executeRawUnsafe(`ALTER TABLE "Task" ADD COLUMN "parentTaskId" TEXT`);
     }
 
+    // Reflection: podId + questions columns (added for the guided PeacePod flow).
+    // Missing columns on a drifted prod DB are what caused "Failed to save reflection".
+    const reflectionCols = await prisma.$queryRawUnsafe<any[]>(`PRAGMA table_info(Reflection)`);
+    const reflectionColNames = reflectionCols.map((c: any) => c.name);
+    if (!reflectionColNames.includes("podId")) {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Reflection" ADD COLUMN "podId" TEXT`);
+    }
+    if (!reflectionColNames.includes("questions")) {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Reflection" ADD COLUMN "questions" TEXT`);
+    }
+
     return NextResponse.json({ success: true, message: "Migration complete" });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

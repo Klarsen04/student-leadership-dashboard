@@ -72,21 +72,58 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const reflection = await prisma.reflection.create({
-    data: {
-      type: data.type,
-      date: now,
-      content: data.content,
-      mood: data.mood,
-      energy: data.energy,
-      gratitude: data.gratitude,
-      podId: data.podId ?? null,
-      questions: data.questions ?? null,
-      userId: session.user.id,
-    },
-  });
+  try {
+    const reflection = await prisma.reflection.create({
+      data: {
+        type: data.type,
+        date: now,
+        content: data.content,
+        mood: data.mood,
+        energy: data.energy,
+        gratitude: data.gratitude,
+        podId: data.podId ?? null,
+        questions: data.questions ?? null,
+        userId: session.user.id,
+      },
+    });
+    return NextResponse.json(reflection, { status: 201 });
+  } catch (e) {
+    // Surface a descriptive message instead of an opaque 500. The most common
+    // cause is schema drift — the deployed DB missing the podId/questions
+    // columns — so retry once without the newer optional fields before failing.
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("Reflection create failed:", msg);
 
-  return NextResponse.json(reflection, { status: 201 });
+    const missingNewColumns = /no column|has no column|podId|questions|SQLITE_ERROR/i.test(msg);
+    if (missingNewColumns) {
+      try {
+        const reflection = await prisma.reflection.create({
+          data: {
+            type: data.type,
+            date: now,
+            content: data.content,
+            mood: data.mood,
+            energy: data.energy,
+            gratitude: data.gratitude,
+            userId: session.user.id,
+          },
+        });
+        return NextResponse.json(reflection, { status: 201 });
+      } catch (e2) {
+        const msg2 = e2 instanceof Error ? e2.message : String(e2);
+        console.error("Reflection create retry failed:", msg2);
+        return NextResponse.json(
+          { error: "Couldn't save your reflection — the database schema may be out of date.", detail: msg2 },
+          { status: 500 }
+        );
+      }
+    }
+
+    return NextResponse.json(
+      { error: "Couldn't save your reflection. Please try again.", detail: msg },
+      { status: 500 }
+    );
+  }
 }
 
 export async function PATCH(req: NextRequest) {
