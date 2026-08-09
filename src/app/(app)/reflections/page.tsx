@@ -15,10 +15,13 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { motion, AnimatePresence, useReducedMotion } from "motion/react";
+import confetti from "canvas-confetti";
 import { PODS, getPod, type Pod } from "@/lib/pods";
 import { INSPIRE_STORIES, type InspireStory } from "@/lib/inspireStories";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { RainbowArc, HeartFlower, SeedMascot } from "@/components/reflections/PeaceDecor";
+import { Stagger, StaggerItem, Bounce, Pop } from "@/components/home/motion-kit";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" };
 
@@ -260,38 +263,41 @@ function WelcomeScreen({
           Our pods help you untangle your feelings.
         </p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
+        <Stagger className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6" gap={0.07} amount={0.1}>
           {PODS.map((pod) => {
             const done = usedPods.has(pod.id);
             return (
-              <button
-                key={pod.id}
-                onClick={() => onStartPod(pod)}
-                className="group text-left rounded-3xl bg-white border border-black/5 p-5 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all"
-              >
-                <div
-                  className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${pod.accent} flex items-center justify-center text-2xl mb-3`}
-                >
-                  {pod.emoji}
-                </div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-semibold" style={MARKER}>
-                    {pod.title}
-                  </h3>
-                  {done && (
-                    <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-green-700 bg-green-100 rounded-full px-2 py-0.5">
-                      <Check className="w-3 h-3" /> done
+              <StaggerItem key={pod.id}>
+                <Bounce lift={-6} scale={1.02} className="h-full">
+                  <button
+                    onClick={() => onStartPod(pod)}
+                    className="group text-left rounded-3xl bg-white border border-black/5 p-5 shadow-sm hover:shadow-md transition-shadow w-full h-full"
+                  >
+                    <div
+                      className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${pod.accent} flex items-center justify-center text-2xl mb-3`}
+                    >
+                      {pod.emoji}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-lg font-semibold" style={MARKER}>
+                        {pod.title}
+                      </h3>
+                      {done && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-green-700 bg-green-100 rounded-full px-2 py-0.5">
+                          <Check className="w-3 h-3" /> done
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-black/50 mt-1 leading-relaxed">{pod.tagline}</p>
+                    <span className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-black/70 group-hover:gap-2 transition-all">
+                      {done ? "Reflect again" : "Start"} <ArrowRight className="w-4 h-4" />
                     </span>
-                  )}
-                </div>
-                <p className="text-sm text-black/50 mt-1 leading-relaxed">{pod.tagline}</p>
-                <span className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-black/70 group-hover:gap-2 transition-all">
-                  {done ? "Reflect again" : "Start"} <ArrowRight className="w-4 h-4" />
-                </span>
-              </button>
+                  </button>
+                </Bounce>
+              </StaggerItem>
             );
           })}
-        </div>
+        </Stagger>
       </section>
 
       {/* Flower row */}
@@ -463,7 +469,9 @@ function GuidedFlow({
 }) {
   // steps: 0..N-1 questions, N = wellness+gratitude
   const total = pod.questions.length + 1;
+  const reduce = useReducedMotion();
   const [step, setStep] = useState(0);
+  const [direction, setDirection] = useState(1); // 1 = forward, -1 = back
   const [answers, setAnswers] = useState<string[]>(() => pod.questions.map(() => ""));
   const [mood, setMood] = useState(6);
   const [energy, setEnergy] = useState(6);
@@ -476,8 +484,22 @@ function GuidedFlow({
   const setAnswer = (v: string) =>
     setAnswers((prev) => prev.map((a, i) => (i === step ? v : a)));
 
-  const next = () => setStep((s) => Math.min(s + 1, total - 1));
-  const back = () => (step === 0 ? onCancel() : setStep((s) => s - 1));
+  const next = () => {
+    setDirection(1);
+    setStep((s) => Math.min(s + 1, total - 1));
+  };
+  const back = () => {
+    if (step === 0) return onCancel();
+    setDirection(-1);
+    setStep((s) => s - 1);
+  };
+
+  // Slide + fade variants that honor the current navigation direction.
+  const slideVariants = {
+    enter: (dir: number) => ({ opacity: 0, x: reduce ? 0 : dir * 40 }),
+    center: { opacity: 1, x: 0 },
+    exit: (dir: number) => ({ opacity: 0, x: reduce ? 0 : dir * -40 }),
+  };
 
   const save = async () => {
     setSaving(true);
@@ -535,16 +557,25 @@ function GuidedFlow({
 
       {/* Progress dots */}
       <div className="flex items-center justify-center gap-2 mt-6">
-        {Array.from({ length: total }).map((_, i) => (
-          <span
-            key={i}
-            className="h-2 rounded-full transition-all"
-            style={{
-              width: i === step ? 28 : 8,
-              background: i <= step ? MARIGOLD : "rgba(0,0,0,0.12)",
-            }}
-          />
-        ))}
+        {Array.from({ length: total }).map((_, i) => {
+          const filled = i <= step;
+          return (
+            <motion.span
+              key={i}
+              className="h-2 rounded-full block"
+              animate={{
+                width: i === step ? 28 : 8,
+                backgroundColor: filled ? MARIGOLD : "rgba(0,0,0,0.12)",
+                scale: filled && i === step ? [1, 1.25, 1] : 1,
+              }}
+              transition={
+                reduce
+                  ? { duration: 0 }
+                  : { type: "spring", stiffness: 320, damping: 22 }
+              }
+            />
+          );
+        })}
       </div>
 
       {alreadyLogged && (
@@ -554,42 +585,54 @@ function GuidedFlow({
       )}
 
       {/* Body */}
-      <div className="flex-1 flex flex-col justify-center py-8">
-        {!isWellness ? (
-          <div key={step} className="animate-fade-in">
-            <p className="text-sm font-semibold text-black/40 mb-2">
-              Question {step + 1} of {pod.questions.length}
-            </p>
-            <h2 className="text-2xl md:text-3xl font-bold leading-snug" style={MARKER}>
-              {pod.questions[step]}
-            </h2>
-            <textarea
-              autoFocus
-              value={currentAnswer}
-              onChange={(e) => setAnswer(e.target.value)}
-              placeholder="Take your time…"
-              className="mt-5 w-full min-h-[160px] rounded-3xl bg-white border border-black/10 p-4 text-black placeholder:text-black/30 focus:outline-none focus:ring-2 resize-none"
-              style={{ boxShadow: "0 1px 2px rgba(0,0,0,0.04)" }}
-            />
-          </div>
-        ) : (
-          <div className="animate-fade-in space-y-6">
-            <h2 className="text-2xl md:text-3xl font-bold leading-snug" style={MARKER}>
-              How are you feeling?
-            </h2>
-            <WellnessSlider label="Energy" value={energy} onChange={setEnergy} lowLabel="Drained" highLabel="Energized" />
-            <WellnessSlider label="Mood" value={mood} onChange={setMood} lowLabel="Low" highLabel="Great" />
-            <div>
-              <label className="text-sm font-semibold text-black/70">One thing you're grateful for 💛</label>
-              <input
-                value={gratitude}
-                onChange={(e) => setGratitude(e.target.value)}
-                placeholder="Something small counts…"
-                className="mt-2 w-full rounded-2xl bg-white border border-black/10 px-4 py-3 text-black placeholder:text-black/30 focus:outline-none focus:ring-2"
-              />
-            </div>
-          </div>
-        )}
+      <div className="flex-1 flex flex-col justify-center py-8 overflow-hidden">
+        <AnimatePresence mode="wait" custom={direction} initial={false}>
+          <motion.div
+            key={step}
+            custom={direction}
+            variants={slideVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 280, damping: 28 }}
+          >
+            {!isWellness ? (
+              <div>
+                <p className="text-sm font-semibold text-black/40 mb-2">
+                  Question {step + 1} of {pod.questions.length}
+                </p>
+                <h2 className="text-2xl md:text-3xl font-bold leading-snug" style={MARKER}>
+                  {pod.questions[step]}
+                </h2>
+                <textarea
+                  autoFocus
+                  value={currentAnswer}
+                  onChange={(e) => setAnswer(e.target.value)}
+                  placeholder="Take your time…"
+                  className="mt-5 w-full min-h-[160px] rounded-3xl bg-white border border-black/10 p-4 text-black placeholder:text-black/30 focus:outline-none focus:ring-2 resize-none"
+                  style={{ boxShadow: "0 1px 2px rgba(0,0,0,0.04)" }}
+                />
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <h2 className="text-2xl md:text-3xl font-bold leading-snug" style={MARKER}>
+                  How are you feeling?
+                </h2>
+                <WellnessSlider label="Energy" value={energy} onChange={setEnergy} lowLabel="Drained" highLabel="Energized" />
+                <WellnessSlider label="Mood" value={mood} onChange={setMood} lowLabel="Low" highLabel="Great" />
+                <div>
+                  <label className="text-sm font-semibold text-black/70">One thing you're grateful for 💛</label>
+                  <input
+                    value={gratitude}
+                    onChange={(e) => setGratitude(e.target.value)}
+                    placeholder="Something small counts…"
+                    className="mt-2 w-full rounded-2xl bg-white border border-black/10 px-4 py-3 text-black placeholder:text-black/30 focus:outline-none focus:ring-2"
+                  />
+                </div>
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       {/* Footer action */}
@@ -661,34 +704,94 @@ function WellnessSlider({
 // Done screen
 // ---------------------------------------------------------------------------
 function DoneScreen({ pod, onHome }: { pod: Pod; onHome: () => void }) {
+  const reduce = useReducedMotion();
+
+  // Gentle warm confetti burst on mount (skipped when reduced-motion).
+  useEffect(() => {
+    if (reduce) return;
+    const colors = [MARIGOLD, GRASS, "#FF6B4A"];
+    // A soft two-sided burst that fades quickly — celebratory, not chaotic.
+    const shoot = (originX: number, angle: number) =>
+      confetti({
+        particleCount: 45,
+        angle,
+        spread: 65,
+        startVelocity: 42,
+        gravity: 0.9,
+        scalar: 0.9,
+        ticks: 160,
+        origin: { x: originX, y: 0.55 },
+        colors,
+      });
+    shoot(0.2, 65);
+    shoot(0.8, 115);
+    const t = setTimeout(() => {
+      confetti({
+        particleCount: 60,
+        spread: 90,
+        startVelocity: 30,
+        gravity: 0.85,
+        scalar: 0.85,
+        ticks: 150,
+        origin: { x: 0.5, y: 0.5 },
+        colors,
+      });
+    }, 220);
+    return () => clearTimeout(t);
+  }, [reduce]);
+
   return (
     <div className="w-full max-w-lg flex flex-col items-center justify-center min-h-[70vh] text-center animate-fade-in">
-      <div
-        className="w-24 h-24 rounded-full flex items-center justify-center text-5xl mb-6 shadow-md"
-        style={{ background: `linear-gradient(135deg, ${MARIGOLD}, ${GRASS})` }}
+      <Pop>
+        <motion.div
+          className="w-24 h-24 rounded-full flex items-center justify-center text-5xl mb-6 shadow-md"
+          style={{ background: `linear-gradient(135deg, ${MARIGOLD}, ${GRASS})` }}
+          animate={reduce ? undefined : { rotate: [0, -6, 6, -3, 0] }}
+          transition={reduce ? undefined : { delay: 0.35, duration: 0.7, ease: "easeInOut" }}
+        >
+          {pod.emoji}
+        </motion.div>
+      </Pop>
+      <Pop delay={0.12}>
+        <h1 className="text-3xl md:text-4xl font-bold" style={MARKER}>
+          You did it!
+        </h1>
+      </Pop>
+      <motion.p
+        className="mt-3 text-black/60 max-w-sm"
+        initial={reduce ? false : { opacity: 0, y: 8 }}
+        animate={reduce ? {} : { opacity: 1, y: 0 }}
+        transition={reduce ? undefined : { delay: 0.3, type: "spring", stiffness: 160, damping: 18 }}
       >
-        {pod.emoji}
-      </div>
-      <h1 className="text-3xl md:text-4xl font-bold" style={MARKER}>
-        You did it!
-      </h1>
-      <p className="mt-3 text-black/60 max-w-sm">
         You walked away with a thing or two ;) One reflection at a time, you&apos;re growing.
-      </p>
+      </motion.p>
 
       <div className="flex items-end justify-center gap-6 mt-8 pointer-events-none">
         {[0, 0.5, 1].map((d, i) => (
-          <HeartFlower key={i} delay={d} className="w-9 h-18" />
+          <motion.div
+            key={i}
+            initial={reduce ? false : { opacity: 0, y: 24, scale: 0.6 }}
+            animate={reduce ? {} : { opacity: 1, y: 0, scale: 1 }}
+            transition={
+              reduce
+                ? undefined
+                : { delay: 0.45 + i * 0.12, type: "spring", stiffness: 240, damping: 14 }
+            }
+          >
+            <HeartFlower delay={d} className="w-9 h-18" />
+          </motion.div>
         ))}
       </div>
 
-      <button
-        onClick={onHome}
-        className="mt-8 inline-flex items-center gap-2 px-7 py-3 rounded-full text-black font-semibold shadow-md hover:brightness-105 hover:-translate-y-0.5 transition-all"
-        style={{ background: GRASS, ...MARKER }}
-      >
-        <ArrowLeft className="w-5 h-5" /> Back to reflections
-      </button>
+      <Bounce className="mt-8 inline-block">
+        <button
+          onClick={onHome}
+          className="inline-flex items-center gap-2 px-7 py-3 rounded-full text-black font-semibold shadow-md hover:brightness-105 transition-all"
+          style={{ background: GRASS, ...MARKER }}
+        >
+          <ArrowLeft className="w-5 h-5" /> Back to reflections
+        </button>
+      </Bounce>
     </div>
   );
 }
@@ -853,12 +956,13 @@ function GetInspired() {
       </div>
 
       {/* Story grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6 w-full mb-8">
+      <Stagger className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6 w-full mb-8" gap={0.07} amount={0.1}>
         {INSPIRE_STORIES.map((story) => (
+          <StaggerItem key={story.id} className="h-full">
+          <Bounce lift={-6} scale={1.02} className="h-full">
           <button
-            key={story.id}
             onClick={() => setOpenStory(story)}
-            className="group text-left rounded-3xl bg-white border border-black/5 p-5 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all"
+            className="group text-left rounded-3xl bg-white border border-black/5 p-5 shadow-sm hover:shadow-md transition-shadow w-full h-full"
           >
             <div className="flex items-start gap-4">
               <div
@@ -882,26 +986,39 @@ function GetInspired() {
               </div>
             </div>
           </button>
+          </Bounce>
+          </StaggerItem>
         ))}
-      </div>
+      </Stagger>
 
-      {openStory && <StoryReader story={openStory} onClose={() => setOpenStory(null)} />}
+      <AnimatePresence>
+        {openStory && <StoryReader story={openStory} onClose={() => setOpenStory(null)} />}
+      </AnimatePresence>
     </div>
   );
 }
 
 function StoryReader({ story, onClose }: { story: InspireStory; onClose: () => void }) {
+  const reduce = useReducedMotion();
   return (
-    <div
+    <motion.div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: reduce ? 0 : 0.2 }}
     >
-      <div
+      <motion.div
         className="w-full max-w-xl max-h-[88vh] overflow-y-auto rounded-3xl bg-white p-6 md:p-8 shadow-xl"
         style={{ color: "#1a1a1a" }}
         onClick={(e) => e.stopPropagation()}
+        initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.92, y: 12 }}
+        animate={reduce ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
+        exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.95, y: 8 }}
+        transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 24 }}
       >
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -944,7 +1061,7 @@ function StoryReader({ story, onClose }: { story: InspireStory; onClose: () => v
         >
           <ArrowLeft className="w-4 h-4" /> Back to stories
         </button>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
