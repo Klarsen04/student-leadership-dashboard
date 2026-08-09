@@ -7,6 +7,9 @@ import { useTimeBudget } from "@/lib/useTimeBudget";
 import { useCalendars } from "@/lib/useCalendars";
 import { AnimatedCounter } from "@/components/AnimatedCounter";
 import { SeedMascot } from "@/components/reflections/PeaceDecor";
+import { Stagger, StaggerItem } from "@/components/home/motion-kit";
+import { Reveal } from "@/components/home/Reveal";
+import { ApppagesBar } from "@/components/home/apppages-helpers";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
@@ -104,35 +107,44 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Streaks & Key Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <MetricCard
-            icon={<Flame className="w-5 h-5" />}
-            value={data.taskStreak}
-            label="Day task streak"
-            gradient="from-[#FF8A3D] to-[#FF4D4D]"
-          />
-          <MetricCard
-            icon={<BookOpen className="w-5 h-5" />}
-            value={data.reflectionStreak}
-            label="Day reflection streak"
-            gradient="from-[#7FB800] to-[#4CA80B]"
-          />
-          <MetricCard
-            icon={<CheckSquare className="w-5 h-5" />}
-            value={data.tasksCompleted}
-            label="Tasks done"
-            gradient="from-[#5BC0EB] to-[#3D9BE9]"
-          />
-          <MetricCard
-            icon={<Calendar className="w-5 h-5" />}
-            value={data.totalEvents}
-            label="Events"
-            gradient="from-[#FFB400] to-[#FF8A3D]"
-          />
-        </div>
+        <Stagger className="grid grid-cols-2 md:grid-cols-4 gap-4" gap={0.08}>
+          <StaggerItem>
+            <MetricCard
+              icon={<Flame className="w-5 h-5" />}
+              value={data.taskStreak}
+              label="Day task streak"
+              gradient="from-[#FF8A3D] to-[#FF4D4D]"
+            />
+          </StaggerItem>
+          <StaggerItem>
+            <MetricCard
+              icon={<BookOpen className="w-5 h-5" />}
+              value={data.reflectionStreak}
+              label="Day reflection streak"
+              gradient="from-[#7FB800] to-[#4CA80B]"
+            />
+          </StaggerItem>
+          <StaggerItem>
+            <MetricCard
+              icon={<CheckSquare className="w-5 h-5" />}
+              value={data.tasksCompleted}
+              label="Tasks done"
+              gradient="from-[#5BC0EB] to-[#3D9BE9]"
+            />
+          </StaggerItem>
+          <StaggerItem>
+            <MetricCard
+              icon={<Calendar className="w-5 h-5" />}
+              value={data.totalEvents}
+              label="Events"
+              gradient="from-[#FFB400] to-[#FF8A3D]"
+            />
+          </StaggerItem>
+        </Stagger>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Time Budget */}
+          <Reveal className="h-full">
           <PodCard>
             <CardTitle icon={<Zap className="w-4 h-4 text-white" />} gradient="from-[#FFB400] to-[#FF8A3D]">
               Time Budget
@@ -193,12 +205,10 @@ export default function AnalyticsPage() {
                             )}
                           </div>
                         </div>
-                        <div className="h-2.5 bg-black/[0.06] rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all duration-700 ${isOver ? "bg-gradient-to-r from-rose-400 to-red-500" : "bg-gradient-to-r from-[#FFB400] to-[#7FB800]"}`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
+                        <ApppagesBar
+                          pct={pct}
+                          className={isOver ? "bg-gradient-to-r from-rose-400 to-red-500" : "bg-gradient-to-r from-[#FFB400] to-[#7FB800]"}
+                        />
                       </div>
                     );
                   })}
@@ -212,8 +222,10 @@ export default function AnalyticsPage() {
               )}
             </div>
           </PodCard>
+          </Reveal>
 
           {/* Progress */}
+          <Reveal className="h-full" delay={0.08}>
           <PodCard>
             <CardTitle icon={<Target className="w-4 h-4 text-white" />} gradient="from-[#FF6B4A] to-[#FF4D8D]">
               Progress
@@ -251,12 +263,11 @@ export default function AnalyticsPage() {
                               <span className="text-black/80">{cal}</span>
                               <span className="font-bold text-[#4CA80B]">{count}</span>
                             </div>
-                            <div className="h-1.5 bg-black/[0.06] rounded-full overflow-hidden">
-                              <div
-                                className="h-full rounded-full bg-gradient-to-r from-[#FFB400] to-[#7FB800] transition-all duration-700"
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
+                            <ApppagesBar
+                              pct={pct}
+                              heightClass="h-1.5"
+                              className="bg-gradient-to-r from-[#FFB400] to-[#7FB800]"
+                            />
                           </div>
                         );
                       })}
@@ -265,10 +276,12 @@ export default function AnalyticsPage() {
               )}
             </div>
           </PodCard>
+          </Reveal>
         </div>
 
         {/* Wellness Trends */}
         {data.wellness.length > 0 && (
+          <Reveal>
           <PodCard>
             <CardTitle icon={<TrendingUp className="w-4 h-4 text-white" />} gradient="from-[#7FB800] to-[#4CA80B]">
               Wellness Trends
@@ -292,9 +305,14 @@ export default function AnalyticsPage() {
               ))}
             </div>
           </PodCard>
+          </Reveal>
         )}
 
-        {data.daily && data.daily.length > 0 && <ProductivityChart daily={data.daily} />}
+        {data.daily && data.daily.length > 0 && (
+          <Reveal>
+            <ProductivityChart daily={data.daily} />
+          </Reveal>
+        )}
       </div>
     </div>
   );
@@ -341,11 +359,8 @@ function WellnessBar({ label, value, gradient }: { label: string; value: number;
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-xs text-black/50 w-12">{label}</span>
-      <div className="w-20 h-2 bg-black/[0.06] rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full bg-gradient-to-r ${gradient} transition-all duration-700`}
-          style={{ width: `${value * 10}%` }}
-        />
+      <div className="w-20">
+        <ApppagesBar pct={value * 10} heightClass="h-2" className={`bg-gradient-to-r ${gradient}`} />
       </div>
       <span className="text-xs font-bold w-4 text-black/70">{value}</span>
     </div>

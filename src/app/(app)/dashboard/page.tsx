@@ -16,6 +16,9 @@ import { toast } from "sonner";
 import { PriorityDot } from "@/components/PriorityDot";
 import { useSemester } from "@/lib/useSemester";
 import { SeedMascot } from "@/components/reflections/PeaceDecor";
+import { Stagger, StaggerItem, Bounce } from "@/components/home/motion-kit";
+import { NumberTicker } from "@/components/ui/number-ticker";
+import { motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
@@ -125,47 +128,54 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <StatCard>
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#5BC0EB] to-[#3D9BE9] flex items-center justify-center text-white shadow-sm">
-                <CheckSquare className="w-5 h-5" />
+        <Stagger className="grid grid-cols-2 md:grid-cols-3 gap-4" gap={0.09}>
+          <StaggerItem>
+            <StatCard>
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#5BC0EB] to-[#3D9BE9] flex items-center justify-center text-white shadow-sm">
+                  <CheckSquare className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold" style={MARKER}><NumberTicker value={tasks.length} /></p>
+                  <p className="text-xs text-black/50">Pending Tasks</p>
+                </div>
               </div>
-              <div>
-                <p className="text-2xl font-bold" style={MARKER}>{tasks.length}</p>
-                <p className="text-xs text-black/50">Pending Tasks</p>
+            </StatCard>
+          </StaggerItem>
+          <StaggerItem>
+            <StatCard>
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#FF6B4A] to-[#FF4D8D] flex items-center justify-center text-white shadow-sm">
+                  <Flame className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold" style={MARKER}><NumberTicker value={overdueTasks.length} /></p>
+                  <p className="text-xs text-black/50">Overdue</p>
+                </div>
               </div>
-            </div>
-          </StatCard>
-          <StatCard>
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#FF6B4A] to-[#FF4D8D] flex items-center justify-center text-white shadow-sm">
-                <Flame className="w-5 h-5" />
+            </StatCard>
+          </StaggerItem>
+          <StaggerItem>
+            <StatCard>
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#7FB800] to-[#4CA80B] flex items-center justify-center text-white shadow-sm">
+                  <TrendingUp className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold" style={MARKER}><NumberTicker value={upcomingTasks.length} /></p>
+                  <p className="text-xs text-black/50">This Week</p>
+                </div>
               </div>
-              <div>
-                <p className="text-2xl font-bold" style={MARKER}>{overdueTasks.length}</p>
-                <p className="text-xs text-black/50">Overdue</p>
-              </div>
-            </div>
-          </StatCard>
-          <StatCard>
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#7FB800] to-[#4CA80B] flex items-center justify-center text-white shadow-sm">
-                <TrendingUp className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold" style={MARKER}>{upcomingTasks.length}</p>
-                <p className="text-xs text-black/50">This Week</p>
-              </div>
-            </div>
-          </StatCard>
-        </div>
+            </StatCard>
+          </StaggerItem>
+        </Stagger>
 
         {/* Quick Add Task */}
         <QuickAddTask onAdded={fetchData} />
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Stagger className="grid grid-cols-1 lg:grid-cols-2 gap-6" gap={0.1}>
           {/* Priority Tasks */}
+          <StaggerItem>
           <PodCard>
             <div className="flex items-center justify-between mb-4">
               <h2 className="flex items-center gap-2 text-lg font-bold" style={MARKER}>
@@ -181,8 +191,8 @@ export default function DashboardPage() {
                 <p className="text-xs font-bold text-rose-500 uppercase mb-2 tracking-wider">
                   Overdue
                 </p>
-                {overdueTasks.slice(0, 3).map((task) => (
-                  <TaskRow key={task.id} task={task} overdue />
+                {overdueTasks.slice(0, 3).map((task, i) => (
+                  <TaskRow key={task.id} task={task} overdue index={i} />
                 ))}
               </div>
             )}
@@ -193,8 +203,8 @@ export default function DashboardPage() {
                     Upcoming
                   </p>
                 )}
-                {upcomingTasks.map((task) => (
-                  <TaskRow key={task.id} task={task} />
+                {upcomingTasks.map((task, i) => (
+                  <TaskRow key={task.id} task={task} index={i} />
                 ))}
               </div>
             ) : overdueTasks.length === 0 ? (
@@ -206,8 +216,10 @@ export default function DashboardPage() {
               </div>
             ) : null}
           </PodCard>
+          </StaggerItem>
 
           {/* Streaks & Quick Actions */}
+          <StaggerItem>
           <PodCard>
             <h2 className="flex items-center gap-2 text-lg font-bold mb-4" style={MARKER}>
               <Flame className="w-5 h-5 text-[#FF8A3D]" />
@@ -223,7 +235,8 @@ export default function DashboardPage() {
               </div>
             </div>
           </PodCard>
-        </div>
+          </StaggerItem>
+        </Stagger>
       </div>
     </div>
   );
@@ -247,17 +260,20 @@ function PodCard({ children }: { children: React.ReactNode }) {
 
 function QuickAction({ href, icon, label }: { href: string; icon: React.ReactNode; label: string }) {
   return (
-    <Link
-      href={href}
-      className="rounded-2xl bg-[#FFFAF5] border border-black/5 p-3 text-center group hover:shadow-sm hover:-translate-y-0.5 transition-all"
-    >
-      <div className="mx-auto mb-2 w-fit group-hover:scale-110 transition-transform">{icon}</div>
-      <p className="text-xs font-semibold text-black/70">{label}</p>
-    </Link>
+    <Bounce className="h-full" lift={-4} scale={1.04}>
+      <Link
+        href={href}
+        className="block h-full rounded-2xl bg-[#FFFAF5] border border-black/5 p-3 text-center group hover:shadow-sm transition-shadow"
+      >
+        <div className="mx-auto mb-2 w-fit group-hover:scale-110 transition-transform">{icon}</div>
+        <p className="text-xs font-semibold text-black/70">{label}</p>
+      </Link>
+    </Bounce>
   );
 }
 
-function TaskRow({ task, overdue }: { task: any; overdue?: boolean }) {
+function TaskRow({ task, overdue, index = 0 }: { task: any; overdue?: boolean; index?: number }) {
+  const reduce = useReducedMotion();
   let dayIndex: number | undefined;
   if (task.dueDate) {
     const dateStr = task.dueDate.slice(0, 10);
@@ -268,22 +284,28 @@ function TaskRow({ task, overdue }: { task: any; overdue?: boolean }) {
   const href = dayIndex !== undefined ? `/tasks?day=${dayIndex}` : "/tasks";
 
   return (
-    <Link
-      href={href}
-      className="flex items-center gap-3 py-2.5 px-3 -mx-3 rounded-2xl hover:bg-black/[0.03] transition-colors cursor-pointer"
+    <motion.div
+      initial={reduce ? false : { opacity: 0, x: -10 }}
+      animate={reduce ? undefined : { opacity: 1, x: 0 }}
+      transition={{ type: "spring", stiffness: 200, damping: 22, delay: index * 0.05 }}
     >
-      <PriorityDot priority={task.priority} />
-      <div className="flex-1 min-w-0">
-        <p className={`text-sm truncate ${overdue ? "text-rose-500 font-medium" : "text-black/80"}`}>
-          {task.title}
-        </p>
-      </div>
-      {task.dueDate && (
-        <span className={`text-xs ${overdue ? "text-rose-500" : "text-black/40"}`}>
-          {format(new Date(task.dueDate), "MMM d")}
-        </span>
-      )}
-    </Link>
+      <Link
+        href={href}
+        className="flex items-center gap-3 py-2.5 px-3 -mx-3 rounded-2xl hover:bg-black/[0.03] transition-colors cursor-pointer"
+      >
+        <PriorityDot priority={task.priority} />
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm truncate ${overdue ? "text-rose-500 font-medium" : "text-black/80"}`}>
+            {task.title}
+          </p>
+        </div>
+        {task.dueDate && (
+          <span className={`text-xs ${overdue ? "text-rose-500" : "text-black/40"}`}>
+            {format(new Date(task.dueDate), "MMM d")}
+          </span>
+        )}
+      </Link>
+    </motion.div>
   );
 }
 

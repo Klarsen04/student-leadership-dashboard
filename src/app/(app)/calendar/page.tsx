@@ -56,7 +56,7 @@ import { ScheduleHeatmap } from "@/components/ui/schedule-heatmap";
 import { ExportButton } from "@/components/ui/export-button";
 import { QuickNote } from "@/components/ui/quick-note";
 import { FocusModeToggle } from "@/components/ui/focus-mode";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 
 interface CalendarEvent {
   id: string;
@@ -342,6 +342,7 @@ function SeasonalIcon({ month, size = 32 }: { month: number; size?: number }) {
 }
 
 export default function CalendarPage() {
+  const reduceMotion = useReducedMotion();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -606,7 +607,12 @@ export default function CalendarPage() {
       <ParticlesBg quantity={30} color="#FFB400" size={1} speed={0.2} className="opacity-40" />
 
       {/* Header */}
-      <header className="max-w-7xl mx-auto mb-6 relative">
+      <motion.header
+        className="max-w-7xl mx-auto mb-6 relative"
+        initial={reduceMotion ? false : { opacity: 0, y: -12 }}
+        animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
+        transition={{ type: "spring", stiffness: 120, damping: 18 }}
+      >
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
             <SeasonalIcon month={monthIdx} size={40} />
@@ -778,7 +784,7 @@ export default function CalendarPage() {
             )}
           </div>
         )}
-      </header>
+      </motion.header>
 
       {/* Infinite marquee ticker */}
       {classes.length > 0 && (
