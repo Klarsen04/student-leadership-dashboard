@@ -18,26 +18,19 @@ import { gsap } from "@/lib/gsap";
 const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 /**
- * Returns true only the first time this browser session that `key` is seen,
- * and always false under reduced motion. The key is marked seen immediately,
- * so remounts within the session (tab switch, flow → back, navigation) never
- * replay the entrance.
+ * Returns true after mount so the entrance plays EVERY time the Reflect welcome
+ * screen mounts (each navigation to the tab — App Router remounts the page).
+ * Always false under reduced motion. `key` is accepted for API compatibility
+ * but no longer gates on session storage.
  */
-export function useIntroReflect(key: string): boolean {
+export function useIntroReflect(_key: string): boolean {
   const reduce = useReducedMotion();
   const [play, setPlay] = useState(false);
 
   useIsomorphicLayoutEffect(() => {
     if (reduce) return;
-    try {
-      const storageKey = `pp-intro-seen:${key}`;
-      if (sessionStorage.getItem(storageKey)) return;
-      sessionStorage.setItem(storageKey, "1");
-      setPlay(true);
-    } catch {
-      // sessionStorage unavailable (private mode etc.) — render normally.
-    }
-    // Mount-only: the gate is decided once per mount.
+    setPlay(true);
+    // Mount-only: trigger the entrance on every mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
