@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useEffect, useRef } from "react";
 import {
   DayFlowCalendar,
   useCalendarApp,
@@ -89,8 +89,32 @@ export default function DayFlowEngine({
     },
   });
 
+  // DayFlow's time grid opens scrolled to midnight, so daytime classes/events
+  // (e.g. a 10am class) sit far below the fold and look "missing". Scroll the
+  // grid to ~7am once it renders (and when the view changes).
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    let tries = 0;
+    const id = setInterval(() => {
+      tries++;
+      const grid = wrap.querySelector<HTMLElement>(".df-week-time-grid-scroller");
+      if (grid && grid.scrollHeight > grid.clientHeight) {
+        grid.scrollTop = (grid.scrollHeight * 7) / 24; // ~7am
+        clearInterval(id);
+      } else if (tries > 20) {
+        clearInterval(id);
+      }
+    }, 100);
+    return () => clearInterval(id);
+  }, [view, currentDate]);
+
   return (
-    <div className="dayflow-scope dayflow-engine relative z-20 h-[70vh] rounded-2xl overflow-hidden border border-black/10 bg-white">
+    <div
+      ref={wrapRef}
+      className="dayflow-scope dayflow-engine relative z-20 h-[70vh] rounded-2xl overflow-hidden border border-black/10 bg-white"
+    >
       <DayFlowCalendar calendar={calendar} />
     </div>
   );
