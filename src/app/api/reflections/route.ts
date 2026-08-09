@@ -57,22 +57,26 @@ export async function POST(req: NextRequest) {
   // Guard against duplicates within the period. When a pod is specified, the
   // guard is per-pod (so different pods can be done the same day); otherwise
   // it falls back to per-type for legacy/untyped entries.
-  const existing = await prisma.reflection.findFirst({
-    where: {
-      userId: session.user.id,
-      ...(data.podId ? { podId: data.podId } : { type: data.type }),
-      date: { gte: periodStart, lte: periodEnd },
-    },
-  });
-
-  if (existing) {
-    return NextResponse.json(
-      { error: "You already reflected in this pod for this period. Edit the existing entry instead.", code: "DUPLICATE" },
-      { status: 409 }
-    );
-  }
-
+  //
+  // This runs inside the try/catch below: on a drifted DB (missing the podId
+  // column) the podId filter throws, and we must fall through to the schema
+  // recovery path rather than 500 with an opaque, body-less error.
   try {
+    const existing = await prisma.reflection.findFirst({
+      where: {
+        userId: session.user.id,
+        ...(data.podId ? { podId: data.podId } : { type: data.type }),
+        date: { gte: periodStart, lte: periodEnd },
+      },
+    });
+
+    if (existing) {
+      return NextResponse.json(
+        { error: "You already reflected in this pod for this period. Edit the existing entry instead.", code: "DUPLICATE" },
+        { status: 409 }
+      );
+    }
+
     const reflection = await prisma.reflection.create({
       data: {
         type: data.type,
