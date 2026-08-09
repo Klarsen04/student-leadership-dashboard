@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
+import { motion, AnimatePresence } from "motion/react";
 import { cn } from "@/lib/utils";
+import { useMicro, SOFT_SPRING, SPRING } from "@/components/micro-motion";
 import {
   LayoutDashboard,
   CheckSquare,
@@ -32,6 +34,7 @@ export function BottomNav() {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
+  const micro = useMicro();
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -54,40 +57,80 @@ export function BottomNav() {
           const Icon = item.icon;
           const active = pathname === item.href;
           return (
-            <Link
+            <motion.div
               key={item.href}
-              href={item.href}
-              className={cn(
-                "relative flex flex-col items-center justify-center gap-0.5 min-w-[44px] min-h-[44px] px-2 py-1 rounded-xl transition-colors",
-                active ? "text-purple-500" : "text-muted-foreground active:text-foreground"
-              )}
+              whileTap={micro.reduce ? undefined : { scale: 0.88 }}
+              transition={SPRING}
+              className="relative flex"
             >
-              <Icon className="w-5 h-5" />
-              <span className="text-[10px] leading-tight">{item.label}</span>
-              {active && (
-                <span className="absolute bottom-1.5 w-1 h-1 rounded-full bg-purple-400" />
-              )}
-            </Link>
+              <Link
+                href={item.href}
+                className={cn(
+                  "relative flex flex-col items-center justify-center gap-0.5 min-w-[44px] min-h-[44px] px-2 py-1 rounded-xl transition-colors",
+                  active ? "text-purple-500" : "text-muted-foreground active:text-foreground"
+                )}
+              >
+                <motion.span
+                  className="inline-flex"
+                  animate={micro.reduce ? undefined : { scale: active ? 1.12 : 1 }}
+                  transition={SPRING}
+                >
+                  <Icon className="w-5 h-5" />
+                </motion.span>
+                <span className="text-[10px] leading-tight">{item.label}</span>
+                <AnimatePresence>
+                  {active && (
+                    <motion.span
+                      initial={micro.reduce ? false : { scale: 0, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={micro.reduce ? undefined : { scale: 0, opacity: 0 }}
+                      transition={SOFT_SPRING}
+                      className="absolute bottom-1.5 w-1 h-1 rounded-full bg-purple-400"
+                    />
+                  )}
+                </AnimatePresence>
+              </Link>
+            </motion.div>
           );
         })}
 
         <div ref={moreRef} className="relative flex flex-col items-center">
-          <button
+          <motion.button
             onClick={() => setMoreOpen(!moreOpen)}
+            whileTap={micro.reduce ? undefined : { scale: 0.88 }}
+            transition={SPRING}
             className={cn(
               "relative flex flex-col items-center justify-center gap-0.5 min-w-[44px] min-h-[44px] px-2 py-1 rounded-xl transition-colors",
               moreActive || moreOpen ? "text-purple-500" : "text-muted-foreground active:text-foreground"
             )}
           >
-            <Menu className="w-5 h-5" />
+            <motion.span
+              className="inline-flex"
+              animate={micro.reduce ? undefined : { rotate: moreOpen ? 90 : 0 }}
+              transition={SPRING}
+            >
+              <Menu className="w-5 h-5" />
+            </motion.span>
             <span className="text-[10px] leading-tight">More</span>
-            {moreActive && (
-              <span className="absolute bottom-1.5 w-1 h-1 rounded-full bg-purple-400" />
-            )}
-          </button>
+            <AnimatePresence>
+              {moreActive && (
+                <motion.span
+                  initial={micro.reduce ? false : { scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={micro.reduce ? undefined : { scale: 0, opacity: 0 }}
+                  transition={SOFT_SPRING}
+                  className="absolute bottom-1.5 w-1 h-1 rounded-full bg-purple-400"
+                />
+              )}
+            </AnimatePresence>
+          </motion.button>
 
           {moreOpen && (
-            <div className="absolute bottom-full mb-2 right-0 w-48 py-2 rounded-xl bg-card/95 backdrop-blur-xl border border-border shadow-xl shadow-black/20 dark:shadow-black/40">
+            <motion.div
+              initial={micro.reduce ? false : { opacity: 0, y: 8, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={SOFT_SPRING}
+              className="absolute bottom-full mb-2 right-0 w-48 py-2 rounded-xl bg-card/95 backdrop-blur-xl border border-border shadow-xl shadow-black/20 dark:shadow-black/40">
               {moreNav.map((item) => {
                 const Icon = item.icon;
                 const active = pathname === item.href;
@@ -119,7 +162,7 @@ export function BottomNav() {
                 <LogOut className="w-4 h-4" />
                 Sign out
               </button>
-            </div>
+            </motion.div>
           )}
         </div>
       </div>
