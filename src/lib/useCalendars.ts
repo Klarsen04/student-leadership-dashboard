@@ -4,12 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 
 // Available calendar view engines. "default" = the app's original cute Time-Grid/Month views.
 // Others are grafted open-source engines, reskinned to match the app aesthetic.
-export type CalendarEngine = "default" | "dayflow" | "full-calendar" | "mina" | "ilamy";
+export type CalendarEngine = "default" | "dayflow" | "mina" | "ilamy";
 
 export const CALENDAR_ENGINES: { id: CalendarEngine; label: string; description: string }[] = [
   { id: "default", label: "Classic", description: "The original cute day/week/month views" },
   { id: "dayflow", label: "DayFlow", description: "Clean multi-view big-calendar (day/week/month/year)" },
-  { id: "full-calendar", label: "Full Calendar", description: "Feature-rich views + agenda, drag & resize" },
   { id: "mina", label: "Scheduler", description: "Minimal scheduler with quick event entry" },
   { id: "ilamy", label: "iLamy", description: "Lightweight, airy calendar grid" },
 ];
@@ -51,8 +50,13 @@ function getStoredCalendars(): SubCalendar[] {
     if (stored) {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Backfill `engine` for calendars saved before the engine picker existed.
-        return parsed.map((c: any) => ({ ...c, tags: c.tags || [], engine: c.engine || "default" }));
+        // Backfill `engine` for calendars saved before the engine picker existed,
+        // and migrate the removed "full-calendar" engine back to the default view.
+        return parsed.map((c: any) => ({
+          ...c,
+          tags: c.tags || [],
+          engine: !c.engine || c.engine === "full-calendar" ? "default" : c.engine,
+        }));
       }
     }
   } catch {}
@@ -121,6 +125,10 @@ export function useCalendars() {
   }, [save]);
 
   const getCalendarColor = useCallback((categoryName: string): string => {
+    // Expanded class instances carry their own color as "__class__:bg-...".
+    if (categoryName?.startsWith("__class__:")) {
+      return categoryName.slice("__class__:".length) || "bg-blue-500";
+    }
     const current = getStoredCalendars();
     const cal = current.find((c) => c.name === categoryName);
     return cal?.color || "bg-gray-400";

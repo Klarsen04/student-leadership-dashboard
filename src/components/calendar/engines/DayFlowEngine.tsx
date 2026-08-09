@@ -15,6 +15,7 @@ import {
 // so they can't leak into the rest of the app. Regenerate via scripts/scope-vendor-css.mjs.
 import "./dayflow.scoped.css";
 import type { CalendarEngineProps, EngineView } from "./types";
+import { classesToEvents, isClassEvent } from "./classEvents";
 
 // DayFlow has no "3day/5day"; map those onto its closest native views.
 const VIEW_MAP: Record<EngineView, string> = {
@@ -27,6 +28,7 @@ const VIEW_MAP: Record<EngineView, string> = {
 
 export default function DayFlowEngine({
   events,
+  classes,
   currentDate,
   view,
   onEventClick,
@@ -34,10 +36,11 @@ export default function DayFlowEngine({
   onEventUpdate,
   onEventDelete,
 }: CalendarEngineProps) {
-  // Map the app's events into DayFlow's event objects (Date in → Temporal handled internally).
+  // Merge real events with recurring classes expanded into dated instances so
+  // classes render alongside events. Map both into DayFlow's event objects.
   const dfEvents = useMemo(
     () =>
-      events.map((e) =>
+      [...events, ...classesToEvents(classes, currentDate, view)].map((e) =>
         createEvent({
           id: e.id,
           title: e.title,
@@ -46,7 +49,7 @@ export default function DayFlowEngine({
           end: new Date(e.endTime),
         })
       ),
-    [events]
+    [events, classes, currentDate, view]
   );
 
   const calendar = useCalendarApp({
