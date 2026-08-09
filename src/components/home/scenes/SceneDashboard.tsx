@@ -5,7 +5,7 @@ import { useReducedMotion } from "motion/react";
 import { gsap, useGSAP } from "@/lib/gsap";
 import { SceneShell, SceneCaptions, MARKER } from "./sceneKit";
 
-const CAPTIONS = ["Tasks. Events. People. Budgets.", "All in one calm home."];
+const CAPTIONS = ["Tasks. Calendar. Reflections.", "All in one calm home."];
 
 /**
  * SCENE 5 — It all comes together (payoff). A big device frame fills the
@@ -61,7 +61,7 @@ export function SceneDashboard() {
       tl.to(
         { v: 0 },
         {
-          v: 342,
+          v: 12,
           duration: 0.8,
           ease: "power2.out",
           onUpdate: function () {
@@ -140,7 +140,7 @@ export function SceneDashboard() {
               <span className="db-stat-num text-3xl md:text-5xl font-black leading-none" style={MARKER}>
                 0
               </span>
-              <span className="text-xs md:text-base opacity-90 font-semibold mt-1">members</span>
+              <span className="text-xs md:text-base opacity-90 font-semibold mt-1">day streak</span>
             </div>
           </div>
         </div>

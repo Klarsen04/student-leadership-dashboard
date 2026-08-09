@@ -219,11 +219,6 @@
   .scene-calendar .cal-event,
   .scene-calendar .cal-nextup { opacity: 1 !important; transform: none !important; }
 
-  /* Event: collapse the horizontal track, show only the final LIVE card */
-  .scene-event .ev-track { display: none !important; }
-  .scene-event .ev-live-card { opacity: 1 !important; transform: none !important; position: static !important; margin: 0 auto; }
-  .scene-event .ev-live-badge { opacity: 1 !important; transform: none !important; }
-
   /* Reflect: show the bloom payoff, hide pods/questions/meters */
   .scene-reflect .rf-pods,
   .scene-reflect .rf-question,
