@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useTheme } from "next-themes";
 import { useSemester } from "@/lib/useSemester";
+import { Reveal } from "@/components/home/Reveal";
+import { motion } from "motion/react";
 import { toast } from "sonner";
 
 const EXPORT_TYPES = [
@@ -47,13 +49,24 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-2xl font-bold">Settings</h1>
-        <p className="text-muted-foreground text-sm">Manage your account and preferences</p>
-      </div>
+    <div className="max-w-2xl mx-auto space-y-6">
+      <motion.div
+        initial={{ opacity: 0, y: 16, filter: "blur(8px)" }}
+        animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <p className="text-xs font-medium uppercase tracking-[0.2em] text-teal-500 dark:text-teal-300/80">
+          Manage your account and preferences
+        </p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+          <span className="bg-gradient-to-r from-violet-500 via-fuchsia-500 to-teal-500 bg-clip-text text-transparent dark:from-violet-300 dark:via-fuchsia-300 dark:to-teal-200">
+            Settings
+          </span>
+        </h1>
+      </motion.div>
 
       {/* Profile */}
+      <Reveal>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -73,8 +86,10 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+      </Reveal>
 
       {/* Appearance */}
+      <Reveal delay={0.06}>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -104,8 +119,10 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+      </Reveal>
 
       {/* Semester */}
+      <Reveal delay={0.12}>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -163,8 +180,10 @@ export default function SettingsPage() {
           </Button>
         </CardContent>
       </Card>
+      </Reveal>
 
       {/* Export Data */}
+      <Reveal delay={0.18}>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -211,6 +230,7 @@ export default function SettingsPage() {
           </p>
         </CardContent>
       </Card>
+      </Reveal>
     </div>
   );
 }

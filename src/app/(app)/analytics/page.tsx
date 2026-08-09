@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { useTimeBudget } from "@/lib/useTimeBudget";
 import { useCalendars } from "@/lib/useCalendars";
 import { AnimatedCounter } from "@/components/AnimatedCounter";
+import { Reveal } from "@/components/home/Reveal";
+import { motion } from "motion/react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 interface DailyEntry {
@@ -87,35 +89,47 @@ export default function AnalyticsPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 animate-fade-in">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">
-          <span className="gradient-text">Analytics</span>
+    <div className="max-w-5xl mx-auto space-y-8">
+      <motion.div
+        initial={{ opacity: 0, y: 16, filter: "blur(8px)" }}
+        animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <p className="text-xs font-medium uppercase tracking-[0.2em] text-teal-500 dark:text-teal-300/80">
+          Your weekly overview
+        </p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+          <span className="bg-gradient-to-r from-violet-500 via-fuchsia-500 to-teal-500 bg-clip-text text-transparent dark:from-violet-300 dark:via-fuchsia-300 dark:to-teal-200">
+            Analytics
+          </span>
         </h1>
-        <p className="text-muted-foreground text-sm mt-1">Your weekly overview</p>
-      </div>
+      </motion.div>
 
       {/* Streaks & Key Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <MetricCard
+          index={0}
           icon={<Flame className="w-5 h-5" />}
           value={data.taskStreak}
           label="Day task streak"
           gradient="from-orange-500 to-red-500"
         />
         <MetricCard
+          index={1}
           icon={<BookOpen className="w-5 h-5" />}
           value={data.reflectionStreak}
           label="Day reflection streak"
           gradient="from-purple-500 to-violet-500"
         />
         <MetricCard
+          index={2}
           icon={<CheckSquare className="w-5 h-5" />}
           value={data.tasksCompleted}
           label="Tasks done"
           gradient="from-blue-500 to-cyan-500"
         />
         <MetricCard
+          index={3}
           icon={<Calendar className="w-5 h-5" />}
           value={data.totalEvents}
           label="Events"
@@ -125,7 +139,8 @@ export default function AnalyticsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Time Budget */}
-        <Card>
+        <Reveal className="h-full">
+        <Card className="h-full">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
@@ -209,9 +224,11 @@ export default function AnalyticsPage() {
             )}
           </CardContent>
         </Card>
+        </Reveal>
 
         {/* Progress */}
-        <Card>
+        <Reveal delay={0.1} className="h-full">
+        <Card className="h-full">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
@@ -267,10 +284,12 @@ export default function AnalyticsPage() {
             )}
           </CardContent>
         </Card>
+        </Reveal>
       </div>
 
       {/* Wellness Trends */}
       {data.wellness.length > 0 && (
+        <Reveal>
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -301,16 +320,27 @@ export default function AnalyticsPage() {
             </div>
           </CardContent>
         </Card>
+        </Reveal>
       )}
 
-      {data.daily && data.daily.length > 0 && <ProductivityChart daily={data.daily} />}
+      {data.daily && data.daily.length > 0 && (
+        <Reveal>
+          <ProductivityChart daily={data.daily} />
+        </Reveal>
+      )}
     </div>
   );
 }
 
-function MetricCard({ icon, value, label, gradient }: { icon: React.ReactNode; value: number; label: string; gradient: string }) {
+function MetricCard({ icon, value, label, gradient, index = 0 }: { icon: React.ReactNode; value: number; label: string; gradient: string; index?: number }) {
   return (
-    <div className="stat-card group">
+    <motion.div
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: 0.07 * index, ease: [0.22, 1, 0.36, 1] }}
+      whileHover={{ y: -2 }}
+      className="stat-card group"
+    >
       <div className="flex items-center gap-3">
         <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-200`}>
           {icon}
@@ -322,7 +352,7 @@ function MetricCard({ icon, value, label, gradient }: { icon: React.ReactNode; v
           <p className="text-xs text-muted-foreground">{label}</p>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

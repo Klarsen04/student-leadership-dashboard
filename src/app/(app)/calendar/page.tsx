@@ -611,12 +611,12 @@ export default function CalendarPage() {
           <div className="flex items-center gap-3">
             <SeasonalIcon month={monthIdx} size={40} />
             <div>
-              <h1 className="text-3xl font-bold" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}>
-                <AnimatedGradientText colorFrom="#1f1f1f" colorTo="#6b21a8" speed={6}>
+              <h1 className="text-3xl font-bold tracking-tight" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}>
+                <AnimatedGradientText colorFrom="#7c3aed" colorTo="#0d9488" speed={6}>
                   {format(currentDate, "MMMM yyyy")}
                 </AnimatedGradientText>
               </h1>
-              <p className="text-black/50 text-sm">
+              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-black/45">
                 {view === "day" ? format(currentDate, "EEEE, MMMM d")
                   : view === "3day" ? `${format(currentDate, "MMM d")} - ${format(addDays(currentDate, 2), "MMM d")}`
                   : view === "5day" ? "Class Schedule View"
@@ -632,7 +632,7 @@ export default function CalendarPage() {
               </Button>
             </motion.div>
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <Button size="sm" onClick={() => setShowAdd(true)} className="bg-black text-white hover:bg-black/80 shadow-md shadow-black/20">
+              <Button size="sm" onClick={() => setShowAdd(true)} className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:from-violet-500 hover:to-indigo-500 shadow-md shadow-violet-500/25">
                 <Plus className="w-4 h-4 mr-1" /> Event
               </Button>
             </motion.div>

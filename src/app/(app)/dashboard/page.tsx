@@ -13,9 +13,11 @@ import {
   Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
+import { motion } from "motion/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PriorityDot } from "@/components/PriorityDot";
+import { Reveal } from "@/components/home/Reveal";
 import { useSemester } from "@/lib/useSemester";
 import Link from "next/link";
 
@@ -85,64 +87,71 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 animate-fade-in">
+    <div className="max-w-6xl mx-auto space-y-8">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <motion.div
+        initial={{ opacity: 0, y: 16, filter: "blur(8px)" }}
+        animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+        className="flex items-start justify-between"
+      >
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
+          <p className="text-xs font-medium uppercase tracking-[0.2em] text-teal-500 dark:text-teal-300/80">
+            {format(new Date(), "EEEE, MMMM d")}
+          </p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">
             Good {getTimeOfDay()},{" "}
-            <span className="gradient-text">
+            <span className="bg-gradient-to-r from-violet-500 via-fuchsia-500 to-teal-500 bg-clip-text text-transparent dark:from-violet-300 dark:via-fuchsia-300 dark:to-teal-200">
               {session?.user?.name?.split(" ")[0]}
             </span>
           </h1>
           <p className="text-muted-foreground mt-1">
-            {format(new Date(), "EEEE, MMMM d")} · {getMotivation(tasks.length, overdueTasks.length)}
+            {getMotivation(tasks.length, overdueTasks.length)}
           </p>
         </div>
-        <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card/50 text-xs">
+        <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-card/50 text-xs backdrop-blur-sm">
           <span className="text-muted-foreground">{semester.name}</span>
           <span className="font-medium">Week {semester.weekNumber}/{semester.totalWeeks}</span>
           {semester.isExamPeriod && (
             <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[10px] font-medium">EXAMS</span>
           )}
         </div>
-      </div>
+      </motion.div>
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <div className="stat-card">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
-              <CheckSquare className="w-5 h-5 text-blue-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{tasks.length}</p>
-              <p className="text-xs text-muted-foreground">Pending Tasks</p>
-            </div>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center">
-              <Flame className="w-5 h-5 text-rose-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{overdueTasks.length}</p>
-              <p className="text-xs text-muted-foreground">Overdue</p>
-            </div>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-              <TrendingUp className="w-5 h-5 text-emerald-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{upcomingTasks.length}</p>
-              <p className="text-xs text-muted-foreground">This Week</p>
-            </div>
-          </div>
-        </div>
+        {[
+          { icon: CheckSquare, tint: "blue", value: tasks.length, label: "Pending Tasks" },
+          { icon: Flame, tint: "rose", value: overdueTasks.length, label: "Overdue" },
+          { icon: TrendingUp, tint: "emerald", value: upcomingTasks.length, label: "This Week" },
+        ].map((s, i) => {
+          const Icon = s.icon;
+          const tintMap: Record<string, string> = {
+            blue: "bg-blue-500/10 border-blue-500/20 text-blue-400",
+            rose: "bg-rose-500/10 border-rose-500/20 text-rose-400",
+            emerald: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
+          };
+          return (
+            <motion.div
+              key={s.label}
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.08 * i, ease: [0.22, 1, 0.36, 1] }}
+              whileHover={{ y: -2 }}
+              className="stat-card"
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-lg border flex items-center justify-center ${tintMap[s.tint]}`}>
+                  <Icon className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{s.value}</p>
+                  <p className="text-xs text-muted-foreground">{s.label}</p>
+                </div>
+              </div>
+            </motion.div>
+          );
+        })}
       </div>
 
       {/* Quick Add Task */}
@@ -150,7 +159,8 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Priority Tasks */}
-        <Card>
+        <Reveal>
+        <Card className="h-full">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2">
@@ -196,9 +206,11 @@ export default function DashboardPage() {
             ) : null}
           </CardContent>
         </Card>
+        </Reveal>
 
         {/* Streaks & Quick Actions */}
-        <Card>
+        <Reveal delay={0.1}>
+        <Card className="h-full">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2">
               <Flame className="w-5 h-5 text-orange-400" />
@@ -227,6 +239,7 @@ export default function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+        </Reveal>
       </div>
     </div>
   );
