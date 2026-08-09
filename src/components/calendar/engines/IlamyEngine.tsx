@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useEffect, useRef } from "react";
 import { IlamyCalendar } from "@ilamy/calendar";
 import type { CalendarEngineProps, EngineView } from "./types";
 import { classesToEvents } from "./classEvents";
@@ -48,8 +48,30 @@ export default function IlamyEngine({
     [events, classes, currentDate, view]
   );
 
+  // iLamy's day/week grid opens scrolled to midnight, so daytime classes (e.g.
+  // a 10am class) sit below the fold and look "missing". Scroll its Radix
+  // ScrollArea viewport to ~7am once rendered (and on view/date change).
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (VIEW_MAP[view] === "month") return; // month view isn't time-scrolled
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    let tries = 0;
+    const id = setInterval(() => {
+      tries++;
+      const grid = wrap.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]');
+      if (grid && grid.scrollHeight > grid.clientHeight) {
+        grid.scrollTop = (grid.scrollHeight * 7) / 24; // ~7am
+        clearInterval(id);
+      } else if (tries > 20) {
+        clearInterval(id);
+      }
+    }, 100);
+    return () => clearInterval(id);
+  }, [view, currentDate]);
+
   return (
-    <div className="ilamy-scope relative z-20 h-[70vh] rounded-2xl overflow-hidden border border-black/10 bg-white">
+    <div ref={wrapRef} className="ilamy-scope relative z-20 h-[70vh] rounded-2xl overflow-hidden border border-black/10 bg-white">
       <IlamyCalendar
         events={ilamyEvents as any}
         initialView={VIEW_MAP[view] as any}

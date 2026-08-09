@@ -25,8 +25,11 @@ const animationConfig = {
 } as const;
 
 export default function SchedulerViewFilteration({
+  // Week first so the initial-view effect (which selects views[0]) opens on
+  // Week — recurring weekday classes are then all visible at once. All three
+  // tabs remain available.
   views = {
-    views: ["day", "week", "month"],
+    views: ["week", "day", "month"],
     mobileViews: ["day"],
   },
   stopDayEventSummary = false,
@@ -39,10 +42,10 @@ export default function SchedulerViewFilteration({
   classNames?: ClassNames;
 }) {
   const { setOpen } = useModal();
-  const [activeView, setActiveView] = useState<string>("day");
+  // Default to week so recurring weekday classes are all visible at once
+  // (day view could open on a day with no class and look empty).
+  const [activeView, setActiveView] = useState<string>("week");
   const [clientSide, setClientSide] = useState(false);
-
-  console.log("activeView", activeView);
 
   useEffect(() => {
     setClientSide(true);
