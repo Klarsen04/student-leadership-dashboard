@@ -8,3 +8,4 @@ build/
 .env.local
 .vercel
 tsconfig.tsbuildinfo
+node_modules

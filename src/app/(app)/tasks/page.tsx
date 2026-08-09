@@ -6,6 +6,8 @@ import { format, startOfWeek, addDays, addWeeks, isSameWeek } from "date-fns";
 import { Plus, Check, Trash2, Play, Pause, RotateCcw, ChevronLeft, ChevronRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import Image from "next/image";
+import { motion } from "motion/react";
+import { useMicro, SPRING, SOFT_SPRING } from "@/components/micro-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -19,6 +21,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PriorityDot } from "@/components/PriorityDot";
 import { TASK_PRIORITIES } from "@/lib/utils";
 import { TAPES, DayTabs, CassetteDisplay, getGradientBg } from "@/components/tasks/TapeShelf";
+import { useShelfIntro } from "@/components/tasks/intro-tasks-shelf";
 
 interface Task {
   id: string;
@@ -64,6 +67,12 @@ export default function TasksPage() {
   const [dailyNote, setDailyNote] = useState("");
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const [weekOffset, setWeekOffset] = useState(0);
+  const micro = useMicro();
+  const shelfRef = useRef<HTMLDivElement | null>(null);
+
+  // One-time signature entrance for the shelf view (once per session, gated on
+  // the shelf being visible + data loaded). Presentation only.
+  useShelfIntro(shelfRef, view === "shelf" && !loading);
 
   const weekStart = addWeeks(startOfWeek(new Date(), { weekStartsOn: 0 }), weekOffset);
   const activeDayIndex = selectedDay ?? new Date().getDay();
@@ -230,25 +239,28 @@ export default function TasksPage() {
   // ========================
   if (view === "shelf") {
     return (
-      <div className="min-h-screen -m-4 md:-m-8 flex flex-col overflow-hidden relative z-20" style={{ background: "rgb(239, 239, 239)" }}>
+      <div ref={shelfRef} className="min-h-screen -m-4 md:-m-8 flex flex-col overflow-hidden relative z-20" style={{ background: "rgb(239, 239, 239)" }}>
         {/* Header */}
         <header className="flex relative z-20 pt-8 md:pt-12 pb-2 px-5 md:px-16 justify-between items-start shrink-0">
-          <div className="flex flex-col items-start gap-1.5">
+          <div className="intro-logo flex flex-col items-start gap-1.5">
             <Image src="/tasktape/logo.svg" alt="Task Tape logo" width={100} height={58} className="h-[3.625rem] w-[6.25rem] object-contain" />
             <span className="block text-black/70 text-2xl text-center w-[6.25rem]" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}>
               Task Tape
             </span>
           </div>
-          <button
+          <motion.button
             onClick={() => { setSelectedDay(new Date().getDay()); setView("board"); router.replace(`/tasks?day=${new Date().getDay()}`, { scroll: false }); }}
+            whileHover={micro.reduce ? undefined : { scale: 1.05 }}
+            whileTap={micro.reduce ? undefined : { scale: 0.95 }}
+            transition={SPRING}
             className="mt-3 py-2 px-5 rounded-full border border-black/20 text-black/60 text-sm font-medium hover:border-black hover:text-black transition-colors"
           >
             Open Planner →
-          </button>
+          </motion.button>
         </header>
 
         {/* Headline */}
-        <div className="relative z-10 mt-4 md:mt-1 mb-2 text-center">
+        <div className="intro-headline relative z-10 mt-4 md:mt-1 mb-2 text-center">
           <h1
             className="text-5xl md:text-[4.875rem] leading-tight md:leading-[4.625rem] text-black"
             style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}
@@ -265,10 +277,13 @@ export default function TasksPage() {
           {/* Desktop shelf */}
           <div className="hidden md:flex items-end justify-center gap-2.5 h-[540px]">
             {TAPES.map((t) => (
-              <button
+              <motion.button
                 key={t.day}
                 onClick={() => openTape(t.index)}
-                className="group relative shrink-0 cursor-pointer transition-all duration-300 hover:-translate-y-2 hover:z-20 w-[5.75rem]"
+                whileHover={micro.reduce ? undefined : { y: -10, scale: 1.04 }}
+                whileTap={micro.reduce ? undefined : { scale: 0.98 }}
+                transition={SPRING}
+                className="intro-spine group relative shrink-0 cursor-pointer hover:z-20 w-[5.75rem]"
               >
                 <div className="relative h-[540px] w-full">
                   <Image
@@ -279,17 +294,19 @@ export default function TasksPage() {
                     sizes="92px"
                   />
                 </div>
-              </button>
+              </motion.button>
             ))}
           </div>
 
           {/* Mobile shelf - horizontal scroll with first tape expanded */}
           <div className="md:hidden flex items-end overflow-x-auto w-full px-6 py-8 gap-2">
             {TAPES.map((t, i) => (
-              <button
+              <motion.button
                 key={t.day}
                 onClick={() => openTape(t.index)}
-                className="relative shrink-0 cursor-pointer"
+                whileTap={micro.reduce ? undefined : { scale: 0.96 }}
+                transition={SPRING}
+                className="intro-spine relative shrink-0 cursor-pointer"
                 style={{ width: i === 1 ? "248px" : "51px", height: "300px" }}
               >
                 {i === 1 ? (
@@ -306,7 +323,7 @@ export default function TasksPage() {
                     <Image src={t.spine} alt={`${t.day} spine`} fill className="object-contain object-bottom drop-shadow-md" sizes="51px" />
                   </div>
                 )}
-              </button>
+              </motion.button>
             ))}
           </div>
         </div>
@@ -360,7 +377,12 @@ export default function TasksPage() {
 
         {/* Cassette */}
         <div className="relative z-10 flex flex-col items-center gap-8">
-          <div className="relative">
+          <motion.div
+            className="relative"
+            initial={micro.reduce ? false : { opacity: 0, scale: 0.85, rotate: -6 }}
+            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+            transition={{ type: "spring", stiffness: 220, damping: 18 }}
+          >
             <div className="relative w-80 h-52 md:w-[560px] md:h-[373px] transform rotate-[-2deg]">
               <Image
                 src={tape.cassette}
@@ -371,18 +393,21 @@ export default function TasksPage() {
                 priority
               />
             </div>
-          </div>
+          </motion.div>
 
           <div className="flex flex-col items-center gap-3">
             <p className="text-black/80 text-3xl" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}>
               {tape.day}
             </p>
-            <button
+            <motion.button
               onClick={openBoard}
+              whileHover={micro.reduce ? undefined : { scale: 1.05, y: -2 }}
+              whileTap={micro.reduce ? undefined : { scale: 0.96 }}
+              transition={SPRING}
               className="py-3 px-8 rounded-full bg-black text-white text-sm font-semibold shadow-lg hover:opacity-90 transition-opacity"
             >
               Open {tape.day}&apos;s Tasks →
-            </button>
+            </motion.button>
             <button
               onClick={backToShelf}
               className="mt-1 text-black/40 text-xs hover:text-black/60 transition-colors"
@@ -462,9 +487,9 @@ export default function TasksPage() {
               </div>
             ) : (
               <div className="flex flex-col items-center gap-2.5">
-                <button onClick={() => { if (focusTask && focusTask.status === "todo") updateTaskStatus(focusTask, "in_progress"); setFocusRunning(true); }} className="h-13 flex items-center gap-2.5 py-3.5 px-7 rounded-full bg-black text-white font-medium shadow-lg hover:opacity-90 transition-opacity">
+                <motion.button onClick={() => { if (focusTask && focusTask.status === "todo") updateTaskStatus(focusTask, "in_progress"); setFocusRunning(true); }} whileHover={micro.reduce ? undefined : { scale: 1.04, y: -2 }} whileTap={micro.reduce ? undefined : { scale: 0.96 }} transition={SPRING} className="h-13 flex items-center gap-2.5 py-3.5 px-7 rounded-full bg-black text-white font-medium shadow-lg hover:opacity-90 transition-opacity">
                   <Play className="w-4 h-4" /> Start Focus Session
-                </button>
+                </motion.button>
                 <p className="text-xs text-black/35">or press play on any task to begin</p>
                 <div className="flex items-center gap-1.5">
                   {[15, 25, 45, 60].map((m) => (
@@ -485,7 +510,7 @@ export default function TasksPage() {
           <DayTabs selectedDay={activeDayIndex} onSelectDay={(d) => { setSelectedDay(d); router.replace(`/tasks?day=${d}`, { scroll: false }); }} />
           <div className="flex items-end justify-between mb-4">
             <div>
-              <h2 className="text-4xl lg:text-5xl font-bold tracking-tight text-black" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}>{tape.day}</h2>
+              <motion.h2 key={activeDayIndex} initial={micro.reduce ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={SOFT_SPRING} className="text-4xl lg:text-5xl font-bold tracking-tight text-black" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}>{tape.day}</motion.h2>
               <p className="mt-1 text-sm text-black/40">{totalDayTasks} {totalDayTasks === 1 ? "task" : "tasks"} · {doneTasks.length} done</p>
             </div>
             <div className="text-right">
@@ -535,9 +560,9 @@ export default function TasksPage() {
         </DialogContent>
       </Dialog>
 
-      <button onClick={() => setShowFullAdd(true)} className="fixed bottom-6 right-6 h-12 px-5 rounded-full bg-black text-white shadow-lg hover:scale-105 hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2 font-medium text-sm z-50">
+      <motion.button onClick={() => setShowFullAdd(true)} whileHover={micro.reduce ? undefined : { scale: 1.06, y: -2 }} whileTap={micro.reduce ? undefined : { scale: 0.95 }} transition={SPRING} className="fixed bottom-6 right-6 h-12 px-5 rounded-full bg-black text-white shadow-lg hover:shadow-xl flex items-center justify-center gap-2 font-medium text-sm z-50">
         <Plus className="w-5 h-5" /> Add Task
-      </button>
+      </motion.button>
 
       <Dialog open={!!editTarget} onOpenChange={(open) => !open && setEditTarget(null)}>
         <DialogContent>
@@ -557,6 +582,7 @@ export default function TasksPage() {
 
 function KanbanColumn({ title, count, accent, dotColor, tasks, onStatusChange, onPriorityChange, onDelete, onEdit, onDrop, onStartFocus, addingTo, setAddingTo, columnStatus, newTaskTitle, setNewTaskTitle, onQuickAdd, nextStatus, prevStatus }: { title: string; count: number; accent: string; dotColor: string; tasks: Task[]; onStatusChange: (t: Task, s: string) => void; onPriorityChange: (t: Task, p: string) => void; onDelete: (t: Task) => void; onEdit: (t: Task) => void; onDrop: (id: string, s: string) => void; onStartFocus: (t: Task) => void; addingTo: string | null; setAddingTo: (s: string | null) => void; columnStatus: string; newTaskTitle: string; setNewTaskTitle: (s: string) => void; onQuickAdd: (s: string) => void; nextStatus: string | null; prevStatus: string | null; }) {
   const [dragOver, setDragOver] = useState(false);
+  const micro = useMicro();
   return (
     <div className="flex flex-col">
       <div className="flex items-center justify-between pb-2.5 px-1">
@@ -581,9 +607,9 @@ function KanbanColumn({ title, count, accent, dotColor, tasks, onStatusChange, o
             <Button size="sm" type="submit" className="h-8 px-2" disabled={!newTaskTitle.trim()}><Plus className="w-3 h-3" /></Button>
           </form>
         ) : (
-          <button onClick={() => { setAddingTo(columnStatus); setNewTaskTitle(""); }} className="h-10 mt-2 border-2 border-dashed border-black/10 flex rounded-xl justify-center items-center gap-2 text-black/40 text-xs font-medium hover:bg-black/[0.03] hover:border-black/15 hover:text-black/60 transition-all w-full">
+          <motion.button onClick={() => { setAddingTo(columnStatus); setNewTaskTitle(""); }} whileHover={micro.reduce ? undefined : { scale: 1.01 }} whileTap={micro.reduce ? undefined : { scale: 0.98 }} transition={SPRING} className="h-10 mt-2 border-2 border-dashed border-black/10 flex rounded-xl justify-center items-center gap-2 text-black/40 text-xs font-medium hover:bg-black/[0.03] hover:border-black/15 hover:text-black/60 transition-all w-full">
             <Plus className="w-3.5 h-3.5" /> Add a task
-          </button>
+          </motion.button>
         )}
       </div>
     </div>
@@ -593,8 +619,18 @@ function KanbanColumn({ title, count, accent, dotColor, tasks, onStatusChange, o
 function TaskCard({ task, accent, onStatusChange, onDelete, onPriorityChange, onEdit, onStartFocus, nextStatus, prevStatus }: { task: Task; accent: string; onStatusChange: (t: Task, s: string) => void; onDelete: (t: Task) => void; onPriorityChange: (t: Task, p: string) => void; onEdit: (t: Task) => void; onStartFocus: (t: Task) => void; nextStatus: string | null; prevStatus: string | null; }) {
   const isDone = task.status === "done";
   const priorities = ["low", "medium", "high", "urgent"];
+  const micro = useMicro();
   return (
-    <div draggable onDragStart={(e) => { e.dataTransfer.setData("text/plain", task.id); e.dataTransfer.effectAllowed = "move"; }} className={`group relative p-3 rounded-xl bg-white border border-black/5 shadow-sm transition-all duration-200 hover:shadow-md hover:bg-white cursor-grab active:cursor-grabbing active:scale-[0.97] ${isDone ? "opacity-50" : ""}`}>
+    <motion.div
+      initial={micro.reduce ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: isDone ? 0.5 : 1, y: 0 }}
+      whileHover={micro.reduce ? undefined : { y: -2, scale: 1.015 }}
+      transition={SPRING}
+      draggable
+      // Native HTML5 drag — motion's onDragStart is gesture-typed, so cast to preserve the existing drag payload.
+      onDragStart={(e: unknown) => { const ev = e as React.DragEvent<HTMLDivElement>; ev.dataTransfer.setData("text/plain", task.id); ev.dataTransfer.effectAllowed = "move"; }}
+      className={`group relative p-3 rounded-xl bg-white border border-black/5 shadow-sm hover:shadow-md hover:bg-white cursor-grab active:cursor-grabbing ${isDone ? "opacity-50" : ""}`}
+    >
       <div className="flex items-start gap-2">
         <button onClick={() => { if (isDone && prevStatus) onStatusChange(task, prevStatus); else if (nextStatus) onStatusChange(task, nextStatus); }} className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isDone ? "border-transparent text-white" : "border-black/25 hover:border-black/50"}`} style={isDone ? { backgroundColor: accent } : undefined}>
           {isDone && <Check className="w-3 h-3" />}
@@ -616,7 +652,7 @@ function TaskCard({ task, accent, onStatusChange, onDelete, onPriorityChange, on
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

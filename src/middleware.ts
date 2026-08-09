@@ -19,7 +19,13 @@ function setSecurityHeaders(response: NextResponse, nonce: string) {
   const csp = [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}'${devEval} https://va.vercel-scripts.com`,
-    `style-src 'self' 'nonce-${nonce}'`,
+    // style-src allows 'unsafe-inline': React SSR + GSAP/Framer scroll animation
+    // rely on dynamic inline styles (positions, transforms, widths) that can't
+    // carry a nonce. Inline STYLE can't execute JS, so the real injection
+    // boundary — script-src — stays strict (nonce only). A nonce here would
+    // silently disable 'unsafe-inline' per the CSP spec, so it's intentionally
+    // dropped from style-src.
+    "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self'",
     "connect-src 'self' https://vitals.vercel-insights.com https://va.vercel-scripts.com",

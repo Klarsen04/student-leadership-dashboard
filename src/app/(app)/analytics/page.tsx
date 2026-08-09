@@ -3,13 +3,18 @@
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import { Calendar, CheckSquare, Target, BookOpen, TrendingUp, Flame, Zap, ArrowUpRight, ArrowDownRight } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useTimeBudget } from "@/lib/useTimeBudget";
 import { useCalendars } from "@/lib/useCalendars";
 import { AnimatedCounter } from "@/components/AnimatedCounter";
+import { SeedMascot } from "@/components/reflections/PeaceDecor";
+import { Stagger, StaggerItem } from "@/components/home/motion-kit";
+import { Reveal } from "@/components/home/Reveal";
+import { ApppagesBar } from "@/components/home/apppages-helpers";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+
+const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
+const CREAM = "#FFFAF5";
+const GRASS = "#7FB800";
 
 interface DailyEntry {
   date: string;
@@ -54,19 +59,21 @@ export default function AnalyticsPage() {
 
   if (loading || !data) {
     return (
-      <div className="max-w-5xl mx-auto space-y-8">
-        <div className="space-y-2">
-          <div className="h-9 w-40 rounded-lg bg-muted animate-pulse" />
-          <div className="h-5 w-32 rounded bg-muted animate-pulse" />
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-24 rounded-xl bg-muted/50 border border-border animate-pulse" />
-          ))}
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="h-64 rounded-xl bg-muted/50 border border-border animate-pulse" />
-          <div className="h-64 rounded-xl bg-muted/50 border border-border animate-pulse" />
+      <div className="min-h-screen -m-4 md:-m-8 p-4 md:p-8 relative z-20" style={{ background: CREAM, color: "#1a1a1a" }}>
+        <div className="max-w-5xl mx-auto space-y-8">
+          <div className="space-y-2">
+            <div className="h-9 w-40 rounded-2xl bg-black/[0.06] animate-pulse" />
+            <div className="h-5 w-32 rounded-full bg-black/[0.06] animate-pulse" />
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-24 rounded-3xl bg-white border border-black/5 animate-pulse" />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="h-64 rounded-3xl bg-white border border-black/5 animate-pulse" />
+            <div className="h-64 rounded-3xl bg-white border border-black/5 animate-pulse" />
+          </div>
         </div>
       </div>
     );
@@ -87,239 +94,261 @@ export default function AnalyticsPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 animate-fade-in">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">
-          <span className="gradient-text">Analytics</span>
-        </h1>
-        <p className="text-muted-foreground text-sm mt-1">Your weekly overview</p>
-      </div>
+    <div className="min-h-screen -m-4 md:-m-8 p-4 md:p-8 relative z-20" style={{ background: CREAM, color: "#1a1a1a" }}>
+      <div className="max-w-5xl mx-auto space-y-8 animate-fade-in">
+        <div className="flex items-center gap-3">
+          <SeedMascot className="w-11 h-11 shrink-0 animate-soft-bob" />
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight" style={MARKER}>
+              <span style={{ color: GRASS }}>Analytics</span>
+            </h1>
+            <p className="text-black/55 text-sm mt-0.5">Your weekly overview</p>
+          </div>
+        </div>
 
-      {/* Streaks & Key Metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <MetricCard
-          icon={<Flame className="w-5 h-5" />}
-          value={data.taskStreak}
-          label="Day task streak"
-          gradient="from-orange-500 to-red-500"
-        />
-        <MetricCard
-          icon={<BookOpen className="w-5 h-5" />}
-          value={data.reflectionStreak}
-          label="Day reflection streak"
-          gradient="from-purple-500 to-violet-500"
-        />
-        <MetricCard
-          icon={<CheckSquare className="w-5 h-5" />}
-          value={data.tasksCompleted}
-          label="Tasks done"
-          gradient="from-blue-500 to-cyan-500"
-        />
-        <MetricCard
-          icon={<Calendar className="w-5 h-5" />}
-          value={data.totalEvents}
-          label="Events"
-          gradient="from-emerald-500 to-teal-500"
-        />
-      </div>
+        {/* Streaks & Key Metrics */}
+        <Stagger className="grid grid-cols-2 md:grid-cols-4 gap-4" gap={0.08}>
+          <StaggerItem>
+            <MetricCard
+              icon={<Flame className="w-5 h-5" />}
+              value={data.taskStreak}
+              label="Day task streak"
+              gradient="from-[#FF8A3D] to-[#FF4D4D]"
+            />
+          </StaggerItem>
+          <StaggerItem>
+            <MetricCard
+              icon={<BookOpen className="w-5 h-5" />}
+              value={data.reflectionStreak}
+              label="Day reflection streak"
+              gradient="from-[#7FB800] to-[#4CA80B]"
+            />
+          </StaggerItem>
+          <StaggerItem>
+            <MetricCard
+              icon={<CheckSquare className="w-5 h-5" />}
+              value={data.tasksCompleted}
+              label="Tasks done"
+              gradient="from-[#5BC0EB] to-[#3D9BE9]"
+            />
+          </StaggerItem>
+          <StaggerItem>
+            <MetricCard
+              icon={<Calendar className="w-5 h-5" />}
+              value={data.totalEvents}
+              label="Events"
+              gradient="from-[#FFB400] to-[#FF8A3D]"
+            />
+          </StaggerItem>
+        </Stagger>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Time Budget */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
-                <Zap className="w-4 h-4 text-white" />
-              </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Time Budget */}
+          <Reveal className="h-full">
+          <PodCard>
+            <CardTitle icon={<Zap className="w-4 h-4 text-white" />} gradient="from-[#FFB400] to-[#FF8A3D]">
               Time Budget
             </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-xs text-muted-foreground">
-              Set weekly hour goals per calendar. Click to set your target.
-            </p>
-            {calendars.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4">Create a calendar to start tracking time</p>
-            ) : (
-              <div className="space-y-4">
-                {Array.from(new Set([
-                  ...calendars.map((c) => c.name),
-                  ...Object.keys(data.hoursByCalendar),
-                  ...budgets.map((b) => b.calendar),
-                ])).map((cal) => {
-                  const actual = data.hoursByCalendar[cal] || 0;
-                  const budget = budgets.find((b) => b.calendar === cal);
-                  const target = budget?.hoursPerWeek || 0;
-                  const pct = target > 0 ? Math.min(100, (actual / target) * 100) : 0;
-                  const isOver = target > 0 && actual > target;
+            <div className="space-y-4">
+              <p className="text-xs text-black/50">
+                Set weekly hour goals per calendar. Click to set your target.
+              </p>
+              {calendars.length === 0 ? (
+                <p className="text-sm text-black/50 py-4">Create a calendar to start tracking time</p>
+              ) : (
+                <div className="space-y-4">
+                  {Array.from(new Set([
+                    ...calendars.map((c) => c.name),
+                    ...Object.keys(data.hoursByCalendar),
+                    ...budgets.map((b) => b.calendar),
+                  ])).map((cal) => {
+                    const actual = data.hoursByCalendar[cal] || 0;
+                    const budget = budgets.find((b) => b.calendar === cal);
+                    const target = budget?.hoursPerWeek || 0;
+                    const pct = target > 0 ? Math.min(100, (actual / target) * 100) : 0;
+                    const isOver = target > 0 && actual > target;
 
-                  return (
-                    <div key={cal}>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-sm font-medium">{cal}</span>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-xs font-bold ${isOver ? "text-rose-400" : "text-foreground"}`}>
-                            {actual}h
-                          </span>
-                          {target > 0 && (
-                            <span className="text-xs text-muted-foreground">/ {target}h</span>
-                          )}
-                          {editingBudget === cal ? (
-                            <form
-                              onSubmit={(e) => { e.preventDefault(); saveBudget(cal); }}
-                              className="flex items-center gap-1"
-                            >
-                              <Input
-                                autoFocus
-                                type="number"
-                                step="0.5"
-                                value={budgetValue}
-                                onChange={(e) => setBudgetValue(e.target.value)}
-                                className="h-6 w-16 text-xs"
-                                placeholder="hrs"
-                                onBlur={() => saveBudget(cal)}
-                              />
-                            </form>
-                          ) : (
-                            <button
-                              onClick={() => { setEditingBudget(cal); setBudgetValue(target ? String(target) : ""); }}
-                              className="text-[10px] text-purple-400 hover:text-purple-300 underline transition-colors"
-                            >
-                              {target > 0 ? "edit" : "set goal"}
-                            </button>
-                          )}
+                    return (
+                      <div key={cal}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-sm font-semibold text-black/80">{cal}</span>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-bold ${isOver ? "text-rose-500" : "text-black/70"}`}>
+                              {actual}h
+                            </span>
+                            {target > 0 && (
+                              <span className="text-xs text-black/40">/ {target}h</span>
+                            )}
+                            {editingBudget === cal ? (
+                              <form
+                                onSubmit={(e) => { e.preventDefault(); saveBudget(cal); }}
+                                className="flex items-center gap-1"
+                              >
+                                <input
+                                  autoFocus
+                                  type="number"
+                                  step="0.5"
+                                  value={budgetValue}
+                                  onChange={(e) => setBudgetValue(e.target.value)}
+                                  className="h-6 w-16 text-xs rounded-lg border border-black/15 bg-[#FFFAF5] px-2 text-black focus:outline-none focus:ring-1 focus:ring-[#FFB400]/60"
+                                  placeholder="hrs"
+                                  onBlur={() => saveBudget(cal)}
+                                />
+                              </form>
+                            ) : (
+                              <button
+                                onClick={() => { setEditingBudget(cal); setBudgetValue(target ? String(target) : ""); }}
+                                className="text-[10px] font-semibold text-[#4CA80B] hover:text-[#3f7d1f] underline transition-colors"
+                              >
+                                {target > 0 ? "edit" : "set goal"}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      <div className="h-2 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-700 ${isOver ? "bg-gradient-to-r from-rose-500 to-red-500" : "bg-gradient-to-r from-purple-500 to-blue-500"}`}
-                          style={{ width: `${pct}%` }}
+                        <ApppagesBar
+                          pct={pct}
+                          className={isOver ? "bg-gradient-to-r from-rose-400 to-red-500" : "bg-gradient-to-r from-[#FFB400] to-[#7FB800]"}
                         />
                       </div>
+                    );
+                  })}
+                  {totalBudgeted > 0 && (
+                    <div className="pt-3 border-t border-black/[0.06] text-xs text-black/50 flex justify-between">
+                      <span>Total budgeted</span>
+                      <span className={totalBudgeted > 168 ? "text-rose-500" : ""}>{totalBudgeted}h / 168h</span>
                     </div>
-                  );
-                })}
-                {totalBudgeted > 0 && (
-                  <div className="pt-3 border-t border-border text-xs text-muted-foreground flex justify-between">
-                    <span>Total budgeted</span>
-                    <span className={totalBudgeted > 168 ? "text-rose-400" : ""}>{totalBudgeted}h / 168h</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  )}
+                </div>
+              )}
+            </div>
+          </PodCard>
+          </Reveal>
 
-        {/* Progress */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-                <Target className="w-4 h-4 text-white" />
-              </div>
+          {/* Progress */}
+          <Reveal className="h-full" delay={0.08}>
+          <PodCard>
+            <CardTitle icon={<Target className="w-4 h-4 text-white" />} gradient="from-[#FF6B4A] to-[#FF4D8D]">
               Progress
             </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {/* Task stats */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="stat-card text-center">
-                <p className="text-2xl font-bold text-emerald-400">
-                  <AnimatedCounter value={data.tasksCompleted} />
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">Completed</p>
-              </div>
-              <div className="stat-card text-center">
-                <p className="text-2xl font-bold text-amber-400">
-                  <AnimatedCounter value={data.tasksPending} />
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">Pending</p>
-              </div>
-            </div>
-
-            {/* Events by calendar */}
-            {Object.keys(data.eventsByCalendar).length > 0 && (
-              <div className="pt-4 border-t border-border">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Events by Calendar</p>
-                <div className="space-y-2">
-                  {Object.entries(data.eventsByCalendar)
-                    .sort(([, a], [, b]) => b - a)
-                    .map(([cal, count]) => {
-                      const maxCount = Math.max(...Object.values(data.eventsByCalendar));
-                      const pct = maxCount > 0 ? (count / maxCount) * 100 : 0;
-                      return (
-                        <div key={cal} className="space-y-1">
-                          <div className="flex items-center justify-between text-sm">
-                            <span>{cal}</span>
-                            <span className="font-bold text-purple-300">{count}</span>
-                          </div>
-                          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-purple-500/60 to-blue-500/60 transition-all duration-700"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
+            <div className="space-y-5">
+              {/* Task stats */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-[#FFFAF5] border border-black/5 p-3 text-center">
+                  <p className="text-2xl font-bold text-[#4CA80B]" style={MARKER}>
+                    <AnimatedCounter value={data.tasksCompleted} />
+                  </p>
+                  <p className="text-xs text-black/50 mt-0.5">Completed</p>
+                </div>
+                <div className="rounded-2xl bg-[#FFFAF5] border border-black/5 p-3 text-center">
+                  <p className="text-2xl font-bold text-[#FFB400]" style={MARKER}>
+                    <AnimatedCounter value={data.tasksPending} />
+                  </p>
+                  <p className="text-xs text-black/50 mt-0.5">Pending</p>
                 </div>
               </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
 
-      {/* Wellness Trends */}
-      {data.wellness.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center">
-                <TrendingUp className="w-4 h-4 text-white" />
-              </div>
+              {/* Events by calendar */}
+              {Object.keys(data.eventsByCalendar).length > 0 && (
+                <div className="pt-4 border-t border-black/[0.06]">
+                  <p className="text-xs font-bold uppercase tracking-wider text-black/40 mb-3">Events by Calendar</p>
+                  <div className="space-y-2">
+                    {Object.entries(data.eventsByCalendar)
+                      .sort(([, a], [, b]) => b - a)
+                      .map(([cal, count]) => {
+                        const maxCount = Math.max(...Object.values(data.eventsByCalendar));
+                        const pct = maxCount > 0 ? (count / maxCount) * 100 : 0;
+                        return (
+                          <div key={cal} className="space-y-1">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-black/80">{cal}</span>
+                              <span className="font-bold text-[#4CA80B]">{count}</span>
+                            </div>
+                            <ApppagesBar
+                              pct={pct}
+                              heightClass="h-1.5"
+                              className="bg-gradient-to-r from-[#FFB400] to-[#7FB800]"
+                            />
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </PodCard>
+          </Reveal>
+        </div>
+
+        {/* Wellness Trends */}
+        {data.wellness.length > 0 && (
+          <Reveal>
+          <PodCard>
+            <CardTitle icon={<TrendingUp className="w-4 h-4 text-white" />} gradient="from-[#7FB800] to-[#4CA80B]">
               Wellness Trends
             </CardTitle>
-          </CardHeader>
-          <CardContent>
             <div className="space-y-3">
               {data.wellness.map((entry, idx) => (
-                <div key={idx} className="flex items-center gap-4 text-sm p-2 rounded-lg hover:bg-accent transition-colors">
-                  <span className="text-muted-foreground w-20 shrink-0 font-medium">
+                <div key={idx} className="flex items-center gap-4 text-sm p-2 rounded-2xl hover:bg-black/[0.03] transition-colors">
+                  <span className="text-black/50 w-20 shrink-0 font-medium">
                     {format(new Date(entry.date), "MMM d")}
                   </span>
                   <div className="flex-1 flex items-center gap-6">
                     {entry.energy && (
-                      <WellnessBar label="Energy" value={entry.energy} gradient="from-emerald-500 to-teal-500" />
+                      <WellnessBar label="Energy" value={entry.energy} gradient="from-[#7FB800] to-[#4CA80B]" />
                     )}
                     {entry.mood && (
-                      <WellnessBar label="Mood" value={entry.mood} gradient="from-blue-500 to-purple-500" />
+                      <WellnessBar label="Mood" value={entry.mood} gradient="from-[#5BC0EB] to-[#8B5CF6]" />
                     )}
                   </div>
-                  <span className="text-[10px] text-muted-foreground capitalize px-2 py-0.5 rounded-full bg-white/[0.05]">{entry.type}</span>
+                  <span className="text-[10px] text-black/50 capitalize px-2 py-0.5 rounded-full bg-black/[0.04]">{entry.type}</span>
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </PodCard>
+          </Reveal>
+        )}
 
-      {data.daily && data.daily.length > 0 && <ProductivityChart daily={data.daily} />}
+        {data.daily && data.daily.length > 0 && (
+          <Reveal>
+            <ProductivityChart daily={data.daily} />
+          </Reveal>
+        )}
+      </div>
     </div>
+  );
+}
+
+function PodCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-3xl bg-white border border-black/5 p-6 shadow-sm">
+      {children}
+    </div>
+  );
+}
+
+function CardTitle({ children, icon, gradient }: { children: React.ReactNode; icon: React.ReactNode; gradient: string }) {
+  return (
+    <h2 className="flex items-center gap-2 text-lg font-bold mb-4" style={MARKER}>
+      <div className={`w-8 h-8 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-sm`}>
+        {icon}
+      </div>
+      {children}
+    </h2>
   );
 }
 
 function MetricCard({ icon, value, label, gradient }: { icon: React.ReactNode; value: number; label: string; gradient: string }) {
   return (
-    <div className="stat-card group">
+    <div className="rounded-3xl bg-white border border-black/5 p-4 shadow-sm group hover:shadow-md hover:-translate-y-0.5 transition-all">
       <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-200`}>
+        <div className={`w-11 h-11 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-sm group-hover:scale-110 transition-transform duration-200`}>
           {icon}
         </div>
         <div>
-          <p className="text-2xl font-bold">
+          <p className="text-2xl font-bold" style={MARKER}>
             <AnimatedCounter value={value} />
           </p>
-          <p className="text-xs text-muted-foreground">{label}</p>
+          <p className="text-xs text-black/50">{label}</p>
         </div>
       </div>
     </div>
@@ -329,14 +358,11 @@ function MetricCard({ icon, value, label, gradient }: { icon: React.ReactNode; v
 function WellnessBar({ label, value, gradient }: { label: string; value: number; gradient: string }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className="text-xs text-muted-foreground w-12">{label}</span>
-      <div className="w-20 h-2 bg-muted rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full bg-gradient-to-r ${gradient} transition-all duration-700`}
-          style={{ width: `${value * 10}%` }}
-        />
+      <span className="text-xs text-black/50 w-12">{label}</span>
+      <div className="w-20">
+        <ApppagesBar pct={value * 10} heightClass="h-2" className={`bg-gradient-to-r ${gradient}`} />
       </div>
-      <span className="text-xs font-bold w-4">{value}</span>
+      <span className="text-xs font-bold w-4 text-black/70">{value}</span>
     </div>
   );
 }
@@ -353,74 +379,71 @@ function ProductivityChart({ daily }: { daily: DailyEntry[] }) {
   }));
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
-              <TrendingUp className="w-4 h-4 text-white" />
-            </div>
-            Task Completions (30 Days)
+    <PodCard>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="flex items-center gap-2 text-lg font-bold" style={MARKER}>
+          <div className="w-8 h-8 rounded-2xl bg-gradient-to-br from-[#FFB400] to-[#7FB800] flex items-center justify-center shadow-sm">
+            <TrendingUp className="w-4 h-4 text-white" />
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Productivity Score</span>
-            <span className={`text-lg font-bold ${trending ? "text-emerald-400" : "text-rose-400"}`}>
-              {productivityScore}%
-            </span>
-            {trending ? (
-              <ArrowUpRight className="w-4 h-4 text-emerald-400" />
-            ) : (
-              <ArrowDownRight className="w-4 h-4 text-rose-400" />
-            )}
-          </div>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-              <defs>
-                <linearGradient id="taskGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <XAxis
-                dataKey="date"
-                tick={{ fill: 'hsl(215 20% 55%)', fontSize: 11 }}
-                stroke="hsl(230 20% 18%)"
-                tickLine={false}
-                axisLine={false}
-                interval={4}
-              />
-              <YAxis
-                tick={{ fill: 'hsl(215 20% 55%)', fontSize: 11 }}
-                stroke="hsl(230 20% 18%)"
-                tickLine={false}
-                axisLine={false}
-                allowDecimals={false}
-              />
-              <Tooltip
-                contentStyle={{
-                  background: 'hsl(230 25% 12%)',
-                  border: '1px solid hsl(230 20% 20%)',
-                  borderRadius: '8px',
-                  color: 'hsl(215 20% 85%)',
-                }}
-                labelStyle={{ color: 'hsl(215 20% 70%)' }}
-              />
-              <Area
-                type="monotone"
-                dataKey="tasksCompleted"
-                stroke="#8b5cf6"
-                strokeWidth={2}
-                fill="url(#taskGradient)"
-                name="Tasks Completed"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          Task Completions (30 Days)
+        </h2>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-black/50">Productivity Score</span>
+          <span className={`text-lg font-bold ${trending ? "text-[#4CA80B]" : "text-rose-500"}`} style={MARKER}>
+            {productivityScore}%
+          </span>
+          {trending ? (
+            <ArrowUpRight className="w-4 h-4 text-[#4CA80B]" />
+          ) : (
+            <ArrowDownRight className="w-4 h-4 text-rose-500" />
+          )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+            <defs>
+              <linearGradient id="taskGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#FFB400" stopOpacity={0.5} />
+                <stop offset="95%" stopColor="#7FB800" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <XAxis
+              dataKey="date"
+              tick={{ fill: 'rgba(0,0,0,0.4)', fontSize: 11 }}
+              stroke="rgba(0,0,0,0.1)"
+              tickLine={false}
+              axisLine={false}
+              interval={4}
+            />
+            <YAxis
+              tick={{ fill: 'rgba(0,0,0,0.4)', fontSize: 11 }}
+              stroke="rgba(0,0,0,0.1)"
+              tickLine={false}
+              axisLine={false}
+              allowDecimals={false}
+            />
+            <Tooltip
+              contentStyle={{
+                background: '#ffffff',
+                border: '1px solid rgba(0,0,0,0.08)',
+                borderRadius: '12px',
+                color: '#1a1a1a',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+              }}
+              labelStyle={{ color: 'rgba(0,0,0,0.5)' }}
+            />
+            <Area
+              type="monotone"
+              dataKey="tasksCompleted"
+              stroke="#FFB400"
+              strokeWidth={2.5}
+              fill="url(#taskGradient)"
+              name="Tasks Completed"
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </PodCard>
   );
 }

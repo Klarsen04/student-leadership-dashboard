@@ -3,12 +3,16 @@
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { Download, FileJson, FileSpreadsheet, User, Palette, GraduationCap } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useTheme } from "next-themes";
 import { useSemester } from "@/lib/useSemester";
 import { toast } from "sonner";
+import { SeedMascot } from "@/components/reflections/PeaceDecor";
+import { Stagger, StaggerItem, Bounce } from "@/components/home/motion-kit";
+
+const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
+const CREAM = "#FFFAF5";
+const MARIGOLD = "#FFB400";
+const GRASS = "#7FB800";
 
 const EXPORT_TYPES = [
   { value: "all", label: "Everything" },
@@ -47,42 +51,37 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-2xl font-bold">Settings</h1>
-        <p className="text-muted-foreground text-sm">Manage your account and preferences</p>
-      </div>
+    <div className="min-h-screen -m-4 md:-m-8 p-4 md:p-8 relative z-20" style={{ background: CREAM, color: "#1a1a1a" }}>
+      <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
+        <div className="flex items-center gap-3">
+          <SeedMascot className="w-11 h-11 shrink-0 animate-soft-bob" />
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight" style={MARKER}>Settings</h1>
+            <p className="text-black/55 text-sm">Manage your account and preferences</p>
+          </div>
+        </div>
 
-      {/* Profile */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <User className="w-5 h-5 text-purple-500" />
-            Profile
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+        <Stagger className="space-y-6" gap={0.09}>
+        {/* Profile */}
+        <StaggerItem>
+        <PodCard>
+          <CardTitle icon={<User className="w-5 h-5 text-[#8B5CF6]" />}>Profile</CardTitle>
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-purple-500/30 to-blue-500/30 border border-purple-500/20 flex items-center justify-center text-purple-400 text-xl font-bold">
+            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#FFB400] to-[#7FB800] flex items-center justify-center text-white text-xl font-bold shadow-sm" style={MARKER}>
               {session?.user?.name?.[0] || "?"}
             </div>
             <div>
-              <p className="font-semibold">{session?.user?.name || "User"}</p>
-              <p className="text-sm text-muted-foreground">{session?.user?.email || ""}</p>
+              <p className="font-semibold text-black/80" style={MARKER}>{session?.user?.name || "User"}</p>
+              <p className="text-sm text-black/50">{session?.user?.email || ""}</p>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </PodCard>
+        </StaggerItem>
 
-      {/* Appearance */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Palette className="w-5 h-5 text-blue-500" />
-            Appearance
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+        {/* Appearance */}
+        <StaggerItem>
+        <PodCard>
+          <CardTitle icon={<Palette className="w-5 h-5 text-[#3D9BE9]" />}>Appearance</CardTitle>
           <div className="flex gap-3">
             {[
               { value: "dark", label: "Dark" },
@@ -92,125 +91,155 @@ export default function SettingsPage() {
               <button
                 key={opt.value}
                 onClick={() => setTheme(opt.value)}
-                className={`flex-1 py-3 px-4 rounded-lg border text-sm font-medium transition-all ${
+                className={`flex-1 min-h-[44px] py-3 px-4 rounded-2xl border text-sm font-semibold transition-all ${
                   theme === opt.value
-                    ? "border-purple-500/50 bg-purple-500/10 text-purple-500"
-                    : "border-border bg-card hover:bg-accent"
+                    ? "border-[#7FB800] bg-green-50 text-[#3f7d1f]"
+                    : "border-black/10 bg-[#FFFAF5] text-black/60 hover:bg-black/[0.03]"
                 }`}
+                style={MARKER}
               >
                 {opt.label}
               </button>
             ))}
           </div>
-        </CardContent>
-      </Card>
+        </PodCard>
+        </StaggerItem>
 
-      {/* Semester */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <GraduationCap className="w-5 h-5 text-amber-500" />
-            Academic Semester
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-xs text-muted-foreground">
-            Set your semester dates to see &quot;Week X of Y&quot; on your dashboard.
-          </p>
-          <div>
-            <label className="text-sm font-medium mb-1 block">Semester name</label>
-            <Input
-              value={semForm.name}
-              onChange={(e) => setSemForm({ ...semForm, name: e.target.value })}
-              placeholder="e.g. Fall 2026"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+        {/* Semester */}
+        <StaggerItem>
+        <PodCard>
+          <CardTitle icon={<GraduationCap className="w-5 h-5 text-[#FFB400]" />}>Academic Semester</CardTitle>
+          <div className="space-y-4">
+            <p className="text-xs text-black/50">
+              Set your semester dates to see &quot;Week X of Y&quot; on your dashboard.
+            </p>
             <div>
-              <label className="text-sm font-medium mb-1 block">Start date</label>
-              <Input
-                type="date"
-                value={semForm.startDate}
-                onChange={(e) => setSemForm({ ...semForm, startDate: e.target.value })}
+              <label className="text-sm font-semibold text-black/70 mb-1 block">Semester name</label>
+              <TextInput
+                value={semForm.name}
+                onChange={(e) => setSemForm({ ...semForm, name: e.target.value })}
+                placeholder="e.g. Fall 2026"
               />
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-semibold text-black/70 mb-1 block">Start date</label>
+                <TextInput
+                  type="date"
+                  value={semForm.startDate}
+                  onChange={(e) => setSemForm({ ...semForm, startDate: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-black/70 mb-1 block">End date</label>
+                <TextInput
+                  type="date"
+                  value={semForm.endDate}
+                  onChange={(e) => setSemForm({ ...semForm, endDate: e.target.value })}
+                />
+              </div>
+            </div>
             <div>
-              <label className="text-sm font-medium mb-1 block">End date</label>
-              <Input
+              <label className="text-sm font-semibold text-black/70 mb-1 block">Exam period starts</label>
+              <TextInput
                 type="date"
-                value={semForm.endDate}
-                onChange={(e) => setSemForm({ ...semForm, endDate: e.target.value })}
+                value={semForm.examStart}
+                onChange={(e) => setSemForm({ ...semForm, examStart: e.target.value })}
               />
             </div>
+            <Bounce lift={-2}>
+              <button
+                onClick={() => {
+                  updateSemester(semForm);
+                  toast.success("Semester settings saved");
+                }}
+                className="w-full min-h-[44px] py-3 rounded-full font-semibold text-black/70 bg-[#FFFAF5] border border-black/10 hover:bg-black/[0.03] transition-colors"
+                style={MARKER}
+              >
+                Save Semester
+              </button>
+            </Bounce>
           </div>
-          <div>
-            <label className="text-sm font-medium mb-1 block">Exam period starts</label>
-            <Input
-              type="date"
-              value={semForm.examStart}
-              onChange={(e) => setSemForm({ ...semForm, examStart: e.target.value })}
-            />
-          </div>
-          <Button
-            variant="outline"
-            onClick={() => {
-              updateSemester(semForm);
-              toast.success("Semester settings saved");
-            }}
-            className="w-full"
-          >
-            Save Semester
-          </Button>
-        </CardContent>
-      </Card>
+        </PodCard>
+        </StaggerItem>
 
-      {/* Export Data */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Download className="w-5 h-5 text-emerald-500" />
-            Export Data
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <label className="text-sm font-medium mb-2 block">What to export</label>
-            <select
-              value={exportType}
-              onChange={(e) => setExportType(e.target.value)}
-              className="w-full h-10 border border-input rounded-lg px-3 text-sm bg-background/50"
-            >
-              {EXPORT_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
+        {/* Export Data */}
+        <StaggerItem>
+        <PodCard>
+          <CardTitle icon={<Download className="w-5 h-5 text-[#4CA80B]" />}>Export Data</CardTitle>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-semibold text-black/70 mb-2 block">What to export</label>
+              <select
+                value={exportType}
+                onChange={(e) => setExportType(e.target.value)}
+                className="w-full h-11 border border-black/10 rounded-2xl px-3 text-sm bg-[#FFFAF5] text-black focus:outline-none focus:ring-2 focus:ring-[#FFB400]/60"
+              >
+                {EXPORT_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-3">
+              <Bounce className="flex-1" lift={-2}>
+                <button
+                  onClick={() => handleExport("json")}
+                  disabled={exporting}
+                  className="w-full min-h-[44px] inline-flex items-center justify-center gap-2 py-3 rounded-full text-black font-semibold shadow-md hover:brightness-105 transition-[filter] disabled:opacity-50"
+                  style={{ background: GRASS, ...MARKER }}
+                >
+                  <FileJson className="w-4 h-4" />
+                  Export JSON
+                </button>
+              </Bounce>
+              <Bounce className="flex-1" lift={-2}>
+                <button
+                  onClick={() => handleExport("csv")}
+                  disabled={exporting}
+                  className="w-full min-h-[44px] inline-flex items-center justify-center gap-2 py-3 rounded-full font-semibold text-black/70 bg-[#FFFAF5] border border-black/10 hover:bg-black/[0.03] transition-colors disabled:opacity-50"
+                  style={MARKER}
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  Export CSV
+                </button>
+              </Bounce>
+            </div>
+            <p className="text-xs text-black/50">
+              Download your data for backup or to use in other tools.
+            </p>
           </div>
-          <div className="flex gap-3">
-            <Button
-              onClick={() => handleExport("json")}
-              disabled={exporting}
-              className="flex-1"
-            >
-              <FileJson className="w-4 h-4 mr-2" />
-              Export JSON
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => handleExport("csv")}
-              disabled={exporting}
-              className="flex-1"
-            >
-              <FileSpreadsheet className="w-4 h-4 mr-2" />
-              Export CSV
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Download your data for backup or to use in other tools.
-          </p>
-        </CardContent>
-      </Card>
+        </PodCard>
+        </StaggerItem>
+        </Stagger>
+      </div>
     </div>
+  );
+}
+
+function PodCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-3xl bg-white border border-black/5 p-6 shadow-sm">
+      {children}
+    </div>
+  );
+}
+
+function CardTitle({ children, icon }: { children: React.ReactNode; icon: React.ReactNode }) {
+  return (
+    <h2 className="flex items-center gap-2 text-lg font-bold mb-4" style={MARKER}>
+      {icon}
+      {children}
+    </h2>
+  );
+}
+
+function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <input
+      {...props}
+      className="w-full h-11 px-4 rounded-2xl border border-black/10 bg-[#FFFAF5] text-sm text-black placeholder:text-black/35 focus:outline-none focus:ring-2 focus:ring-[#FFB400]/60 focus:border-[#FFB400]/60 transition-all"
+    />
   );
 }
