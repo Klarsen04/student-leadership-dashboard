@@ -271,3 +271,9 @@
   color: #1a1a1a;
 }
 .peace-ink { color: #1a1a1a; }
+
+/* Fredoka display face, as a class so it survives the strict style-src CSP that
+   strips inline style="font-family:…" on the statically-rendered homepage. */
+.font-marker {
+  font-family: var(--font-fredoka), ui-rounded, "Segoe UI Rounded", system-ui, sans-serif;
+}

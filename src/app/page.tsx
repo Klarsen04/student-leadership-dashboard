@@ -9,9 +9,10 @@ import { SunDoodle, CloudDoodle } from "@/components/home/HomeDecor";
 import { Reveal } from "@/components/home/Reveal";
 import { SmoothScroll } from "@/components/home/SmoothScroll";
 import { Bounce } from "@/components/home/motion-kit";
+import { SceneTasks } from "@/components/home/scenes/SceneTasks";
+import { SceneCalendar } from "@/components/home/scenes/SceneCalendar";
 import { SceneEvent } from "@/components/home/scenes/SceneEvent";
-import { SceneCommunity } from "@/components/home/scenes/SceneCommunity";
-import { SceneBudget } from "@/components/home/scenes/SceneBudget";
+import { SceneReflect } from "@/components/home/scenes/SceneReflect";
 import { SceneDashboard } from "@/components/home/scenes/SceneDashboard";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
@@ -37,7 +38,7 @@ function HomeContent() {
   const heroFade = useTransform(scrollY, [0, 500], [1, reduce ? 1 : 0]);
 
   return (
-    <div className="peace-surface relative overflow-x-hidden">
+    <div className="peace-surface font-marker relative overflow-x-hidden">
       {/* ---- HERO (Scene 0) ---- */}
       <header className="relative z-30 px-5 md:px-8 py-4 flex items-center justify-between max-w-6xl mx-auto">
         <div className="flex items-center gap-2.5">
@@ -87,8 +88,8 @@ function HomeContent() {
             <span style={{ color: GRASS }}>a happy little home.</span>
           </h1>
           <p className="mt-5 text-lg md:text-xl text-black/60 max-w-xl mx-auto leading-relaxed">
-            Watch an idea become an event, a community, a budget — and a living
-            dashboard. Scroll to see how.
+            Tasks, calendar, reflections, and analytics for student leaders who
+            do it all. Scroll to see how it works.
           </p>
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
             <Bounce>
@@ -114,10 +115,11 @@ function HomeContent() {
         </motion.div>
       </section>
 
-      {/* ---- CINEMATIC SCROLL SCENES (Level 1) ---- */}
+      {/* ---- CINEMATIC SCROLL SCENES — real app features (Level 1) ---- */}
+      <SceneTasks />
+      <SceneCalendar />
       <SceneEvent />
-      <SceneCommunity />
-      <SceneBudget />
+      <SceneReflect />
       <SceneDashboard />
 
       {/* ---- CTA (Scene 5) ---- */}
