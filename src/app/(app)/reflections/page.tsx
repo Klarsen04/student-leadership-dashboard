@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { format, startOfWeek, endOfWeek } from "date-fns";
 import {
   ArrowLeft,
@@ -22,6 +22,8 @@ import { INSPIRE_STORIES, type InspireStory } from "@/lib/inspireStories";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { RainbowArc, HeartFlower, SeedMascot } from "@/components/reflections/PeaceDecor";
 import { Stagger, StaggerItem, Bounce, Pop } from "@/components/home/motion-kit";
+import { useIntroReflect, playIntroReflect } from "@/components/reflections/intro-reflect";
+import { useGSAP } from "@/lib/gsap";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" };
 
@@ -103,6 +105,10 @@ export default function ReflectionsPage() {
   const [activePod, setActivePod] = useState<Pod | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Reflection | null>(null);
   const [editTarget, setEditTarget] = useState<Reflection | null>(null);
+  // One-time cinematic entrance: true only on first load this browser session
+  // (and never under reduced motion). Marked seen on mount, so tab switches /
+  // returning from the flow never replay it. Presentation only.
+  const intro = useIntroReflect("reflections");
 
   const fetchReflections = async () => {
     try {
@@ -167,6 +173,7 @@ export default function ReflectionsPage() {
               onStartPod={startPod}
               onEdit={setEditTarget}
               onDelete={setDeleteTarget}
+              intro={intro && tab === "reflect"}
             />
           ) : (
             <GetInspired />
@@ -219,6 +226,7 @@ function WelcomeScreen({
   onStartPod,
   onEdit,
   onDelete,
+  intro = false,
 }: {
   reflections: Reflection[];
   loading: boolean;
@@ -226,23 +234,43 @@ function WelcomeScreen({
   onStartPod: (pod: Pod) => void;
   onEdit: (r: Reflection) => void;
   onDelete: (r: Reflection) => void;
+  intro?: boolean;
 }) {
+  const root = useRef<HTMLDivElement>(null);
+
+  // Signature entrance — plays once per session (gated upstream by `intro`).
+  // Presentation only; auto-reverts via useGSAP scope. When `intro` is false
+  // (repeat visit / reduced motion) this no-ops and the screen renders normally
+  // with the existing framer Stagger reveal — no layout shift.
+  useGSAP(
+    () => {
+      if (!intro || !root.current) return;
+      playIntroReflect(root.current);
+    },
+    { scope: root, dependencies: [intro] }
+  );
+
   return (
-    <div className="w-full flex flex-col items-center">
+    <div ref={root} className="w-full flex flex-col items-center">
       {/* Hero */}
-      <div className="text-center pt-4 md:pt-8 animate-fade-in">
-        <p className="text-lg text-black/60" style={MARKER}>
+      <div className={`text-center pt-4 md:pt-8 ${intro ? "" : "animate-fade-in"}`}>
+        <p className="ir-eyebrow text-lg text-black/60" style={MARKER}>
           hi! welcome to
         </p>
         <h1 className="text-4xl md:text-6xl font-bold tracking-tight mt-1" style={MARKER}>
-          the daily reflection
+          {"the daily reflection".split(" ").map((word, i) => (
+            <span key={i} className="ir-title-word inline-block">
+              {word}
+              {i < 2 ? " " : ""}
+            </span>
+          ))}
         </h1>
-        <p className="mt-4 text-black/60 max-w-md mx-auto">
+        <p className="ir-sub mt-4 text-black/60 max-w-md mx-auto">
           Start with three gentle questions. A moment to pause, notice, and grow.
         </p>
         <button
           onClick={() => onStartPod(PODS[0])}
-          className="mt-6 inline-flex items-center gap-2 px-7 py-3 rounded-full text-black font-semibold shadow-md hover:brightness-105 hover:-translate-y-0.5 active:translate-y-0 transition-all"
+          className="ir-cta mt-6 inline-flex items-center gap-2 px-7 py-3 rounded-full text-black font-semibold shadow-md hover:brightness-105 hover:-translate-y-0.5 active:translate-y-0 transition-all"
           style={{ background: GRASS, ...MARKER }}
         >
           Begin here <ArrowRight className="w-5 h-5" />
@@ -250,28 +278,32 @@ function WelcomeScreen({
       </div>
 
       {/* Rainbow divider */}
-      <div className="relative w-[130%] h-20 md:h-28 mt-8 mb-2 pointer-events-none">
+      <div className="ir-arc relative w-[130%] h-20 md:h-28 mt-8 mb-2 pointer-events-none">
         <RainbowArc className="absolute inset-0 w-full h-full" />
       </div>
 
       {/* Pod picker */}
       <section className="w-full mt-4">
-        <h2 className="text-2xl md:text-3xl font-bold text-center" style={MARKER}>
+        <h2 className="ir-podhead text-2xl md:text-3xl font-bold text-center" style={MARKER}>
           Which area would you like to explore?
         </h2>
-        <p className="text-center text-black/50 text-sm mt-1">
+        <p className="ir-podhead text-center text-black/50 text-sm mt-1">
           Our pods help you untangle your feelings.
         </p>
 
-        <Stagger className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6" gap={0.07} amount={0.1}>
+        {/* During the one-time entrance, GSAP owns the card reveal, so render a
+            plain always-mounted grid (framer Stagger holds children hidden
+            until scrolled into view, which would fight the timeline). On repeat
+            visits / reduced motion, the normal Stagger reveal is used. */}
+        <PodGridWrap intro={intro} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
           {PODS.map((pod) => {
             const done = usedPods.has(pod.id);
             return (
-              <StaggerItem key={pod.id}>
+              <PodItemWrap key={pod.id} intro={intro}>
                 <Bounce lift={-6} scale={1.02} className="h-full">
                   <button
                     onClick={() => onStartPod(pod)}
-                    className="group text-left rounded-3xl bg-white border border-black/5 p-5 shadow-sm hover:shadow-md transition-shadow w-full h-full"
+                    className="ir-card group text-left rounded-3xl bg-white border border-black/5 p-5 shadow-sm hover:shadow-md transition-shadow w-full h-full"
                   >
                     <div
                       className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${pod.accent} flex items-center justify-center text-2xl mb-3`}
@@ -294,10 +326,10 @@ function WelcomeScreen({
                     </span>
                   </button>
                 </Bounce>
-              </StaggerItem>
+              </PodItemWrap>
             );
           })}
-        </Stagger>
+        </PodGridWrap>
       </section>
 
       {/* Flower row */}
@@ -330,6 +362,30 @@ function WelcomeScreen({
       </section>
     </div>
   );
+}
+
+// Pod grid container: plain div during the one-time entrance (GSAP drives the
+// reveal), framer Stagger otherwise (scroll-in reveal on repeat/reduced visits).
+function PodGridWrap({
+  intro,
+  className,
+  children,
+}: {
+  intro: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  if (intro) return <div className={className}>{children}</div>;
+  return (
+    <Stagger className={className} gap={0.07} amount={0.1}>
+      {children}
+    </Stagger>
+  );
+}
+
+function PodItemWrap({ intro, children }: { intro: boolean; children: React.ReactNode }) {
+  if (intro) return <div>{children}</div>;
+  return <StaggerItem>{children}</StaggerItem>;
 }
 
 // ---------------------------------------------------------------------------

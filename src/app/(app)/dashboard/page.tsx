@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { format, isPast, endOfWeek } from "date-fns";
 import {
@@ -19,6 +19,8 @@ import { SeedMascot } from "@/components/reflections/PeaceDecor";
 import { Stagger, StaggerItem, Bounce } from "@/components/home/motion-kit";
 import { NumberTicker } from "@/components/ui/number-ticker";
 import { motion, useReducedMotion } from "motion/react";
+import { useFirstVisit } from "@/lib/useFirstVisit";
+import { gsap, useGSAP } from "@/lib/gsap";
 import Link from "next/link";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
@@ -41,6 +43,41 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const { getInfo } = useSemester();
   const semester = getInfo();
+
+  // One-time cinematic "signature entrance" — plays once per browser session on
+  // first load (never under prefers-reduced-motion). `intro` gates both the
+  // markup (plain GSAP-driven divs vs. the normal framer Stagger) and the
+  // timeline below, so no element is ever animated by two libraries at once.
+  const firstVisit = useFirstVisit("dashboard");
+  const intro = firstVisit && !loading;
+  const scope = useRef<HTMLDivElement>(null);
+
+  useGSAP(
+    () => {
+      if (!intro || !scope.current) return;
+      const q = gsap.utils.selector(scope);
+
+      // Initial hidden states (set in a layout effect, before paint — no flash).
+      gsap.set(q(".intro-mascot"), { scale: 0, opacity: 0 });
+      gsap.set(q(".intro-word"), { opacity: 0, y: 14 });
+      gsap.set(q(".intro-chip"), { opacity: 0, scale: 0.8 });
+      gsap.set(q(".intro-stat"), { opacity: 0, y: 30, scale: 0.85 });
+      gsap.set(q(".intro-quickadd"), { opacity: 0, y: 16 });
+      gsap.set(q(".intro-card"), { opacity: 0, y: 40 });
+
+      // The dashboard "builds itself" (~2s): mascot pops, greeting words stagger,
+      // stat cards fly/scale into place (their NumberTickers count up in parallel),
+      // then the two big cards rise and settle.
+      const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
+      tl.to(q(".intro-mascot"), { scale: 1, opacity: 1, duration: 0.55, ease: "back.out(1.7)" });
+      tl.to(q(".intro-word"), { opacity: 1, y: 0, duration: 0.4, stagger: 0.09 }, "-=0.2");
+      tl.to(q(".intro-chip"), { opacity: 1, scale: 1, duration: 0.35 }, "-=0.25");
+      tl.to(q(".intro-stat"), { opacity: 1, y: 0, scale: 1, duration: 0.5, stagger: 0.1, ease: "back.out(1.4)" }, "-=0.1");
+      tl.to(q(".intro-quickadd"), { opacity: 1, y: 0, duration: 0.4 }, "-=0.15");
+      tl.to(q(".intro-card"), { opacity: 1, y: 0, duration: 0.55, stagger: 0.14 }, "-=0.2");
+    },
+    { scope, dependencies: [intro] }
+  );
 
   useEffect(() => {
     fetchData();
@@ -101,24 +138,39 @@ export default function DashboardPage() {
       className="min-h-screen -m-4 md:-m-8 p-4 md:p-8 relative z-20"
       style={{ background: CREAM, color: "#1a1a1a" }}
     >
-      <div className="max-w-6xl mx-auto space-y-8 animate-fade-in">
+      <div
+        ref={scope}
+        className={`max-w-6xl mx-auto space-y-8 ${intro ? "" : "animate-fade-in"}`}
+      >
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <SeedMascot className="w-11 h-11 shrink-0 animate-soft-bob" />
+            <SeedMascot className={`intro-mascot w-11 h-11 shrink-0 ${intro ? "" : "animate-soft-bob"}`} />
             <div>
               <h1 className="text-3xl font-bold tracking-tight" style={MARKER}>
-                Good {getTimeOfDay()},{" "}
-                <span style={{ color: GRASS }}>
-                  {session?.user?.name?.split(" ")[0]}
-                </span>
+                {intro ? (
+                  <>
+                    <span className="intro-word inline-block">Good</span>{" "}
+                    <span className="intro-word inline-block">{getTimeOfDay()},</span>{" "}
+                    <span className="intro-word inline-block" style={{ color: GRASS }}>
+                      {session?.user?.name?.split(" ")[0]}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    Good {getTimeOfDay()},{" "}
+                    <span style={{ color: GRASS }}>
+                      {session?.user?.name?.split(" ")[0]}
+                    </span>
+                  </>
+                )}
               </h1>
-              <p className="text-black/55 mt-1">
+              <p className={`text-black/55 mt-1 ${intro ? "intro-word" : ""}`}>
                 {format(new Date(), "EEEE, MMMM d")} · {getMotivation(tasks.length, overdueTasks.length)}
               </p>
             </div>
           </div>
-          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border border-black/10 bg-white text-xs">
+          <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border border-black/10 bg-white text-xs ${intro ? "intro-chip" : ""}`}>
             <span className="text-black/50">{semester.name}</span>
             <span className="font-semibold text-black/70">Week {semester.weekNumber}/{semester.totalWeeks}</span>
             {semester.isExamPeriod && (
@@ -128,8 +180,8 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Stats */}
-        <Stagger className="grid grid-cols-2 md:grid-cols-3 gap-4" gap={0.09}>
-          <StaggerItem>
+        <IntroGroup intro={intro} className="grid grid-cols-2 md:grid-cols-3 gap-4" gap={0.09}>
+          <IntroItem intro={intro} cls="intro-stat">
             <StatCard>
               <div className="flex items-center gap-3">
                 <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#5BC0EB] to-[#3D9BE9] flex items-center justify-center text-white shadow-sm">
@@ -141,8 +193,8 @@ export default function DashboardPage() {
                 </div>
               </div>
             </StatCard>
-          </StaggerItem>
-          <StaggerItem>
+          </IntroItem>
+          <IntroItem intro={intro} cls="intro-stat">
             <StatCard>
               <div className="flex items-center gap-3">
                 <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#FF6B4A] to-[#FF4D8D] flex items-center justify-center text-white shadow-sm">
@@ -154,8 +206,8 @@ export default function DashboardPage() {
                 </div>
               </div>
             </StatCard>
-          </StaggerItem>
-          <StaggerItem>
+          </IntroItem>
+          <IntroItem intro={intro} cls="intro-stat">
             <StatCard>
               <div className="flex items-center gap-3">
                 <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#7FB800] to-[#4CA80B] flex items-center justify-center text-white shadow-sm">
@@ -167,15 +219,17 @@ export default function DashboardPage() {
                 </div>
               </div>
             </StatCard>
-          </StaggerItem>
-        </Stagger>
+          </IntroItem>
+        </IntroGroup>
 
         {/* Quick Add Task */}
-        <QuickAddTask onAdded={fetchData} />
+        <div className={intro ? "intro-quickadd" : ""}>
+          <QuickAddTask onAdded={fetchData} />
+        </div>
 
-        <Stagger className="grid grid-cols-1 lg:grid-cols-2 gap-6" gap={0.1}>
+        <IntroGroup intro={intro} className="grid grid-cols-1 lg:grid-cols-2 gap-6" gap={0.1}>
           {/* Priority Tasks */}
-          <StaggerItem>
+          <IntroItem intro={intro} cls="intro-card">
           <PodCard>
             <div className="flex items-center justify-between mb-4">
               <h2 className="flex items-center gap-2 text-lg font-bold" style={MARKER}>
@@ -216,10 +270,10 @@ export default function DashboardPage() {
               </div>
             ) : null}
           </PodCard>
-          </StaggerItem>
+          </IntroItem>
 
           {/* Streaks & Quick Actions */}
-          <StaggerItem>
+          <IntroItem intro={intro} cls="intro-card">
           <PodCard>
             <h2 className="flex items-center gap-2 text-lg font-bold mb-4" style={MARKER}>
               <Flame className="w-5 h-5 text-[#FF8A3D]" />
@@ -235,11 +289,49 @@ export default function DashboardPage() {
               </div>
             </div>
           </PodCard>
-          </StaggerItem>
-        </Stagger>
+          </IntroItem>
+        </IntroGroup>
       </div>
     </div>
   );
+}
+
+/**
+ * Group + item wrappers that swap presentation based on the one-time intro.
+ * During the intro, GSAP drives plain divs (tagged with `cls`); otherwise the
+ * normal framer-motion Stagger/StaggerItem reveal is used. No node is ever
+ * animated by both libraries.
+ */
+function IntroGroup({
+  intro,
+  className,
+  gap,
+  children,
+}: {
+  intro: boolean;
+  className: string;
+  gap: number;
+  children: React.ReactNode;
+}) {
+  if (intro) return <div className={className}>{children}</div>;
+  return (
+    <Stagger className={className} gap={gap}>
+      {children}
+    </Stagger>
+  );
+}
+
+function IntroItem({
+  intro,
+  cls,
+  children,
+}: {
+  intro: boolean;
+  cls: string;
+  children: React.ReactNode;
+}) {
+  if (intro) return <div className={cls}>{children}</div>;
+  return <StaggerItem>{children}</StaggerItem>;
 }
 
 function StatCard({ children }: { children: React.ReactNode }) {

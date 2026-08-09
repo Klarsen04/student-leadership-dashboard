@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import {
   format,
   startOfWeek,
@@ -57,6 +57,7 @@ import { ExportButton } from "@/components/ui/export-button";
 import { QuickNote } from "@/components/ui/quick-note";
 import { FocusModeToggle } from "@/components/ui/focus-mode";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { useIntroCalEntrance } from "@/components/home/intro-cal-entrance";
 
 interface CalendarEvent {
   id: string;
@@ -343,6 +344,10 @@ function SeasonalIcon({ month, size = 32 }: { month: number; size?: number }) {
 
 export default function CalendarPage() {
   const reduceMotion = useReducedMotion();
+  // One-time cinematic "the week draws itself" entrance — plays once per session,
+  // no-op under reduced motion / repeat visits. Presentation-only, gated inside.
+  const introRoot = useRef<HTMLDivElement>(null);
+  useIntroCalEntrance(introRoot);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -598,7 +603,7 @@ export default function CalendarPage() {
 
   return (
     <ClickSpark sparkColor="#FFB400" sparkCount={10} sparkSize={6}>
-    <div className="min-h-screen -m-4 md:-m-8 p-4 md:p-8 relative z-20" style={{ background: "#FFFAF5" }}>
+    <div ref={introRoot} className="min-h-screen -m-4 md:-m-8 p-4 md:p-8 relative z-20" style={{ background: "#FFFAF5" }}>
       {/* ClickUp-style aurora glow behind header */}
       <AuroraGlow className="z-0" opacity={0.6} color1="rgba(255, 180, 0, 0.12)" color2="rgba(127, 184, 0, 0.10)" color3="rgba(255, 107, 74, 0.06)" />
       {/* Film grain overlay for cinematic depth */}
@@ -616,7 +621,7 @@ export default function CalendarPage() {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
             <SeasonalIcon month={monthIdx} size={40} />
-            <div>
+            <div className="intro-cal-title">
               <h1 className="text-3xl font-bold" style={{ fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" }}>
                 <AnimatedGradientText colorFrom="#1a1a1a" colorTo="#7FB800" speed={6}>
                   {format(currentDate, "MMMM yyyy")}
@@ -650,6 +655,7 @@ export default function CalendarPage() {
         {/* View Selector */}
         <div className="flex items-center justify-between mt-4">
           <AnimatedTabs
+            className="intro-cal-tabs"
             tabs={[
               { id: "day", label: "Day" },
               { id: "3day", label: "3-Day" },
@@ -1273,7 +1279,7 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
 
   return (
     <EventHoverProvider>
-    <div className="bg-white rounded-2xl shadow-sm border border-black/5 overflow-hidden relative">
+    <div className="intro-cal-grid bg-white rounded-2xl shadow-sm border border-black/5 overflow-hidden relative">
       <BorderBeam size={100} duration={10} colorFrom="#FFB400" colorTo="#7FB800" borderWidth={2} />
       {/* Day headers */}
       <div className="grid border-b border-black/5" style={{ gridTemplateColumns: `3.5rem repeat(${dayCount}, 1fr)` }}>
@@ -1281,7 +1287,7 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
         {days.map((day) => {
           const today = isDateToday(day);
           return (
-            <div key={day.toISOString()} className={`p-2 text-center border-l border-black/5 ${today ? "bg-blue-50" : ""}`}>
+            <div key={day.toISOString()} className={`intro-cal-col p-2 text-center border-l border-black/5 ${today ? "bg-blue-50" : ""}`}>
               <p className="text-[10px] uppercase text-black/40 font-medium">{format(day, "EEE")}</p>
               <p className={`text-lg font-bold ${today ? "text-blue-600" : "text-black"}`}>{format(day, "d")}</p>
             </div>
@@ -1481,7 +1487,7 @@ function MonthViewCute({ events, currentDate, onEventClick, getColor, classes, o
   const theme = MONTH_THEMES[monthIdx];
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-black/5 overflow-hidden">
+    <div className="intro-cal-grid bg-white rounded-2xl shadow-sm border border-black/5 overflow-hidden">
       {/* Month header with seasonal decoration */}
       <div className="p-4 flex items-center justify-between" style={{ background: theme.bg }}>
         <div className="flex items-center gap-3">
@@ -1496,7 +1502,7 @@ function MonthViewCute({ events, currentDate, onEventClick, getColor, classes, o
       {/* Day of week headers */}
       <div className="grid grid-cols-7 border-b border-black/5">
         {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-          <div key={d} className="text-center py-2 text-[11px] font-semibold text-black/40 uppercase tracking-wider">
+          <div key={d} className="intro-cal-col text-center py-2 text-[11px] font-semibold text-black/40 uppercase tracking-wider">
             {d}
           </div>
         ))}

@@ -21,6 +21,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PriorityDot } from "@/components/PriorityDot";
 import { TASK_PRIORITIES } from "@/lib/utils";
 import { TAPES, DayTabs, CassetteDisplay, getGradientBg } from "@/components/tasks/TapeShelf";
+import { useShelfIntro } from "@/components/tasks/intro-tasks-shelf";
 
 interface Task {
   id: string;
@@ -67,6 +68,11 @@ export default function TasksPage() {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const [weekOffset, setWeekOffset] = useState(0);
   const micro = useMicro();
+  const shelfRef = useRef<HTMLDivElement | null>(null);
+
+  // One-time signature entrance for the shelf view (once per session, gated on
+  // the shelf being visible + data loaded). Presentation only.
+  useShelfIntro(shelfRef, view === "shelf" && !loading);
 
   const weekStart = addWeeks(startOfWeek(new Date(), { weekStartsOn: 0 }), weekOffset);
   const activeDayIndex = selectedDay ?? new Date().getDay();
@@ -233,10 +239,10 @@ export default function TasksPage() {
   // ========================
   if (view === "shelf") {
     return (
-      <div className="min-h-screen -m-4 md:-m-8 flex flex-col overflow-hidden relative z-20" style={{ background: "rgb(239, 239, 239)" }}>
+      <div ref={shelfRef} className="min-h-screen -m-4 md:-m-8 flex flex-col overflow-hidden relative z-20" style={{ background: "rgb(239, 239, 239)" }}>
         {/* Header */}
         <header className="flex relative z-20 pt-8 md:pt-12 pb-2 px-5 md:px-16 justify-between items-start shrink-0">
-          <div className="flex flex-col items-start gap-1.5">
+          <div className="intro-logo flex flex-col items-start gap-1.5">
             <Image src="/tasktape/logo.svg" alt="Task Tape logo" width={100} height={58} className="h-[3.625rem] w-[6.25rem] object-contain" />
             <span className="block text-black/70 text-2xl text-center w-[6.25rem]" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}>
               Task Tape
@@ -254,7 +260,7 @@ export default function TasksPage() {
         </header>
 
         {/* Headline */}
-        <div className="relative z-10 mt-4 md:mt-1 mb-2 text-center">
+        <div className="intro-headline relative z-10 mt-4 md:mt-1 mb-2 text-center">
           <h1
             className="text-5xl md:text-[4.875rem] leading-tight md:leading-[4.625rem] text-black"
             style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}
@@ -269,24 +275,15 @@ export default function TasksPage() {
         {/* Tape Shelf */}
         <div className="flex-1 flex flex-col items-center justify-center relative z-10">
           {/* Desktop shelf */}
-          <motion.div
-            className="hidden md:flex items-end justify-center gap-2.5 h-[540px]"
-            initial={micro.reduce ? false : "hidden"}
-            animate="show"
-            variants={{ show: { transition: { staggerChildren: 0.06 } } }}
-          >
+          <div className="hidden md:flex items-end justify-center gap-2.5 h-[540px]">
             {TAPES.map((t) => (
               <motion.button
                 key={t.day}
                 onClick={() => openTape(t.index)}
-                variants={{
-                  hidden: { opacity: 0, y: 24 },
-                  show: { opacity: 1, y: 0, transition: SOFT_SPRING },
-                }}
                 whileHover={micro.reduce ? undefined : { y: -10, scale: 1.04 }}
                 whileTap={micro.reduce ? undefined : { scale: 0.98 }}
                 transition={SPRING}
-                className="group relative shrink-0 cursor-pointer hover:z-20 w-[5.75rem]"
+                className="intro-spine group relative shrink-0 cursor-pointer hover:z-20 w-[5.75rem]"
               >
                 <div className="relative h-[540px] w-full">
                   <Image
@@ -299,7 +296,7 @@ export default function TasksPage() {
                 </div>
               </motion.button>
             ))}
-          </motion.div>
+          </div>
 
           {/* Mobile shelf - horizontal scroll with first tape expanded */}
           <div className="md:hidden flex items-end overflow-x-auto w-full px-6 py-8 gap-2">
@@ -309,7 +306,7 @@ export default function TasksPage() {
                 onClick={() => openTape(t.index)}
                 whileTap={micro.reduce ? undefined : { scale: 0.96 }}
                 transition={SPRING}
-                className="relative shrink-0 cursor-pointer"
+                className="intro-spine relative shrink-0 cursor-pointer"
                 style={{ width: i === 1 ? "248px" : "51px", height: "300px" }}
               >
                 {i === 1 ? (
