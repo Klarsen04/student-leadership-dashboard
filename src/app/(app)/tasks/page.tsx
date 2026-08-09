@@ -290,28 +290,31 @@ export default function TasksPage() {
                 transition={SPRING}
                 variants={{
                   rest: { y: 0, width: "5.75rem" },
-                  open: { y: -18, width: "16rem" },
+                  // spine (5.75rem) + full-height cover (~22rem) so the opened
+                  // tape matches the height of the surrounding spines.
+                  open: { y: -18, width: "27.5rem" },
                 }}
                 className="intro-spine group relative shrink-0 cursor-pointer hover:z-30 h-[540px] overflow-visible"
                 aria-label={`Open ${t.day} tasks`}
               >
                 <div className="relative h-full w-full">
-                  {/* cover art — hidden behind the spine at rest, slides out on hover */}
+                  {/* cover art — hidden behind the spine at rest, slides out to
+                      FULL height on hover (matches the spine height) */}
                   <motion.div
                     className="absolute bottom-0 right-0 h-full"
                     variants={{
                       rest: { width: 0, opacity: 0, x: 10 },
-                      open: { width: "10.25rem", opacity: 1, x: 0 },
+                      open: { width: "22rem", opacity: 1, x: 0 },
                     }}
                     transition={SPRING}
                   >
-                    <div className="relative h-full w-[10.25rem]">
+                    <div className="relative h-full w-[22rem]">
                       <Image
                         src={t.cover}
                         alt={`${t.day} cover`}
                         fill
                         className="object-contain object-bottom drop-shadow-xl"
-                        sizes="164px"
+                        sizes="352px"
                       />
                     </div>
                   </motion.div>
