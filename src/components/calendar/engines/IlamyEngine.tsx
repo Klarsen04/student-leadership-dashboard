@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { IlamyCalendar } from "@ilamy/calendar";
 import type { CalendarEngineProps, EngineView } from "./types";
+import { classesToEvents } from "./classEvents";
 
 // ilamy views: month | week | day (+ its own). Map the app's granular views onto these.
 const VIEW_MAP: Record<EngineView, string> = {
@@ -24,6 +25,7 @@ function toISO(d: any): string {
 
 export default function IlamyEngine({
   events,
+  classes,
   currentDate,
   view,
   onEventClick,
@@ -31,10 +33,11 @@ export default function IlamyEngine({
   onEventUpdate,
   onEventDelete,
 }: CalendarEngineProps) {
-  // ilamy accepts ISO strings for start/end directly — pass through, stash app fields in `data`.
+  // ilamy accepts ISO strings for start/end directly. Merge real events with
+  // recurring classes expanded into dated instances so classes render too.
   const ilamyEvents = useMemo(
     () =>
-      events.map((e) => ({
+      [...events, ...classesToEvents(classes, currentDate, view)].map((e) => ({
         id: e.id,
         title: e.title,
         start: e.startTime,
@@ -42,7 +45,7 @@ export default function IlamyEngine({
         description: e.description,
         data: { category: e.category, role: e.role, isLed: e.isLed, location: e.location },
       })),
-    [events]
+    [events, classes, currentDate, view]
   );
 
   return (

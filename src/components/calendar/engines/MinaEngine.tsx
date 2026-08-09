@@ -6,17 +6,22 @@ import { SchedulerProvider } from "@/providers/schedular-provider";
 import SchedulerView from "@/components/schedule/_components/view/schedular-view";
 import type { Event as MinaEvent } from "@/types/scheduler";
 import type { CalendarEngineProps } from "./types";
+import { classesToEvents } from "./classEvents";
 
 export default function MinaEngine({
   events,
+  classes,
+  currentDate,
+  view,
   onEventCreate,
   onEventUpdate,
   onEventDelete,
 }: CalendarEngineProps) {
-  // Mina uses JS Date objects (not ISO strings) and a `variant` field.
+  // Mina uses JS Date objects (not ISO strings) and a `variant` field. Merge
+  // real events with recurring classes expanded into dated instances.
   const minaEvents = useMemo<MinaEvent[]>(
     () =>
-      events.map((e) => ({
+      [...events, ...classesToEvents(classes, currentDate, view)].map((e) => ({
         id: e.id,
         title: e.title,
         description: e.description,
@@ -24,7 +29,7 @@ export default function MinaEngine({
         endDate: new Date(e.endTime),
         variant: "primary",
       })),
-    [events]
+    [events, classes, currentDate, view]
   );
 
   return (
