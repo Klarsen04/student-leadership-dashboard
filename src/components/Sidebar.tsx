@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { NotificationBell } from "@/components/Notifications";
-import { ThemeToggle } from "@/components/ThemeToggle";
 
 const nav = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard },
@@ -71,7 +70,6 @@ export function Sidebar() {
             <span className="font-bold text-base tracking-tight">Leadership OS</span>
           </div>
           <div className="flex items-center gap-1">
-            <ThemeToggle />
             <NotificationBell />
             <button
               onClick={() => setMobileOpen(false)}

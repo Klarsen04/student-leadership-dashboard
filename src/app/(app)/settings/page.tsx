@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { useSession } from "next-auth/react";
-import { Download, FileJson, FileSpreadsheet, User, Palette, GraduationCap } from "lucide-react";
-import { useTheme } from "next-themes";
+import { Download, FileJson, FileSpreadsheet, User, GraduationCap } from "lucide-react";
 import { useSemester } from "@/lib/useSemester";
 import { toast } from "sonner";
 import { SeedMascot } from "@/components/reflections/PeaceDecor";
@@ -24,7 +23,6 @@ const EXPORT_TYPES = [
 
 export default function SettingsPage() {
   const { data: session } = useSession();
-  const { theme, setTheme } = useTheme();
   const { config: semesterConfig, updateSemester } = useSemester();
   const [semForm, setSemForm] = useState(semesterConfig);
   const [exportType, setExportType] = useState("all");
@@ -78,32 +76,6 @@ export default function SettingsPage() {
         </PodCard>
         </StaggerItem>
 
-        {/* Appearance */}
-        <StaggerItem>
-        <PodCard>
-          <CardTitle icon={<Palette className="w-5 h-5 text-[#3D9BE9]" />}>Appearance</CardTitle>
-          <div className="flex gap-3">
-            {[
-              { value: "dark", label: "Dark" },
-              { value: "light", label: "Light" },
-              { value: "system", label: "System" },
-            ].map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setTheme(opt.value)}
-                className={`flex-1 min-h-[44px] py-3 px-4 rounded-2xl border text-sm font-semibold transition-all ${
-                  theme === opt.value
-                    ? "border-[#7FB800] bg-green-50 text-[#3f7d1f]"
-                    : "border-black/10 bg-[#FFFAF5] text-black/60 hover:bg-black/[0.03]"
-                }`}
-                style={MARKER}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </PodCard>
-        </StaggerItem>
 
         {/* Semester */}
         <StaggerItem>

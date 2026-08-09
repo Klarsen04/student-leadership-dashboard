@@ -27,7 +27,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0a0a1a",
+  themeColor: "#FFFAF5",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -42,7 +42,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
       </head>
       <body className={`${inter.className} ${instrumentSerif.variable} ${fredoka.variable}`}>
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem nonce={nonce}>
+        <ThemeProvider attribute="class" defaultTheme="light" forcedTheme="light" enableSystem={false} nonce={nonce}>
           <SessionProvider>{children}</SessionProvider>
           <Toaster richColors position="bottom-right" />
         </ThemeProvider>
