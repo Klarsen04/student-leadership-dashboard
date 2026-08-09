@@ -15,7 +15,7 @@ import {
 // so they can't leak into the rest of the app. Regenerate via scripts/scope-vendor-css.mjs.
 import "./dayflow.scoped.css";
 import type { CalendarEngineProps, EngineView } from "./types";
-import { classesToEvents, isClassEvent } from "./classEvents";
+import { classesToEvents, isClassEvent, findClassForEventId } from "./classEvents";
 
 // DayFlow has no "3day/5day"; map those onto its closest native views.
 const VIEW_MAP: Record<EngineView, string> = {
@@ -32,6 +32,7 @@ export default function DayFlowEngine({
   currentDate,
   view,
   onEventClick,
+  onClassClick,
   onEventCreate,
   onEventUpdate,
   onEventDelete,
@@ -66,6 +67,12 @@ export default function DayFlowEngine({
     } as any,
     callbacks: {
       onEventClick: (ev: any) => {
+        // A clicked class instance opens the class editor, like the classic view.
+        if (isClassEvent(String(ev.id))) {
+          const cls = findClassForEventId(String(ev.id), classes);
+          if (cls) onClassClick?.(cls);
+          return;
+        }
         const match = events.find((e) => e.id === ev.id);
         if (match) onEventClick(match);
       },

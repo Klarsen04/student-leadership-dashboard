@@ -369,6 +369,7 @@ export default function CalendarPage() {
   const [newCalColor, setNewCalColor] = useState("bg-blue-500");
   const [calendarToDelete, setCalendarToDelete] = useState<string | null>(null);
   const [selectedClass, setSelectedClass] = useState<ClassBlock | null>(null);
+  const [editingClass, setEditingClass] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const { calendars, addCalendar, deleteCalendar, setEngine, getEngineFor, addTag, deleteTag, getCalendarColor, getTagsForCalendar, COLOR_OPTIONS } = useCalendars();
 
@@ -590,6 +591,15 @@ export default function CalendarPage() {
     saveClasses(updated);
     toast.success("Class added!");
     setShowAddClass(false);
+  };
+
+  const updateClass = (cls: ClassBlock) => {
+    const updated = classes.map((c) => (c.id === cls.id ? cls : c));
+    setClasses(updated);
+    saveClasses(updated);
+    toast.success("Class updated!");
+    setEditingClass(false);
+    setSelectedClass(null);
   };
 
   const deleteClass = (id: string) => {
@@ -1087,9 +1097,17 @@ export default function CalendarPage() {
       </Dialog>
 
       {/* Class Detail Dialog */}
-      <Dialog open={!!selectedClass} onOpenChange={(open) => { if (!open) setSelectedClass(null); }}>
+      <Dialog open={!!selectedClass} onOpenChange={(open) => { if (!open) { setSelectedClass(null); setEditingClass(false); } }}>
         <DialogContent>
-          {selectedClass && (
+          {selectedClass && editingClass ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Edit class</DialogTitle>
+                <DialogDescription>Update the details for {selectedClass.title}.</DialogDescription>
+              </DialogHeader>
+              <ClassForm existing={selectedClass} onSaved={updateClass} onCancel={() => setEditingClass(false)} />
+            </>
+          ) : selectedClass && (
             <>
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-sm" style={{ background: selectedClass.color }}>
@@ -1135,6 +1153,9 @@ export default function CalendarPage() {
                 </div>
               </div>
               <div className="pt-4 mt-4 border-t border-black/5 flex items-center gap-2">
+                <Button size="sm" onClick={() => setEditingClass(true)} className="bg-[#7FB800] hover:bg-[#4CA80B] text-black font-semibold">
+                  <Pencil className="w-4 h-4 mr-1" />Edit Class
+                </Button>
                 <Button variant="destructive" size="sm" onClick={() => { deleteClass(selectedClass.id); setSelectedClass(null); }}>
                   <Trash2 className="w-4 h-4 mr-1" />Remove Class
                 </Button>
@@ -1617,10 +1638,16 @@ function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defa
 }
 
 /* ---------- Class Form ---------- */
-function ClassForm({ onSaved, onCancel }: { onSaved: (cls: ClassBlock) => void; onCancel: () => void }) {
+function ClassForm({ onSaved, onCancel, existing }: { onSaved: (cls: ClassBlock) => void; onCancel: () => void; existing?: ClassBlock }) {
   const [form, setForm] = useState({
-    title: "", professor: "", location: "", creditHours: 3,
-    days: [] as string[], startTime: "09:00", endTime: "10:15", color: CLASS_COLORS[0],
+    title: existing?.title ?? "",
+    professor: existing?.professor ?? "",
+    location: existing?.location ?? "",
+    creditHours: existing?.creditHours ?? 3,
+    days: existing?.days ?? ([] as string[]),
+    startTime: existing?.startTime ?? "09:00",
+    endTime: existing?.endTime ?? "10:15",
+    color: existing?.color ?? CLASS_COLORS[0],
   });
 
   const DAY_OPTIONS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
@@ -1633,7 +1660,8 @@ function ClassForm({ onSaved, onCancel }: { onSaved: (cls: ClassBlock) => void; 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.title || form.days.length === 0) { toast.error("Fill in title and select days"); return; }
-    onSaved({ ...form, id: `class_${Date.now().toString(36)}` });
+    // Preserve id when editing an existing class; generate one for a new class.
+    onSaved({ ...form, id: existing?.id ?? `class_${Date.now().toString(36)}` });
   };
 
   return (
@@ -1677,7 +1705,7 @@ function ClassForm({ onSaved, onCancel }: { onSaved: (cls: ClassBlock) => void; 
         </div>
       </div>
       <div className="flex gap-2">
-        <Button type="submit" className="flex-1 rounded-full bg-[#7FB800] hover:bg-[#4CA80B] text-black font-semibold" style={{ fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" }}>Add Class</Button>
+        <Button type="submit" className="flex-1 rounded-full bg-[#7FB800] hover:bg-[#4CA80B] text-black font-semibold" style={{ fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" }}>{existing ? "Save Changes" : "Add Class"}</Button>
         <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
       </div>
     </form>

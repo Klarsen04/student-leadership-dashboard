@@ -3,7 +3,7 @@
 import { useMemo, useEffect, useRef } from "react";
 import { IlamyCalendar } from "@ilamy/calendar";
 import type { CalendarEngineProps, EngineView } from "./types";
-import { classesToEvents } from "./classEvents";
+import { classesToEvents, isClassEvent, findClassForEventId } from "./classEvents";
 
 // ilamy views: month | week | day (+ its own). Map the app's granular views onto these.
 const VIEW_MAP: Record<EngineView, string> = {
@@ -29,6 +29,7 @@ export default function IlamyEngine({
   currentDate,
   view,
   onEventClick,
+  onClassClick,
   onEventCreate,
   onEventUpdate,
   onEventDelete,
@@ -78,6 +79,11 @@ export default function IlamyEngine({
         initialDate={currentDate}
         firstDayOfWeek="monday"
         onEventClick={(ev: any) => {
+          if (isClassEvent(String(ev.id))) {
+            const cls = findClassForEventId(String(ev.id), classes);
+            if (cls) onClassClick?.(cls);
+            return;
+          }
           const match = events.find((e) => String(e.id) === String(ev.id));
           if (match) onEventClick(match);
         }}

@@ -88,7 +88,30 @@ export function classesToEvents(
   return out;
 }
 
-/** True if an EngineEvent id refers to an expanded class instance (read-only). */
+/** True if an EngineEvent id refers to an expanded class instance. */
 export function isClassEvent(id: string): boolean {
   return id.startsWith("class:");
+}
+
+/** Extract the original class id from an expanded instance id ("class:<id>:<date>"). */
+export function classIdFromEventId(id: string): string | null {
+  if (!isClassEvent(id)) return null;
+  // ids look like "class:<classId>:<YYYY-MM-DD>"; classId is the middle segment
+  const rest = id.slice("class:".length);
+  const lastColon = rest.lastIndexOf(":");
+  return lastColon === -1 ? rest : rest.slice(0, lastColon);
+}
+
+/**
+ * Resolve a clicked engine-event id back to its source EngineClass, if it is an
+ * expanded class instance. Engines call this in their click handler so tapping a
+ * class opens the class editor (like the classic view).
+ */
+export function findClassForEventId(
+  id: string,
+  classes: EngineClass[]
+): EngineClass | null {
+  const classId = classIdFromEventId(id);
+  if (!classId) return null;
+  return classes.find((c) => c.id === classId) ?? null;
 }
