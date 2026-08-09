@@ -178,8 +178,19 @@
   0%, 100% { transform: rotate(-6deg); }
   50% { transform: rotate(6deg); }
 }
+@keyframes softBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+.animate-soft-bob {
+  animation: softBob 5s ease-in-out infinite;
+}
 @media (prefers-reduced-motion: reduce) {
   [style*="peaceSway"] { animation: none !important; }
+  .animate-soft-bob,
+  .animate-float,
+  .animate-fade-in,
+  .animate-fade-in-up { animation: none !important; }
 }
 @keyframes shimmer {
   0% { background-position: -200% 0; }
