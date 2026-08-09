@@ -7,6 +7,7 @@ import { useTheme } from "next-themes";
 import { useSemester } from "@/lib/useSemester";
 import { toast } from "sonner";
 import { SeedMascot } from "@/components/reflections/PeaceDecor";
+import { Stagger, StaggerItem, Bounce } from "@/components/home/motion-kit";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
 const CREAM = "#FFFAF5";
@@ -60,7 +61,9 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        <Stagger className="space-y-6" gap={0.09}>
         {/* Profile */}
+        <StaggerItem>
         <PodCard>
           <CardTitle icon={<User className="w-5 h-5 text-[#8B5CF6]" />}>Profile</CardTitle>
           <div className="flex items-center gap-4">
@@ -73,8 +76,10 @@ export default function SettingsPage() {
             </div>
           </div>
         </PodCard>
+        </StaggerItem>
 
         {/* Appearance */}
+        <StaggerItem>
         <PodCard>
           <CardTitle icon={<Palette className="w-5 h-5 text-[#3D9BE9]" />}>Appearance</CardTitle>
           <div className="flex gap-3">
@@ -98,8 +103,10 @@ export default function SettingsPage() {
             ))}
           </div>
         </PodCard>
+        </StaggerItem>
 
         {/* Semester */}
+        <StaggerItem>
         <PodCard>
           <CardTitle icon={<GraduationCap className="w-5 h-5 text-[#FFB400]" />}>Academic Semester</CardTitle>
           <div className="space-y-4">
@@ -140,20 +147,24 @@ export default function SettingsPage() {
                 onChange={(e) => setSemForm({ ...semForm, examStart: e.target.value })}
               />
             </div>
-            <button
-              onClick={() => {
-                updateSemester(semForm);
-                toast.success("Semester settings saved");
-              }}
-              className="w-full min-h-[44px] py-3 rounded-full font-semibold text-black/70 bg-[#FFFAF5] border border-black/10 hover:bg-black/[0.03] hover:-translate-y-0.5 transition-all"
-              style={MARKER}
-            >
-              Save Semester
-            </button>
+            <Bounce lift={-2}>
+              <button
+                onClick={() => {
+                  updateSemester(semForm);
+                  toast.success("Semester settings saved");
+                }}
+                className="w-full min-h-[44px] py-3 rounded-full font-semibold text-black/70 bg-[#FFFAF5] border border-black/10 hover:bg-black/[0.03] transition-colors"
+                style={MARKER}
+              >
+                Save Semester
+              </button>
+            </Bounce>
           </div>
         </PodCard>
+        </StaggerItem>
 
         {/* Export Data */}
+        <StaggerItem>
         <PodCard>
           <CardTitle icon={<Download className="w-5 h-5 text-[#4CA80B]" />}>Export Data</CardTitle>
           <div className="space-y-4">
@@ -172,30 +183,36 @@ export default function SettingsPage() {
               </select>
             </div>
             <div className="flex gap-3">
-              <button
-                onClick={() => handleExport("json")}
-                disabled={exporting}
-                className="flex-1 min-h-[44px] inline-flex items-center justify-center gap-2 py-3 rounded-full text-black font-semibold shadow-md hover:brightness-105 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0"
-                style={{ background: GRASS, ...MARKER }}
-              >
-                <FileJson className="w-4 h-4" />
-                Export JSON
-              </button>
-              <button
-                onClick={() => handleExport("csv")}
-                disabled={exporting}
-                className="flex-1 min-h-[44px] inline-flex items-center justify-center gap-2 py-3 rounded-full font-semibold text-black/70 bg-[#FFFAF5] border border-black/10 hover:bg-black/[0.03] hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0"
-                style={MARKER}
-              >
-                <FileSpreadsheet className="w-4 h-4" />
-                Export CSV
-              </button>
+              <Bounce className="flex-1" lift={-2}>
+                <button
+                  onClick={() => handleExport("json")}
+                  disabled={exporting}
+                  className="w-full min-h-[44px] inline-flex items-center justify-center gap-2 py-3 rounded-full text-black font-semibold shadow-md hover:brightness-105 transition-[filter] disabled:opacity-50"
+                  style={{ background: GRASS, ...MARKER }}
+                >
+                  <FileJson className="w-4 h-4" />
+                  Export JSON
+                </button>
+              </Bounce>
+              <Bounce className="flex-1" lift={-2}>
+                <button
+                  onClick={() => handleExport("csv")}
+                  disabled={exporting}
+                  className="w-full min-h-[44px] inline-flex items-center justify-center gap-2 py-3 rounded-full font-semibold text-black/70 bg-[#FFFAF5] border border-black/10 hover:bg-black/[0.03] transition-colors disabled:opacity-50"
+                  style={MARKER}
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  Export CSV
+                </button>
+              </Bounce>
             </div>
             <p className="text-xs text-black/50">
               Download your data for backup or to use in other tools.
             </p>
           </div>
         </PodCard>
+        </StaggerItem>
+        </Stagger>
       </div>
     </div>
   );
