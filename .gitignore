@@ -9,3 +9,4 @@ build/
 .vercel
 tsconfig.tsbuildinfo
 node_modules
+.claude/

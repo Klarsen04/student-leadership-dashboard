@@ -11,7 +11,6 @@ import { SmoothScroll } from "@/components/home/SmoothScroll";
 import { Bounce } from "@/components/home/motion-kit";
 import { SceneTasks } from "@/components/home/scenes/SceneTasks";
 import { SceneCalendar } from "@/components/home/scenes/SceneCalendar";
-import { SceneEvent } from "@/components/home/scenes/SceneEvent";
 import { SceneReflect } from "@/components/home/scenes/SceneReflect";
 import { SceneDashboard } from "@/components/home/scenes/SceneDashboard";
 
@@ -114,7 +113,6 @@ function HomeContent() {
       {/* ---- CINEMATIC SCROLL SCENES — real app features (Level 1) ---- */}
       <SceneTasks />
       <SceneCalendar />
-      <SceneEvent />
       <SceneReflect />
       <SceneDashboard />
 
