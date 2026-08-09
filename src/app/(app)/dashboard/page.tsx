@@ -13,11 +13,15 @@ import {
   Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { PriorityDot } from "@/components/PriorityDot";
 import { useSemester } from "@/lib/useSemester";
+import { SeedMascot } from "@/components/reflections/PeaceDecor";
 import Link from "next/link";
+
+const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
+const CREAM = "#FFFAF5";
+const MARIGOLD = "#FFB400";
+const GRASS = "#7FB800";
 
 interface Task {
   id: string;
@@ -66,106 +70,115 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="max-w-6xl mx-auto space-y-8">
-        <div className="space-y-2">
-          <div className="h-9 w-72 rounded-lg bg-muted animate-pulse" />
-          <div className="h-5 w-40 rounded bg-muted animate-pulse" />
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-24 rounded-xl bg-muted/50 border border-border animate-pulse" />
-          ))}
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="h-64 rounded-xl bg-muted/50 border border-border animate-pulse" />
-          <div className="h-64 rounded-xl bg-muted/50 border border-border animate-pulse" />
+      <div
+        className="min-h-screen -m-4 md:-m-8 p-4 md:p-8 relative z-20"
+        style={{ background: CREAM, color: "#1a1a1a" }}
+      >
+        <div className="max-w-6xl mx-auto space-y-8">
+          <div className="space-y-2">
+            <div className="h-9 w-72 rounded-2xl bg-black/[0.06] animate-pulse" />
+            <div className="h-5 w-40 rounded-full bg-black/[0.06] animate-pulse" />
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-24 rounded-3xl bg-white border border-black/5 animate-pulse" />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="h-64 rounded-3xl bg-white border border-black/5 animate-pulse" />
+            <div className="h-64 rounded-3xl bg-white border border-black/5 animate-pulse" />
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            Good {getTimeOfDay()},{" "}
-            <span className="gradient-text">
-              {session?.user?.name?.split(" ")[0]}
-            </span>
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            {format(new Date(), "EEEE, MMMM d")} · {getMotivation(tasks.length, overdueTasks.length)}
-          </p>
-        </div>
-        <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card/50 text-xs">
-          <span className="text-muted-foreground">{semester.name}</span>
-          <span className="font-medium">Week {semester.weekNumber}/{semester.totalWeeks}</span>
-          {semester.isExamPeriod && (
-            <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[10px] font-medium">EXAMS</span>
-          )}
-        </div>
-      </div>
-
-      {/* Quick Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <div className="stat-card">
+    <div
+      className="min-h-screen -m-4 md:-m-8 p-4 md:p-8 relative z-20"
+      style={{ background: CREAM, color: "#1a1a1a" }}
+    >
+      <div className="max-w-6xl mx-auto space-y-8 animate-fade-in">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
-              <CheckSquare className="w-5 h-5 text-blue-400" />
-            </div>
+            <SeedMascot className="w-11 h-11 shrink-0 animate-soft-bob" />
             <div>
-              <p className="text-2xl font-bold">{tasks.length}</p>
-              <p className="text-xs text-muted-foreground">Pending Tasks</p>
+              <h1 className="text-3xl font-bold tracking-tight" style={MARKER}>
+                Good {getTimeOfDay()},{" "}
+                <span style={{ color: GRASS }}>
+                  {session?.user?.name?.split(" ")[0]}
+                </span>
+              </h1>
+              <p className="text-black/55 mt-1">
+                {format(new Date(), "EEEE, MMMM d")} · {getMotivation(tasks.length, overdueTasks.length)}
+              </p>
             </div>
           </div>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center">
-              <Flame className="w-5 h-5 text-rose-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{overdueTasks.length}</p>
-              <p className="text-xs text-muted-foreground">Overdue</p>
-            </div>
+          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border border-black/10 bg-white text-xs">
+            <span className="text-black/50">{semester.name}</span>
+            <span className="font-semibold text-black/70">Week {semester.weekNumber}/{semester.totalWeeks}</span>
+            {semester.isExamPeriod && (
+              <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">EXAMS</span>
+            )}
           </div>
         </div>
-        <div className="stat-card">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-              <TrendingUp className="w-5 h-5 text-emerald-400" />
+
+        {/* Quick Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <StatCard>
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#5BC0EB] to-[#3D9BE9] flex items-center justify-center text-white shadow-sm">
+                <CheckSquare className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold" style={MARKER}>{tasks.length}</p>
+                <p className="text-xs text-black/50">Pending Tasks</p>
+              </div>
             </div>
-            <div>
-              <p className="text-2xl font-bold">{upcomingTasks.length}</p>
-              <p className="text-xs text-muted-foreground">This Week</p>
+          </StatCard>
+          <StatCard>
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#FF6B4A] to-[#FF4D8D] flex items-center justify-center text-white shadow-sm">
+                <Flame className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold" style={MARKER}>{overdueTasks.length}</p>
+                <p className="text-xs text-black/50">Overdue</p>
+              </div>
             </div>
-          </div>
+          </StatCard>
+          <StatCard>
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#7FB800] to-[#4CA80B] flex items-center justify-center text-white shadow-sm">
+                <TrendingUp className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold" style={MARKER}>{upcomingTasks.length}</p>
+                <p className="text-xs text-black/50">This Week</p>
+              </div>
+            </div>
+          </StatCard>
         </div>
-      </div>
 
-      {/* Quick Add Task */}
-      <QuickAddTask onAdded={fetchData} />
+        {/* Quick Add Task */}
+        <QuickAddTask onAdded={fetchData} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Priority Tasks */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Target className="w-5 h-5 text-blue-400" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Priority Tasks */}
+          <PodCard>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="flex items-center gap-2 text-lg font-bold" style={MARKER}>
+                <Target className="w-5 h-5 text-[#3D9BE9]" />
                 Priority Tasks
-              </CardTitle>
-              <Link href="/tasks">
-                <Button variant="ghost" size="sm">View all</Button>
+              </h2>
+              <Link href="/tasks" className="text-sm font-semibold text-black/50 hover:text-black transition-colors" style={MARKER}>
+                View all
               </Link>
             </div>
-          </CardHeader>
-          <CardContent>
             {overdueTasks.length > 0 && (
               <div className="mb-4">
-                <p className="text-xs font-semibold text-rose-400 uppercase mb-2 tracking-wider">
+                <p className="text-xs font-bold text-rose-500 uppercase mb-2 tracking-wider">
                   Overdue
                 </p>
                 {overdueTasks.slice(0, 3).map((task) => (
@@ -176,7 +189,7 @@ export default function DashboardPage() {
             {upcomingTasks.length > 0 ? (
               <div>
                 {overdueTasks.length > 0 && (
-                  <p className="text-xs font-semibold text-muted-foreground uppercase mb-2 tracking-wider">
+                  <p className="text-xs font-bold text-black/40 uppercase mb-2 tracking-wider">
                     Upcoming
                   </p>
                 )}
@@ -186,49 +199,61 @@ export default function DashboardPage() {
               </div>
             ) : overdueTasks.length === 0 ? (
               <div className="flex flex-col items-center py-8 text-center">
-                <div className="w-12 h-12 rounded-full bg-muted/50 border border-border flex items-center justify-center mb-3">
-                  <CheckSquare className="w-6 h-6 text-muted-foreground" />
-                </div>
-                <p className="text-muted-foreground text-sm">
+                <SeedMascot className="w-12 h-12 mb-3" />
+                <p className="text-black/50 text-sm">
                   No pending tasks. Add some from the Tasks page.
                 </p>
               </div>
             ) : null}
-          </CardContent>
-        </Card>
+          </PodCard>
 
-        {/* Streaks & Quick Actions */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2">
-              <Flame className="w-5 h-5 text-orange-400" />
+          {/* Streaks & Quick Actions */}
+          <PodCard>
+            <h2 className="flex items-center gap-2 text-lg font-bold mb-4" style={MARKER}>
+              <Flame className="w-5 h-5 text-[#FF8A3D]" />
               Streaks & Actions
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <StreakBadges />
-            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border">
-              <Link href="/tasks" className="stat-card text-center group">
-                <CheckSquare className="w-5 h-5 text-blue-400 mx-auto mb-2 group-hover:scale-110 transition-transform" />
-                <p className="text-xs font-medium">New Task</p>
-              </Link>
-              <Link href="/calendar" className="stat-card text-center group">
-                <Calendar className="w-5 h-5 text-purple-400 mx-auto mb-2 group-hover:scale-110 transition-transform" />
-                <p className="text-xs font-medium">Calendar</p>
-              </Link>
-              <Link href="/reflections" className="stat-card text-center group">
-                <Clock className="w-5 h-5 text-emerald-400 mx-auto mb-2 group-hover:scale-110 transition-transform" />
-                <p className="text-xs font-medium">Reflect</p>
-              </Link>
-              <Link href="/analytics" className="stat-card text-center group">
-                <TrendingUp className="w-5 h-5 text-amber-400 mx-auto mb-2 group-hover:scale-110 transition-transform" />
-                <p className="text-xs font-medium">Analytics</p>
-              </Link>
+            </h2>
+            <div className="space-y-4">
+              <StreakBadges />
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-black/[0.06]">
+                <QuickAction href="/tasks" icon={<CheckSquare className="w-5 h-5 text-[#3D9BE9]" />} label="New Task" />
+                <QuickAction href="/calendar" icon={<Calendar className="w-5 h-5 text-[#8B5CF6]" />} label="Calendar" />
+                <QuickAction href="/reflections" icon={<Clock className="w-5 h-5 text-[#4CA80B]" />} label="Reflect" />
+                <QuickAction href="/analytics" icon={<TrendingUp className="w-5 h-5 text-[#FFB400]" />} label="Analytics" />
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          </PodCard>
+        </div>
       </div>
     </div>
+  );
+}
+
+function StatCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-3xl bg-white border border-black/5 p-4 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
+      {children}
+    </div>
+  );
+}
+
+function PodCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-3xl bg-white border border-black/5 p-6 shadow-sm">
+      {children}
+    </div>
+  );
+}
+
+function QuickAction({ href, icon, label }: { href: string; icon: React.ReactNode; label: string }) {
+  return (
+    <Link
+      href={href}
+      className="rounded-2xl bg-[#FFFAF5] border border-black/5 p-3 text-center group hover:shadow-sm hover:-translate-y-0.5 transition-all"
+    >
+      <div className="mx-auto mb-2 w-fit group-hover:scale-110 transition-transform">{icon}</div>
+      <p className="text-xs font-semibold text-black/70">{label}</p>
+    </Link>
   );
 }
 
@@ -245,16 +270,16 @@ function TaskRow({ task, overdue }: { task: any; overdue?: boolean }) {
   return (
     <Link
       href={href}
-      className="flex items-center gap-3 py-2.5 px-3 -mx-3 rounded-lg hover:bg-accent transition-colors cursor-pointer"
+      className="flex items-center gap-3 py-2.5 px-3 -mx-3 rounded-2xl hover:bg-black/[0.03] transition-colors cursor-pointer"
     >
       <PriorityDot priority={task.priority} />
       <div className="flex-1 min-w-0">
-        <p className={`text-sm truncate ${overdue ? "text-rose-400" : ""}`}>
+        <p className={`text-sm truncate ${overdue ? "text-rose-500 font-medium" : "text-black/80"}`}>
           {task.title}
         </p>
       </div>
       {task.dueDate && (
-        <span className={`text-xs ${overdue ? "text-rose-400" : "text-muted-foreground"}`}>
+        <span className={`text-xs ${overdue ? "text-rose-500" : "text-black/40"}`}>
           {format(new Date(task.dueDate), "MMM d")}
         </span>
       )}
@@ -276,18 +301,18 @@ function StreakBadges() {
 
   return (
     <div className="flex items-center gap-3">
-      <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${streaks.taskStreak >= 7 ? "border-orange-500/30 bg-orange-500/5" : "border-border bg-muted/30"}`}>
-        <Flame className={`w-4 h-4 ${streaks.taskStreak >= 7 ? "text-orange-400" : "text-muted-foreground"}`} />
+      <div className={`flex items-center gap-2 px-3 py-2 rounded-2xl border ${streaks.taskStreak >= 7 ? "border-orange-300 bg-orange-50" : "border-black/10 bg-[#FFFAF5]"}`}>
+        <Flame className={`w-4 h-4 ${streaks.taskStreak >= 7 ? "text-orange-500" : "text-black/40"}`} />
         <div>
-          <p className="text-sm font-bold">{streaks.taskStreak}d</p>
-          <p className="text-[10px] text-muted-foreground">Tasks</p>
+          <p className="text-sm font-bold" style={MARKER}>{streaks.taskStreak}d</p>
+          <p className="text-[10px] text-black/50">Tasks</p>
         </div>
       </div>
-      <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${streaks.reflectionStreak >= 7 ? "border-purple-500/30 bg-purple-500/5" : "border-border bg-muted/30"}`}>
-        <Target className={`w-4 h-4 ${streaks.reflectionStreak >= 7 ? "text-purple-400" : "text-muted-foreground"}`} />
+      <div className={`flex items-center gap-2 px-3 py-2 rounded-2xl border ${streaks.reflectionStreak >= 7 ? "border-green-300 bg-green-50" : "border-black/10 bg-[#FFFAF5]"}`}>
+        <Target className={`w-4 h-4 ${streaks.reflectionStreak >= 7 ? "text-[#4CA80B]" : "text-black/40"}`} />
         <div>
-          <p className="text-sm font-bold">{streaks.reflectionStreak}d</p>
-          <p className="text-[10px] text-muted-foreground">Reflections</p>
+          <p className="text-sm font-bold" style={MARKER}>{streaks.reflectionStreak}d</p>
+          <p className="text-[10px] text-black/50">Reflections</p>
         </div>
       </div>
     </div>
@@ -326,11 +351,17 @@ function QuickAddTask({ onAdded }: { onAdded: () => void }) {
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Quick add a task for today..."
-        className="flex-1 h-11 px-4 rounded-xl border border-border bg-card/50 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all"
+        className="flex-1 h-12 px-4 rounded-full border border-black/10 bg-white text-sm text-black placeholder:text-black/35 focus:outline-none focus:ring-2 focus:ring-[#FFB400]/60 focus:border-[#FFB400]/60 transition-all"
       />
-      <Button type="submit" disabled={adding || !title.trim()} size="lg" className="h-11 px-4">
-        <Plus className="w-4 h-4" />
-      </Button>
+      <button
+        type="submit"
+        disabled={adding || !title.trim()}
+        aria-label="Add task"
+        className="h-12 w-12 shrink-0 flex items-center justify-center rounded-full text-black shadow-md hover:brightness-105 hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-50 disabled:hover:translate-y-0"
+        style={{ background: MARIGOLD }}
+      >
+        <Plus className="w-5 h-5" />
+      </button>
     </form>
   );
 }

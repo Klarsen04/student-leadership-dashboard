@@ -596,14 +596,14 @@ export default function CalendarPage() {
   const monthIdx = currentDate.getMonth();
 
   return (
-    <ClickSpark sparkColor="#a855f7" sparkCount={10} sparkSize={6}>
-    <div className="min-h-screen -m-4 md:-m-8 p-4 md:p-8 relative z-20" style={{ background: "#faf9f7" }}>
+    <ClickSpark sparkColor="#FFB400" sparkCount={10} sparkSize={6}>
+    <div className="min-h-screen -m-4 md:-m-8 p-4 md:p-8 relative z-20" style={{ background: "#FFFAF5" }}>
       {/* ClickUp-style aurora glow behind header */}
-      <AuroraGlow className="z-0" opacity={0.6} />
+      <AuroraGlow className="z-0" opacity={0.6} color1="rgba(255, 180, 0, 0.12)" color2="rgba(127, 184, 0, 0.10)" color3="rgba(255, 107, 74, 0.06)" />
       {/* Film grain overlay for cinematic depth */}
       <NoiseOverlay opacity={0.02} />
       {/* Floating particles background */}
-      <ParticlesBg quantity={30} color="#a855f7" size={1} speed={0.2} className="opacity-40" />
+      <ParticlesBg quantity={30} color="#FFB400" size={1} speed={0.2} className="opacity-40" />
 
       {/* Header */}
       <header className="max-w-7xl mx-auto mb-6 relative">
@@ -611,8 +611,8 @@ export default function CalendarPage() {
           <div className="flex items-center gap-3">
             <SeasonalIcon month={monthIdx} size={40} />
             <div>
-              <h1 className="text-3xl font-bold" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}>
-                <AnimatedGradientText colorFrom="#1f1f1f" colorTo="#6b21a8" speed={6}>
+              <h1 className="text-3xl font-bold" style={{ fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" }}>
+                <AnimatedGradientText colorFrom="#1a1a1a" colorTo="#7FB800" speed={6}>
                   {format(currentDate, "MMMM yyyy")}
                 </AnimatedGradientText>
               </h1>
@@ -627,12 +627,12 @@ export default function CalendarPage() {
           </div>
           <div className="flex items-center gap-2">
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <Button size="sm" onClick={() => setShowAddClass(true)} className="bg-purple-500 hover:bg-purple-600 text-white shadow-md shadow-purple-500/20">
+              <Button size="sm" onClick={() => setShowAddClass(true)} className="rounded-full bg-[#7FB800] hover:bg-[#4CA80B] text-black font-semibold shadow-md" style={{ fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" }}>
                 <BookOpen className="w-4 h-4 mr-1" /> Class
               </Button>
             </motion.div>
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <Button size="sm" onClick={() => setShowAdd(true)} className="bg-black text-white hover:bg-black/80 shadow-md shadow-black/20">
+              <Button size="sm" onClick={() => setShowAdd(true)} className="rounded-full bg-[#FFB400] hover:brightness-105 text-black font-semibold shadow-md" style={{ fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" }}>
                 <Plus className="w-4 h-4 mr-1" /> Event
               </Button>
             </motion.div>
@@ -665,7 +665,8 @@ export default function CalendarPage() {
             </motion.button>
             <motion.button
               onClick={() => setCurrentDate(new Date())}
-              className="px-3 py-1.5 rounded-full text-xs font-medium text-black/70 hover:bg-purple-50 hover:text-purple-700 transition-colors"
+              className="px-3 py-1.5 rounded-full text-xs font-semibold text-black/70 hover:bg-[#FFF3D6] hover:text-[#8a6300] transition-colors"
+              style={{ fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" }}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
@@ -742,7 +743,7 @@ export default function CalendarPage() {
                   onClick={() => setEngine(cal.id, eng.id)}
                   className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
                     cal.engine === eng.id
-                      ? "bg-purple-600 text-white shadow-sm"
+                      ? "bg-[#7FB800] text-black shadow-sm"
                       : "bg-black/5 text-black/60 hover:bg-black/10"
                   }`}
                 >
@@ -801,8 +802,8 @@ export default function CalendarPage() {
       <div className="max-w-7xl mx-auto mb-4 space-y-2">
         {nextUp && (
           <BlurFade delay={0.1} duration={0.5}>
-            <div className="flex items-center gap-4 px-4 py-3 rounded-xl border border-black/5 shadow-sm relative overflow-hidden" style={{ background: "linear-gradient(135deg, #faf9f7 0%, #f5f3ff 100%)" }}>
-              <ShineBorder shineColor={[nextUp.cls.color, "#a855f7", nextUp.cls.color]} duration={8} borderWidth={1} />
+            <div className="flex items-center gap-4 px-4 py-3 rounded-2xl border border-black/5 shadow-sm relative overflow-hidden" style={{ background: "linear-gradient(135deg, #FFFAF5 0%, #FFF3D6 100%)" }}>
+              <ShineBorder shineColor={[nextUp.cls.color, "#FFB400", nextUp.cls.color]} duration={8} borderWidth={1} />
               <div className="absolute inset-0 opacity-[0.04]" style={{ background: `linear-gradient(90deg, ${nextUp.cls.color} 0%, transparent 60%)` }} />
               <motion.div
                 className="relative w-10 h-10 rounded-xl flex items-center justify-center shadow-sm"
@@ -856,7 +857,7 @@ export default function CalendarPage() {
           {loading ? (
             <div className="text-center text-black/40 py-12">
               <motion.div
-                className="w-8 h-8 rounded-full border-2 border-purple-300 border-t-purple-600 mx-auto"
+                className="w-8 h-8 rounded-full border-2 border-[#FFE39A] border-t-[#FFB400] mx-auto"
                 animate={{ rotate: 360 }}
                 transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
               />
@@ -986,13 +987,13 @@ export default function CalendarPage() {
                   <p className="text-[10px] uppercase tracking-wider font-semibold text-black/40">Classes</p>
                 </div>
                 {/* Credit stats */}
-                <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-purple-50/60 border border-purple-100 relative overflow-hidden">
-                  <GraduationCap className="w-3.5 h-3.5 text-purple-500" />
-                  <span className="text-[11px] font-bold text-purple-700">
+                <div className="flex items-center gap-2 mb-3 p-2 rounded-xl bg-[#FFF3D6]/70 border border-[#FFE39A] relative overflow-hidden">
+                  <GraduationCap className="w-3.5 h-3.5 text-[#c98a00]" />
+                  <span className="text-[11px] font-bold text-[#8a6300]">
                     <NumberTicker value={totalCredits} /> credits
                   </span>
-                  <span className="text-[10px] text-purple-400">•</span>
-                  <span className="text-[11px] text-purple-600">
+                  <span className="text-[10px] text-[#c98a00]">•</span>
+                  <span className="text-[11px] text-[#8a6300]">
                     <NumberTicker value={parseFloat(weeklyHours.toFixed(1))} decimalPlaces={1} />h/wk
                   </span>
                 </div>
@@ -1267,7 +1268,7 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
   return (
     <EventHoverProvider>
     <div className="bg-white rounded-2xl shadow-sm border border-black/5 overflow-hidden relative">
-      <BorderBeam size={100} duration={10} colorFrom="#a855f7" colorTo="#ec4899" borderWidth={2} />
+      <BorderBeam size={100} duration={10} colorFrom="#FFB400" colorTo="#7FB800" borderWidth={2} />
       {/* Day headers */}
       <div className="grid border-b border-black/5" style={{ gridTemplateColumns: `3.5rem repeat(${dayCount}, 1fr)` }}>
         <div className="p-2" />
@@ -1323,8 +1324,8 @@ function TimeGridView({ events, currentDate, view, onEventClick, getColor, class
                     key={hour}
                     className={`h-14 border-b border-black/5 cursor-pointer transition-colors ${
                       draggedEventId && dropTarget?.dayIdx === dayIdx && dropTarget?.hour === hour
-                        ? "bg-blue-100 ring-1 ring-inset ring-blue-300"
-                        : "hover:bg-purple-50"
+                        ? "bg-amber-100 ring-1 ring-inset ring-[#FFB400]"
+                        : "hover:bg-[#FFF3D6]"
                     }`}
                     onClick={() => onTimeSlotClick(day, hour)}
                     onDragOver={(e) => {
@@ -1637,14 +1638,14 @@ function ClassForm({ onSaved, onCancel }: { onSaved: (cls: ClassBlock) => void; 
         <label className="text-sm font-medium text-black/80 block mb-1.5">Days *</label>
         <div className="flex gap-1 mb-2">
           {PRESETS.map((p) => (
-            <button key={p} type="button" onClick={() => setForm({ ...form, days: [p] })} className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${form.days.length === 1 && form.days[0] === p ? "bg-purple-500 text-white" : "bg-black/5 text-black/60 hover:bg-black/10"}`}>
+            <button key={p} type="button" onClick={() => setForm({ ...form, days: [p] })} className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${form.days.length === 1 && form.days[0] === p ? "bg-[#7FB800] text-black" : "bg-black/5 text-black/60 hover:bg-black/10"}`}>
               {p}
             </button>
           ))}
         </div>
         <div className="flex gap-1">
           {DAY_OPTIONS.map((d) => (
-            <button key={d} type="button" onClick={() => toggleDay(d)} className={`w-9 h-9 rounded-full text-xs font-medium transition-all ${form.days.includes(d) ? "bg-purple-500 text-white shadow-sm" : "bg-black/5 text-black/50 hover:bg-black/10"}`}>
+            <button key={d} type="button" onClick={() => toggleDay(d)} className={`w-9 h-9 rounded-full text-xs font-medium transition-all ${form.days.includes(d) ? "bg-[#7FB800] text-black shadow-sm" : "bg-black/5 text-black/50 hover:bg-black/10"}`}>
               {d.charAt(0)}{d === "Thu" ? "h" : ""}
             </button>
           ))}
@@ -1659,12 +1660,12 @@ function ClassForm({ onSaved, onCancel }: { onSaved: (cls: ClassBlock) => void; 
         <label className="text-sm font-medium text-black/80 block mb-1.5">Color</label>
         <div className="flex gap-2 flex-wrap">
           {CLASS_COLORS.map((c) => (
-            <button key={c} type="button" onClick={() => setForm({ ...form, color: c })} className={`w-7 h-7 rounded-full transition-all ${form.color === c ? "ring-2 ring-offset-2 ring-purple-400 scale-110" : "hover:scale-105"}`} style={{ background: c }} />
+            <button key={c} type="button" onClick={() => setForm({ ...form, color: c })} className={`w-7 h-7 rounded-full transition-all ${form.color === c ? "ring-2 ring-offset-2 ring-[#FFB400] scale-110" : "hover:scale-105"}`} style={{ background: c }} />
           ))}
         </div>
       </div>
       <div className="flex gap-2">
-        <Button type="submit" className="flex-1 bg-purple-500 hover:bg-purple-600">Add Class</Button>
+        <Button type="submit" className="flex-1 rounded-full bg-[#7FB800] hover:bg-[#4CA80B] text-black font-semibold" style={{ fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" }}>Add Class</Button>
         <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
       </div>
     </form>
