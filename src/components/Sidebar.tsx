@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
+import { motion } from "motion/react";
 import { cn } from "@/lib/utils";
+import { useMicro, SOFT_SPRING, SPRING } from "@/components/micro-motion";
 import {
   LayoutDashboard,
   Calendar,
@@ -33,6 +35,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const micro = useMicro();
 
   return (
     <>
@@ -85,18 +88,38 @@ export function Sidebar() {
             const Icon = item.icon;
             const active = pathname === item.href;
             return (
-              <Link
+              <motion.div
                 key={item.href}
-                href={item.href}
-                onClick={() => setMobileOpen(false)}
-                className={cn(
-                  "nav-item",
-                  active ? "nav-item-active" : "nav-item-inactive"
-                )}
+                whileHover={micro.reduce ? undefined : { x: 3 }}
+                whileTap={micro.reduce ? undefined : { scale: 0.98 }}
+                transition={SPRING}
+                className="relative"
               >
-                <Icon className={cn("w-[18px] h-[18px]", active && "text-purple-400")} />
-                {item.label}
-              </Link>
+                {active && !micro.reduce && (
+                  <motion.span
+                    layoutId="sidebar-active-indicator"
+                    transition={SOFT_SPRING}
+                    className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-full bg-purple-400"
+                  />
+                )}
+                <Link
+                  href={item.href}
+                  onClick={() => setMobileOpen(false)}
+                  className={cn(
+                    "nav-item group",
+                    active ? "nav-item-active" : "nav-item-inactive"
+                  )}
+                >
+                  <motion.span
+                    className="inline-flex"
+                    whileHover={micro.reduce ? undefined : { scale: 1.15, rotate: -6 }}
+                    transition={SPRING}
+                  >
+                    <Icon className={cn("w-[18px] h-[18px]", active && "text-purple-400")} />
+                  </motion.span>
+                  {item.label}
+                </Link>
+              </motion.div>
             );
           })}
         </nav>
@@ -116,13 +139,22 @@ export function Sidebar() {
               </span>
             </div>
           </div>
-          <button
+          <motion.button
             onClick={() => signOut({ callbackUrl: "/login" })}
             className="nav-item nav-item-inactive w-full"
+            whileHover={micro.reduce ? undefined : { x: 3 }}
+            whileTap={micro.reduce ? undefined : { scale: 0.98 }}
+            transition={SPRING}
           >
-            <LogOut className="w-[18px] h-[18px]" />
+            <motion.span
+              className="inline-flex"
+              whileHover={micro.reduce ? undefined : { scale: 1.15, rotate: -6 }}
+              transition={SPRING}
+            >
+              <LogOut className="w-[18px] h-[18px]" />
+            </motion.span>
             Sign out
-          </button>
+          </motion.button>
         </div>
       </aside>
     </>
