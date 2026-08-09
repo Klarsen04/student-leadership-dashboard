@@ -16,8 +16,6 @@ import { SceneReflect } from "@/components/home/scenes/SceneReflect";
 import { SceneDashboard } from "@/components/home/scenes/SceneDashboard";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
-const MARIGOLD = "#FFB400";
-const GRASS = "#7FB800";
 
 export default function HomePage() {
   return (
@@ -58,8 +56,7 @@ function HomeContent() {
           <Bounce>
             <Link
               href="/login"
-              className="inline-flex items-center gap-1.5 min-h-[44px] px-5 rounded-full text-sm font-semibold text-black shadow-md transition-[filter] hover:brightness-105"
-              style={{ background: MARIGOLD, ...MARKER }}
+              className="inline-flex items-center gap-1.5 min-h-[44px] px-5 rounded-full text-sm font-semibold text-black shadow-md transition-[filter] hover:brightness-105 bg-[#FFB400]"
             >
               Get Started <ArrowRight className="w-4 h-4" />
             </Link>
@@ -85,7 +82,7 @@ function HomeContent() {
           <h1 className="text-5xl md:text-8xl font-bold tracking-tight leading-[1.02] mt-1" style={MARKER}>
             your leadership,
             <br />
-            <span style={{ color: GRASS }}>a happy little home.</span>
+            <span className="text-[#7FB800]">a happy little home.</span>
           </h1>
           <p className="mt-5 text-lg md:text-xl text-black/60 max-w-xl mx-auto leading-relaxed">
             Tasks, calendar, reflections, and analytics for student leaders who
@@ -95,8 +92,7 @@ function HomeContent() {
             <Bounce>
               <Link
                 href="/login"
-                className="inline-flex items-center justify-center gap-2 min-h-[44px] px-8 py-3 rounded-full text-black font-semibold shadow-md transition-[filter] hover:brightness-105"
-                style={{ background: GRASS, ...MARKER }}
+                className="inline-flex items-center justify-center gap-2 min-h-[44px] px-8 py-3 rounded-full text-black font-semibold shadow-md transition-[filter] hover:brightness-105 bg-[#7FB800]"
               >
                 Get Started <ArrowRight className="w-5 h-5" />
               </Link>
@@ -142,8 +138,7 @@ function HomeContent() {
               <Bounce>
                 <Link
                   href="/login"
-                  className="mt-7 inline-flex items-center justify-center gap-2 min-h-[44px] px-8 py-3 rounded-full text-black font-semibold shadow-md transition-[filter] hover:brightness-105"
-                  style={{ background: MARIGOLD, ...MARKER }}
+                  className="mt-7 inline-flex items-center justify-center gap-2 min-h-[44px] px-8 py-3 rounded-full text-black font-semibold shadow-md transition-[filter] hover:brightness-105 bg-[#FFB400]"
                 >
                   Get Started — it&apos;s free <ArrowRight className="w-5 h-5" />
                 </Link>
