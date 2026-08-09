@@ -262,3 +262,12 @@
 .stagger-children > *:nth-child(4) { animation-delay: 150ms; }
 .stagger-children > *:nth-child(5) { animation-delay: 200ms; }
 .stagger-children > *:nth-child(6) { animation-delay: 250ms; }
+
+/* PeacePod warm palette — driven by a class (CSP-safe) instead of inline
+   style, which the strict style-src policy strips on static server-rendered
+   pages (login/home). Use these on the page root wrapper. */
+.peace-surface {
+  background: #FFFAF5;
+  color: #1a1a1a;
+}
+.peace-ink { color: #1a1a1a; }

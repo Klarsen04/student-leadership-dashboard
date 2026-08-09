@@ -9,11 +9,8 @@ import { SunDoodle, CloudDoodle } from "@/components/home/HomeDecor";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
 
-// ---- palette ---------------------------------------------------------------
-const CREAM = "#FFFAF5";
-const MARIGOLD = "#FFB400";
+// ---- palette (accent buttons; surface via .peace-surface class) ----
 const GRASS = "#7FB800";
-const INK = "#1a1a1a";
 
 export default function LoginPage() {
   return (
@@ -71,10 +68,7 @@ function LoginForm() {
   }
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center relative overflow-hidden px-4 py-10"
-      style={{ background: CREAM, color: INK }}
-    >
+    <div className="peace-surface min-h-screen flex items-center justify-center relative overflow-hidden px-4 py-10">
       {/* Soft floating decor (all decorative) */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         <CloudDoodle className="absolute top-16 left-[6%] w-24 md:w-32 opacity-80 animate-soft-bob" />

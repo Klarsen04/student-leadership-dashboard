@@ -9,18 +9,20 @@ import {
   ArrowRight,
   Heart,
 } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
+import { useRef } from "react";
+import { motion, useReducedMotion, useScroll, useTransform } from "motion/react";
 import { RainbowArc, HeartFlower, SeedMascot } from "@/components/reflections/PeaceDecor";
 import { SunDoodle, CloudDoodle, StarBloom } from "@/components/home/HomeDecor";
 import { Reveal } from "@/components/home/Reveal";
+import { SmoothScroll } from "@/components/home/SmoothScroll";
+import { Bounce } from "@/components/home/motion-kit";
+import { gsap, useGSAP } from "@/lib/gsap";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
 
-// ---- palette ---------------------------------------------------------------
-const CREAM = "#FFFAF5";
+// ---- palette (MARIGOLD/GRASS used for accent buttons; surface via .peace-surface) ----
 const MARIGOLD = "#FFB400";
 const GRASS = "#7FB800";
-const INK = "#1a1a1a";
 
 const FEATURES = [
   {
@@ -50,19 +52,55 @@ const FEATURES = [
 ] as const;
 
 export default function HomePage() {
+  return (
+    <SmoothScroll>
+      <HomeContent />
+    </SmoothScroll>
+  );
+}
+
+function HomeContent() {
   const reduce = useReducedMotion();
 
+  // Scroll-linked parallax: clouds drift up, blooms drift down as you scroll.
+  const { scrollY } = useScroll();
+  const cloudY = useTransform(scrollY, [0, 600], [0, reduce ? 0 : -80]);
+  const bloomY = useTransform(scrollY, [0, 600], [0, reduce ? 0 : 60]);
+
+  // GSAP: draw the rainbow arc band-by-band when it scrolls into view.
+  const rainbowRef = useRef<HTMLDivElement>(null);
+  useGSAP(
+    () => {
+      if (reduce) return;
+      const paths = rainbowRef.current?.querySelectorAll("path");
+      if (!paths || !paths.length) return;
+      paths.forEach((p) => {
+        const len = (p as SVGPathElement).getTotalLength();
+        gsap.set(p, { strokeDasharray: len, strokeDashoffset: len });
+      });
+      gsap.to(paths, {
+        strokeDashoffset: 0,
+        duration: 1.1,
+        ease: "power2.out",
+        stagger: 0.12,
+        scrollTrigger: { trigger: rainbowRef.current, start: "top 85%" },
+      });
+    },
+    { scope: rainbowRef, dependencies: [reduce] }
+  );
+
   return (
-    <div
-      className="min-h-screen relative overflow-x-hidden"
-      style={{ background: CREAM, color: INK }}
-    >
-      {/* Soft floating decor (all decorative) */}
+    <div className="peace-surface min-h-screen relative overflow-x-hidden">
+      {/* Soft floating decor (all decorative) — parallax on scroll */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <CloudDoodle className="absolute top-24 left-[4%] w-24 md:w-32 opacity-80 animate-soft-bob" />
-        <CloudDoodle className="absolute top-40 right-[6%] w-20 md:w-28 opacity-70 animate-soft-bob" />
-        <StarBloom className="absolute top-[52%] left-[3%] w-8 md:w-12 opacity-70" color="#FF6B4A" />
-        <StarBloom className="absolute top-[68%] right-[5%] w-8 md:w-12 opacity-70" color="#5BC0EB" />
+        <motion.div style={{ y: cloudY }} className="absolute inset-0">
+          <CloudDoodle className="absolute top-24 left-[4%] w-24 md:w-32 opacity-80 animate-soft-bob" />
+          <CloudDoodle className="absolute top-40 right-[6%] w-20 md:w-28 opacity-70 animate-soft-bob" />
+        </motion.div>
+        <motion.div style={{ y: bloomY }} className="absolute inset-0">
+          <StarBloom className="absolute top-[52%] left-[3%] w-8 md:w-12 opacity-70" color="#FF6B4A" />
+          <StarBloom className="absolute top-[68%] right-[5%] w-8 md:w-12 opacity-70" color="#5BC0EB" />
+        </motion.div>
       </div>
 
       {/* Header */}
@@ -126,26 +164,31 @@ export default function HomePage() {
           </Reveal>
           <Reveal delay={0.22}>
             <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-              <Link
-                href="/login"
-                className="inline-flex items-center justify-center gap-2 min-h-[44px] px-8 py-3 rounded-full text-black font-semibold shadow-md hover:brightness-105 hover:-translate-y-0.5 active:translate-y-0 transition-all"
-                style={{ background: GRASS, ...MARKER }}
-              >
-                Get Started <ArrowRight className="w-5 h-5" />
-              </Link>
-              <Link
-                href="#features"
-                className="inline-flex items-center justify-center min-h-[44px] px-6 py-3 rounded-full font-semibold text-black/70 bg-white border border-black/10 shadow-sm hover:-translate-y-0.5 hover:text-black transition-all"
-                style={MARKER}
-              >
-                Take a peek
-              </Link>
+              <Bounce>
+                <Link
+                  href="/login"
+                  className="inline-flex items-center justify-center gap-2 min-h-[44px] px-8 py-3 rounded-full text-black font-semibold shadow-md transition-[filter]"
+                  style={{ background: GRASS, ...MARKER }}
+                >
+                  Get Started <ArrowRight className="w-5 h-5" />
+                </Link>
+              </Bounce>
+              <Bounce>
+                <Link
+                  href="#features"
+                  className="inline-flex items-center justify-center min-h-[44px] px-6 py-3 rounded-full font-semibold text-black/70 bg-white border border-black/10 shadow-sm hover:text-black transition-colors"
+                  style={MARKER}
+                >
+                  Take a peek
+                </Link>
+              </Bounce>
             </div>
           </Reveal>
         </section>
 
-        {/* Rainbow divider */}
+        {/* Rainbow divider — GSAP draws it band-by-band on scroll-in */}
         <div
+          ref={rainbowRef}
           className="relative w-[130%] -mx-[15%] h-20 md:h-28 mt-8 mb-2 pointer-events-none"
           aria-hidden="true"
         >
