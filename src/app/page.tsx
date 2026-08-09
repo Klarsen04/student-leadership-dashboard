@@ -1,252 +1,274 @@
 import Link from "next/link";
-import { Calendar, CheckSquare, Target, BookOpen, BarChart3, Sparkles, ArrowRight, Smartphone, Zap, Users } from "lucide-react";
-import { AnimatedBackground } from "@/components/AnimatedBackground";
+import {
+  ArrowUpRight,
+  CheckSquare,
+  CalendarDays,
+  NotebookPen,
+  LineChart,
+} from "lucide-react";
+import { AuroraCanvas } from "@/components/home/AuroraCanvas";
+import { AnimatedHeadline } from "@/components/home/AnimatedHeadline";
+import { Reveal } from "@/components/home/Reveal";
+
+const features = [
+  {
+    key: "tasks",
+    n: "01",
+    title: "Tasks",
+    icon: CheckSquare,
+    lead: "A board that thinks in days.",
+    body: "Kanban columns, priorities, and a focus timer laid out as a shelf of daily tapes. Drag what matters to the top and let the rest wait.",
+    span: "lg:col-span-7",
+  },
+  {
+    key: "calendar",
+    n: "02",
+    title: "Calendar",
+    icon: CalendarDays,
+    lead: "Every role, one grid.",
+    body: "Day, week, and month views with side-by-side conflict detection, class blocks, and a Next Up banner counting down to whatever is next.",
+    span: "lg:col-span-5",
+  },
+  {
+    key: "reflections",
+    n: "03",
+    title: "Reflections",
+    icon: NotebookPen,
+    lead: "Room to think out loud.",
+    body: "Daily, weekly, and monthly entries with wellness check-ins and gratitude prompts. A quiet PeacePod for the days that need one.",
+    span: "lg:col-span-5",
+  },
+  {
+    key: "analytics",
+    n: "04",
+    title: "Analytics",
+    icon: LineChart,
+    lead: "See where the hours go.",
+    body: "Streaks, completion trends, and time budgets rendered as clean charts, so effort turns into evidence you can actually read.",
+    span: "lg:col-span-7",
+  },
+] as const;
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen relative overflow-hidden">
-      <AnimatedBackground />
+    <div className="relative min-h-screen bg-[#05060c] text-white antialiased">
+      {/* ================= HERO ================= */}
+      <section className="relative isolate min-h-[100svh] overflow-hidden">
+        <AuroraCanvas />
+        {/* grain / grid overlay for texture */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 opacity-[0.35] [background-image:linear-gradient(to_right,rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.04)_1px,transparent_1px)] [background-size:64px_64px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_78%)]"
+        />
 
-      {/* Gradient orbs */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-[30%] -left-[15%] w-[50%] h-[50%] rounded-full bg-purple-600/15 blur-[100px] animate-pulse" />
-        <div className="absolute -bottom-[20%] -right-[15%] w-[45%] h-[45%] rounded-full bg-blue-600/15 blur-[100px] animate-pulse" style={{ animationDelay: "1s" }} />
-        <div className="absolute top-[30%] right-[20%] w-[25%] h-[25%] rounded-full bg-violet-600/10 blur-[80px] animate-pulse" style={{ animationDelay: "2s" }} />
-      </div>
-
-      {/* Header */}
-      <header className="relative z-10 px-6 py-5 flex items-center justify-between max-w-6xl mx-auto">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center glow-sm">
-            <Sparkles className="w-4.5 h-4.5 text-white" />
-          </div>
-          <span className="font-bold text-base tracking-tight">
-            Leadership OS
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/login"
-            className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Sign In
-          </Link>
-          <Link
-            href="/login"
-            className="btn-gradient text-sm font-medium px-4 py-2 rounded-lg inline-flex items-center gap-1.5"
-          >
-            Get Started
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-      </header>
-
-      {/* Hero */}
-      <main className="relative z-10 max-w-6xl mx-auto px-6 pt-24 pb-32">
-        <div className="text-center max-w-3xl mx-auto animate-fade-in">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass border border-purple-500/20 text-purple-300 text-xs font-medium mb-8 animate-pulse-glow">
-            <Zap className="w-3.5 h-3.5" />
-            Built for student leaders who do it all
-          </div>
-          <h1 className="text-5xl md:text-7xl font-bold tracking-tight leading-[1.05]">
-            Your campus impact,
-            <br />
-            <span className="gradient-text">one dashboard.</span>
-          </h1>
-          <p className="mt-6 text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Track tasks, set goals, reflect on growth, and stay on top of every
-            leadership role — all in one beautiful, focused space.
-          </p>
-          <div className="mt-10 flex items-center justify-center gap-4">
+        <div className="relative z-10 flex min-h-[100svh] flex-col">
+          {/* Header */}
+          <header className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-6">
             <Link
-              href="/login"
-              className="btn-gradient px-8 py-3.5 rounded-xl font-semibold text-base inline-flex items-center gap-2.5 shadow-lg shadow-purple-500/25"
+              href="/"
+              className="group inline-flex items-center gap-2.5"
+              aria-label="Leadership OS home"
             >
-              Start for Free
-              <ArrowRight className="w-4.5 h-4.5" />
+              <span className="relative grid h-8 w-8 place-items-center rounded-md border border-white/15 bg-white/5">
+                <span className="h-2.5 w-2.5 rounded-[3px] bg-gradient-to-br from-violet-300 to-teal-200" />
+              </span>
+              <span className="text-[15px] font-medium tracking-tight">
+                Leadership OS
+              </span>
             </Link>
-            <Link
-              href="#features"
-              className="px-6 py-3.5 rounded-xl font-medium text-base text-muted-foreground hover:text-foreground border border-white/[0.1] hover:border-white/[0.2] hover:bg-white/[0.03] transition-all"
-            >
-              See Features
-            </Link>
-          </div>
-        </div>
-
-        {/* Floating UI Preview */}
-        <div className="mt-20 relative mx-auto max-w-4xl">
-          <div className="glass-card rounded-2xl p-1 glow">
-            <div className="rounded-xl bg-[hsl(230,25%,8%)] p-6 border border-white/[0.04]">
-              {/* Mock dashboard */}
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-3 h-3 rounded-full bg-rose-500/80" />
-                <div className="w-3 h-3 rounded-full bg-amber-500/80" />
-                <div className="w-3 h-3 rounded-full bg-emerald-500/80" />
-                <div className="flex-1" />
-                <div className="h-5 w-32 rounded bg-white/[0.06]" />
-              </div>
-              <div className="grid grid-cols-3 gap-4 mb-6">
-                {[
-                  { label: "Tasks Done", value: "12", color: "from-purple-500/20 to-purple-500/5" },
-                  { label: "Goals Active", value: "4", color: "from-blue-500/20 to-blue-500/5" },
-                  { label: "Streak", value: "7d", color: "from-emerald-500/20 to-emerald-500/5" },
-                ].map((stat) => (
-                  <div key={stat.label} className={`rounded-xl bg-gradient-to-br ${stat.color} border border-white/[0.06] p-4`}>
-                    <p className="text-2xl font-bold">{stat.value}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{stat.label}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="rounded-xl border border-white/[0.06] p-4 space-y-3">
-                  <div className="h-4 w-24 rounded bg-white/[0.08]" />
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-purple-400/60" />
-                      <div className="h-3 rounded bg-white/[0.06] flex-1" />
-                    </div>
-                  ))}
-                </div>
-                <div className="rounded-xl border border-white/[0.06] p-4 space-y-3">
-                  <div className="h-4 w-20 rounded bg-white/[0.08]" />
-                  <div className="flex items-end gap-1 h-16">
-                    {[40, 65, 45, 80, 55, 70, 90].map((h, i) => (
-                      <div
-                        key={i}
-                        className="flex-1 rounded-sm bg-gradient-to-t from-purple-500/40 to-blue-500/20"
-                        style={{ height: `${h}%` }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          {/* Glow effect behind the card */}
-          <div className="absolute inset-0 -z-10 blur-3xl opacity-30">
-            <div className="absolute inset-0 bg-gradient-to-r from-purple-500/30 via-violet-500/20 to-blue-500/30 rounded-3xl" />
-          </div>
-        </div>
-
-        {/* Features */}
-        <div id="features" className="mt-32 scroll-mt-20">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold tracking-tight">
-              Everything you need to <span className="gradient-text">lead well</span>
-            </h2>
-            <p className="mt-4 text-muted-foreground text-lg max-w-xl mx-auto">
-              Purpose-built tools for the student who juggles clubs, classes, and everything in between.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
-            <FeatureCard
-              icon={<CheckSquare className="w-5 h-5" />}
-              title="Task Management"
-              description="Kanban boards, priorities, pomodoro timer. See your day at a glance."
-              gradient="from-blue-500 to-cyan-500"
-            />
-            <FeatureCard
-              icon={<Target className="w-5 h-5" />}
-              title="Goal Tracking"
-              description="Set semester goals, track progress with visual bars, celebrate milestones."
-              gradient="from-purple-500 to-pink-500"
-            />
-            <FeatureCard
-              icon={<BookOpen className="w-5 h-5" />}
-              title="Reflections"
-              description="Daily, weekly, monthly journals with wellness check-ins and gratitude prompts."
-              gradient="from-amber-500 to-orange-500"
-            />
-            <FeatureCard
-              icon={<BarChart3 className="w-5 h-5" />}
-              title="Analytics"
-              description="Time budgets, streaks, completion trends. Know where your energy goes."
-              gradient="from-emerald-500 to-teal-500"
-            />
-            <FeatureCard
-              icon={<Calendar className="w-5 h-5" />}
-              title="Calendar"
-              description="Day, week, month views. Color-coded calendars with custom tags."
-              gradient="from-rose-500 to-red-500"
-            />
-            <FeatureCard
-              icon={<Smartphone className="w-5 h-5" />}
-              title="Works Everywhere"
-              description="PWA-ready. Install on your phone for native-like access anywhere, anytime."
-              gradient="from-violet-500 to-indigo-500"
-            />
-          </div>
-        </div>
-
-        {/* Social proof / CTA */}
-        <div className="mt-32 text-center">
-          <div className="glass-card rounded-2xl p-12 max-w-2xl mx-auto relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-blue-500/5" />
-            <div className="relative">
-              <div className="flex items-center justify-center gap-1 mb-6">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <div key={i} className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500/30 to-blue-500/30 border border-purple-500/20 -ml-2 first:ml-0 flex items-center justify-center">
-                    <Users className="w-3.5 h-3.5 text-purple-300" />
-                  </div>
-                ))}
-              </div>
-              <h3 className="text-2xl md:text-3xl font-bold mb-4">
-                Ready to level up your leadership?
-              </h3>
-              <p className="text-muted-foreground mb-8 max-w-md mx-auto">
-                Join student leaders who use Leadership OS to stay organized, grow intentionally, and make an impact.
-              </p>
+            <nav className="flex items-center gap-2 sm:gap-4">
               <Link
                 href="/login"
-                className="btn-gradient px-8 py-3.5 rounded-xl font-semibold text-base inline-flex items-center gap-2.5 shadow-lg shadow-purple-500/25"
+                className="inline-flex min-h-[44px] items-center rounded-lg px-4 text-sm font-medium text-white/70 transition-colors hover:text-white"
               >
-                Get Started — It&apos;s Free
-                <ArrowRight className="w-4.5 h-4.5" />
+                Sign in
               </Link>
+              <Link
+                href="/login"
+                className="group inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-white px-5 text-sm font-semibold text-black transition-all hover:bg-white/90"
+              >
+                Get started
+                <ArrowUpRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+              </Link>
+            </nav>
+          </header>
+
+          {/* Hero body — asymmetric, bottom-weighted composition */}
+          <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col justify-end px-6 pb-16 pt-10 sm:pb-24">
+            <div className="grid grid-cols-1 items-end gap-10 lg:grid-cols-12">
+              <div className="lg:col-span-8">
+                <div className="mb-7 inline-flex items-center gap-2.5 rounded-full border border-white/15 bg-white/5 px-3.5 py-1.5 text-xs font-medium text-white/70 backdrop-blur-sm">
+                  <span className="h-1.5 w-1.5 rounded-full bg-teal-300" />
+                  The operating system for student leaders
+                </div>
+                <AnimatedHeadline
+                  lines={["Run every role", "from one calm", "command center."]}
+                  accentLine={2}
+                />
+              </div>
+
+              <div className="lg:col-span-4 lg:pb-2">
+                <p className="max-w-md text-pretty text-base leading-relaxed text-white/60 sm:text-lg">
+                  Clubs, classes, and commitments pull in every direction.
+                  Leadership OS gathers your tasks, calendar, reflections, and
+                  analytics into a single focused surface.
+                </p>
+                <div className="mt-8 flex flex-wrap items-center gap-4">
+                  <Link
+                    href="/login"
+                    className="group inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-gradient-to-r from-violet-500 to-indigo-500 px-6 text-sm font-semibold text-white shadow-[0_0_40px_-8px_rgba(139,92,246,0.7)] transition-all hover:shadow-[0_0_55px_-6px_rgba(139,92,246,0.9)]"
+                  >
+                    Start free
+                    <ArrowUpRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                  </Link>
+                  <Link
+                    href="#features"
+                    className="inline-flex min-h-[44px] items-center text-sm font-medium text-white/70 underline-offset-4 transition-colors hover:text-white hover:underline"
+                  >
+                    Tour the workspace
+                  </Link>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </main>
+      </section>
 
-      {/* Footer */}
-      <footer className="relative z-10 border-t border-white/[0.06] py-8 px-6">
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
-              <Sparkles className="w-3 h-3 text-white" />
-            </div>
-            <span className="text-sm text-muted-foreground">&copy; 2026 Leadership OS</span>
+      {/* ================= FEATURES ================= */}
+      <section
+        id="features"
+        className="relative border-t border-white/10 bg-[#05060c] px-6 py-24 sm:py-32"
+      >
+        <div className="mx-auto max-w-7xl">
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:items-end">
+            <Reveal className="lg:col-span-8">
+              <p className="text-sm font-medium uppercase tracking-[0.2em] text-teal-300/80">
+                The workspace
+              </p>
+              <h2 className="mt-4 max-w-2xl text-balance text-3xl font-semibold leading-[1.05] tracking-tight sm:text-5xl">
+                Four surfaces, built to work
+                <span className="text-white/40"> the way you already lead.</span>
+              </h2>
+            </Reveal>
+            <Reveal delay={0.1} className="lg:col-span-4">
+              <p className="text-white/55 lg:text-right">
+                No feature bloat. Each area does one job well and hands off
+                cleanly to the next.
+              </p>
+            </Reveal>
           </div>
-          <div className="flex items-center gap-6">
-            <Link href="/privacy" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+
+          <div className="mt-14 grid grid-cols-1 gap-4 lg:grid-cols-12">
+            {features.map((f, i) => {
+              const Icon = f.icon;
+              return (
+                <Reveal
+                  key={f.key}
+                  delay={(i % 2) * 0.08}
+                  className={f.span}
+                >
+                  <article className="group relative flex h-full flex-col justify-between overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02] p-8 transition-colors duration-300 hover:border-white/20 sm:p-10">
+                    {/* accent wash on hover */}
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-violet-500/10 opacity-0 blur-3xl transition-opacity duration-500 group-hover:opacity-100"
+                    />
+                    <div className="relative flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <Icon
+                          className="h-5 w-5 text-teal-300"
+                          aria-hidden="true"
+                        />
+                        <h3 className="text-lg font-semibold tracking-tight">
+                          {f.title}
+                        </h3>
+                      </div>
+                      <span className="font-mono text-xs text-white/30">
+                        {f.n}
+                      </span>
+                    </div>
+                    <div className="relative mt-10">
+                      <p className="text-xl font-medium tracking-tight text-white sm:text-2xl">
+                        {f.lead}
+                      </p>
+                      <p className="mt-3 max-w-md text-sm leading-relaxed text-white/55">
+                        {f.body}
+                      </p>
+                    </div>
+                  </article>
+                </Reveal>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ================= CTA ================= */}
+      <section className="relative overflow-hidden border-t border-white/10 px-6 py-28 sm:py-36">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-1/2 -z-0 h-72 -translate-y-1/2 bg-[radial-gradient(ellipse_at_center,rgba(139,92,246,0.28),transparent_65%)]"
+        />
+        <Reveal className="relative mx-auto max-w-4xl">
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-teal-300/80">
+            Get started
+          </p>
+          <h2 className="mt-5 max-w-3xl text-balance text-4xl font-semibold leading-[1.02] tracking-tight sm:text-6xl">
+            Lead with a little less chaos.
+          </h2>
+          <p className="mt-6 max-w-xl text-lg text-white/60">
+            Create an account and bring every role you carry into one place. It
+            is free to start.
+          </p>
+          <div className="mt-10 flex flex-wrap items-center gap-4">
+            <Link
+              href="/login"
+              className="group inline-flex min-h-[48px] items-center gap-2 rounded-xl bg-white px-7 text-base font-semibold text-black transition-transform hover:-translate-y-0.5"
+            >
+              Get started free
+              <ArrowUpRight className="h-5 w-5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            </Link>
+            <Link
+              href="/login"
+              className="inline-flex min-h-[48px] items-center rounded-xl border border-white/15 px-7 text-base font-medium text-white/80 transition-colors hover:border-white/30 hover:text-white"
+            >
+              Sign in
+            </Link>
+          </div>
+        </Reveal>
+      </section>
+
+      {/* ================= FOOTER ================= */}
+      <footer className="border-t border-white/10 px-6 py-10">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 md:flex-row">
+          <div className="flex items-center gap-2.5">
+            <span className="grid h-6 w-6 place-items-center rounded border border-white/15 bg-white/5">
+              <span className="h-2 w-2 rounded-[2px] bg-gradient-to-br from-violet-300 to-teal-200" />
+            </span>
+            <span className="text-sm text-white/50">© 2026 Leadership OS</span>
+          </div>
+          <div className="flex items-center gap-7">
+            <Link
+              href="/privacy"
+              className="text-sm text-white/50 transition-colors hover:text-white"
+            >
               Privacy
             </Link>
-            <Link href="/terms" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <Link
+              href="/terms"
+              className="text-sm text-white/50 transition-colors hover:text-white"
+            >
               Terms
             </Link>
-            <a href="mailto:studentleadershipdashboard@gmail.com" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <a
+              href="mailto:studentleadershipdashboard@gmail.com"
+              className="text-sm text-white/50 transition-colors hover:text-white"
+            >
               Contact
             </a>
           </div>
         </div>
       </footer>
-    </div>
-  );
-}
-
-function FeatureCard({ icon, title, description, gradient }: { icon: React.ReactNode; title: string; description: string; gradient: string }) {
-  return (
-    <div className="group glass-card rounded-xl p-6 transition-all duration-300 hover:scale-[1.03] hover:bg-white/[0.06] relative overflow-hidden">
-      <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-0 group-hover:opacity-[0.03] transition-opacity duration-300`} />
-      <div className="relative">
-        <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center mb-4 text-white shadow-lg group-hover:scale-110 group-hover:shadow-xl transition-all duration-300`}>
-          {icon}
-        </div>
-        <h3 className="font-semibold text-base mb-2">{title}</h3>
-        <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
-      </div>
     </div>
   );
 }
