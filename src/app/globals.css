@@ -191,6 +191,54 @@
   .animate-float,
   .animate-fade-in,
   .animate-fade-in-up { animation: none !important; }
+
+  /*
+    Reduced-motion static fallback for the cinematic scroll scenes. GSAP is
+    skipped entirely when reduced-motion is on, so every stacked animation layer
+    would otherwise render on top of the others (overlapping captions, all event
+    panels at once). Instead we present each scene as one clean still: show only
+    the first caption, and collapse the multi-layer scenes to a single
+    representative visual. Scenes are not pinned in this mode, so each is a
+    normal 100vh panel the user simply scrolls past.
+  */
+  .sc-caption { opacity: 1 !important; position: static !important; }
+  .sc-caption:not([data-i="0"]) { display: none !important; }
+  .sc-progress-fill { display: none; }
+
+  /* Tasks: show the finished Kanban board, hide shelf + hero cassette */
+  .scene-tasks .tk-shelf,
+  .scene-tasks .tk-hero { display: none !important; }
+  .scene-tasks .tk-board,
+  .scene-tasks .tk-col,
+  .scene-tasks .tk-card { opacity: 1 !important; transform: none !important; }
+
+  /* Calendar: show the composed week, hide the transition ribbon */
+  .scene-calendar .cal-ribbon { display: none !important; }
+  .scene-calendar .cal-frame,
+  .scene-calendar .cal-class,
+  .scene-calendar .cal-event,
+  .scene-calendar .cal-nextup { opacity: 1 !important; transform: none !important; }
+
+  /* Event: collapse the horizontal track, show only the final LIVE card */
+  .scene-event .ev-track { display: none !important; }
+  .scene-event .ev-live-card { opacity: 1 !important; transform: none !important; position: static !important; margin: 0 auto; }
+  .scene-event .ev-live-badge { opacity: 1 !important; transform: none !important; }
+
+  /* Reflect: show the bloom payoff, hide pods/questions/meters */
+  .scene-reflect .rf-pods,
+  .scene-reflect .rf-question,
+  .scene-reflect .rf-wellness { display: none !important; }
+  .scene-reflect .rf-arc,
+  .scene-reflect .rf-flower,
+  .scene-reflect .rf-done { opacity: 1 !important; transform: none !important; }
+
+  /* Dashboard: show the assembled dashboard */
+  .scene-dashboard .db-frame,
+  .scene-dashboard .db-panel-cal,
+  .scene-dashboard .db-panel-tasks,
+  .scene-dashboard .db-panel-chart,
+  .scene-dashboard .db-panel-stats,
+  .scene-dashboard .db-bar { opacity: 1 !important; transform: none !important; }
 }
 @keyframes shimmer {
   0% { background-position: -200% 0; }
