@@ -274,25 +274,57 @@ export default function TasksPage() {
 
         {/* Tape Shelf */}
         <div className="flex-1 flex flex-col items-center justify-center relative z-10">
-          {/* Desktop shelf */}
+          {/* Desktop shelf — each tape "opens" on hover: it lifts, its width
+              grows and the day's cover art slides out from behind the spine,
+              like pulling a cassette off the shelf. */}
           <div className="hidden md:flex items-end justify-center gap-2.5 h-[540px]">
             {TAPES.map((t) => (
               <motion.button
                 key={t.day}
                 onClick={() => openTape(t.index)}
-                whileHover={micro.reduce ? undefined : { y: -10, scale: 1.04 }}
+                initial="rest"
+                whileHover={micro.reduce ? undefined : "open"}
+                whileFocus={micro.reduce ? undefined : "open"}
                 whileTap={micro.reduce ? undefined : { scale: 0.98 }}
+                animate="rest"
                 transition={SPRING}
-                className="intro-spine group relative shrink-0 cursor-pointer hover:z-20 w-[5.75rem]"
+                variants={{
+                  rest: { y: 0, width: "5.75rem" },
+                  open: { y: -18, width: "16rem" },
+                }}
+                className="intro-spine group relative shrink-0 cursor-pointer hover:z-30 h-[540px] overflow-visible"
+                aria-label={`Open ${t.day} tasks`}
               >
-                <div className="relative h-[540px] w-full">
-                  <Image
-                    src={t.spine}
-                    alt={`${t.day} spine`}
-                    fill
-                    className="object-contain object-bottom drop-shadow-md group-hover:drop-shadow-xl transition-all"
-                    sizes="92px"
-                  />
+                <div className="relative h-full w-full">
+                  {/* cover art — hidden behind the spine at rest, slides out on hover */}
+                  <motion.div
+                    className="absolute bottom-0 right-0 h-full"
+                    variants={{
+                      rest: { width: 0, opacity: 0, x: 10 },
+                      open: { width: "10.25rem", opacity: 1, x: 0 },
+                    }}
+                    transition={SPRING}
+                  >
+                    <div className="relative h-full w-[10.25rem]">
+                      <Image
+                        src={t.cover}
+                        alt={`${t.day} cover`}
+                        fill
+                        className="object-contain object-bottom drop-shadow-xl"
+                        sizes="164px"
+                      />
+                    </div>
+                  </motion.div>
+                  {/* spine — always visible on the left edge */}
+                  <div className="absolute bottom-0 left-0 h-full w-[5.75rem]">
+                    <Image
+                      src={t.spine}
+                      alt={`${t.day} spine`}
+                      fill
+                      className="object-contain object-bottom drop-shadow-md group-hover:drop-shadow-xl transition-all"
+                      sizes="92px"
+                    />
+                  </div>
                 </div>
               </motion.button>
             ))}

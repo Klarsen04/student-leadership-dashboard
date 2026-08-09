@@ -7,7 +7,8 @@ import { useTimeBudget } from "@/lib/useTimeBudget";
 import { useCalendars } from "@/lib/useCalendars";
 import { AnimatedCounter } from "@/components/AnimatedCounter";
 import { SeedMascot } from "@/components/reflections/PeaceDecor";
-import { Stagger, StaggerItem } from "@/components/home/motion-kit";
+import { Stagger, StaggerItem, Pop } from "@/components/home/motion-kit";
+import { motion, useReducedMotion } from "motion/react";
 import { Reveal } from "@/components/home/Reveal";
 import { ApppagesBar } from "@/components/home/apppages-helpers";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
@@ -43,6 +44,7 @@ export default function AnalyticsPage() {
   const [budgetValue, setBudgetValue] = useState("");
   const { budgets, setBudget } = useTimeBudget();
   const { calendars } = useCalendars();
+  const reduce = useReducedMotion();
 
   useEffect(() => {
     setLoading(true);
@@ -97,13 +99,19 @@ export default function AnalyticsPage() {
     <div className="min-h-screen -m-4 md:-m-8 p-4 md:p-8 relative z-20" style={{ background: CREAM, color: "#1a1a1a" }}>
       <div className="max-w-5xl mx-auto space-y-8 animate-fade-in">
         <div className="flex items-center gap-3">
-          <SeedMascot className="w-11 h-11 shrink-0 animate-soft-bob" />
-          <div>
+          <Pop>
+            <SeedMascot className="w-11 h-11 shrink-0 animate-soft-bob" />
+          </Pop>
+          <motion.div
+            initial={reduce ? false : { opacity: 0, x: -16 }}
+            animate={reduce ? undefined : { opacity: 1, x: 0 }}
+            transition={{ type: "spring", stiffness: 140, damping: 18, delay: 0.1 }}
+          >
             <h1 className="text-3xl font-bold tracking-tight" style={MARKER}>
               <span style={{ color: GRASS }}>Analytics</span>
             </h1>
             <p className="text-black/55 text-sm mt-0.5">Your weekly overview</p>
-          </div>
+          </motion.div>
         </div>
 
         {/* Streaks & Key Metrics */}

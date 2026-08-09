@@ -1,14 +1,15 @@
 "use client";
 
-// One-time "signature entrance" for the Task Tape SHELF view.
+// "Signature entrance" for the Task Tape SHELF view.
 //
-// Plays once per browser session on first load of the shelf, then never again.
-// The rendered DOM is ALWAYS the finished shelf (final positions) — the
-// entrance is applied purely as GSAP `from` tweens inside useGSAP (a layout
+// Plays EVERY time the shelf mounts (i.e. each time the user navigates to the
+// Tasks tab) — App Router remounts the page component on navigation, resetting
+// playedRef. The rendered DOM is ALWAYS the finished shelf (final positions);
+// the entrance is applied purely as GSAP `from` tweens inside useGSAP (a layout
 // effect), so:
 //   - there is no hydration mismatch (JSX never branches on "did it play"),
 //   - there is no layout shift / flash (initial states are set before paint),
-//   - reduced-motion and repeat visits render the static shelf with NO entrance.
+//   - reduced-motion renders the static shelf with NO entrance.
 //
 // Presentation only: this touches nothing but transform/opacity of decorative
 // shelf elements. Task CRUD, drag, focus timer, day nav, the tape-open 3D
@@ -16,26 +17,6 @@
 import { useRef } from "react";
 import { useReducedMotion } from "motion/react";
 import { gsap, useGSAP } from "@/lib/gsap";
-
-// Session-scoped so it plays once per tab session, then normal.
-const SESSION_KEY = "pp-intro-seen-tasks";
-
-function hasSeen(): boolean {
-  if (typeof window === "undefined") return true;
-  try {
-    return sessionStorage.getItem(SESSION_KEY) === "1";
-  } catch {
-    return true; // storage blocked → behave as "already seen" (no entrance)
-  }
-}
-
-function markSeen() {
-  try {
-    sessionStorage.setItem(SESSION_KEY, "1");
-  } catch {
-    /* ignore */
-  }
-}
 
 /**
  * Choreographs the shelf assembling itself: a soft logo + headline reveal,
@@ -58,7 +39,7 @@ export function useShelfIntro(
   useGSAP(
     () => {
       if (!enabled || reduce) return;
-      if (playedRef.current || hasSeen()) return;
+      if (playedRef.current) return;
       const root = rootRef.current;
       if (!root) return;
 
@@ -70,7 +51,6 @@ export function useShelfIntro(
       if (spines.length === 0) return; // nothing to reveal → skip, stay unseen
 
       playedRef.current = true;
-      markSeen();
 
       const tl = gsap.timeline({
         defaults: { ease: "power3.out" },
