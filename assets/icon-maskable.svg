@@ -1,0 +1,21 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- PeacePod PWA icon (MASKABLE): full-bleed cream so any launcher mask
+       (circle/squircle/rounded) stays on-brand; mascot scaled into the inner
+       ~66% safe zone so it's never clipped. -->
+  <rect width="1024" height="1024" fill="#FFFAF5"/>
+  <g transform="translate(512 512) scale(0.62) translate(-512 -540)">
+    <circle cx="512" cy="540" r="300" fill="#FFB400" opacity="0.14"/>
+    <ellipse cx="512" cy="560" rx="215" ry="245" fill="#FFB400"/>
+    <ellipse cx="470" cy="520" rx="120" ry="150" fill="#FFC63D" opacity="0.55"/>
+    <path d="M512 340 C 512 260 512 230 512 205" stroke="#7FB800" stroke-width="26" stroke-linecap="round" fill="none"/>
+    <path d="M512 268 C 452 250 420 200 432 156 C 486 168 520 214 512 268 Z" fill="#7FB800"/>
+    <path d="M512 300 C 574 288 612 244 606 198 C 548 206 508 250 512 300 Z" fill="#8FCB00"/>
+    <circle cx="452" cy="560" r="26" fill="#2B2B2B"/>
+    <circle cx="572" cy="560" r="26" fill="#2B2B2B"/>
+    <circle cx="460" cy="551" r="8" fill="#FFFAF5"/>
+    <circle cx="580" cy="551" r="8" fill="#FFFAF5"/>
+    <circle cx="405" cy="612" r="26" fill="#FF6B4A" opacity="0.5"/>
+    <circle cx="619" cy="612" r="26" fill="#FF6B4A" opacity="0.5"/>
+    <path d="M470 620 Q 512 664 554 620" stroke="#2B2B2B" stroke-width="18" stroke-linecap="round" fill="none"/>
+  </g>
+</svg>

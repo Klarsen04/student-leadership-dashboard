@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Heart } from "lucide-react";
+import { ArrowRight, Heart, Download, Smartphone } from "lucide-react";
 import { useRef } from "react";
 import { motion, useReducedMotion, useScroll, useTransform } from "motion/react";
 import { SeedMascot } from "@/components/reflections/PeaceDecor";
@@ -45,6 +45,13 @@ function HomeContent() {
           </span>
         </div>
         <nav className="flex items-center gap-2 md:gap-3">
+          <Link
+            href="/download"
+            className="hidden sm:inline-flex items-center gap-1.5 min-h-[44px] px-4 rounded-full text-sm font-semibold text-black/70 hover:text-black hover:bg-black/[0.04] transition-colors"
+            style={MARKER}
+          >
+            <Download className="w-4 h-4" /> Download
+          </Link>
           <Link
             href="/login"
             className="inline-flex items-center min-h-[44px] px-4 rounded-full text-sm font-semibold text-black/70 hover:text-black hover:bg-black/[0.04] transition-colors"
@@ -146,6 +153,39 @@ function HomeContent() {
         </Reveal>
       </section>
 
+      {/* ---- Download the app ---- */}
+      <section id="download" className="relative z-10 px-5 md:px-8 pb-24 max-w-6xl mx-auto">
+        <Reveal>
+          <div className="relative overflow-hidden rounded-[2rem] bg-[#5BC0EB]/10 border border-[#5BC0EB]/20 px-6 py-12 md:py-14 max-w-3xl mx-auto">
+            <div className="flex flex-col md:flex-row items-center gap-6 md:gap-10 text-center md:text-left">
+              <span className="inline-flex h-20 w-20 shrink-0 items-center justify-center rounded-3xl bg-white shadow-sm">
+                <Smartphone className="h-10 w-10 text-[#2792c0]" />
+              </span>
+              <div className="flex-1">
+                <span className="inline-block text-xs font-bold uppercase tracking-wide text-[#2792c0] bg-white/70 rounded-full px-3 py-1">
+                  Free · No app store
+                </span>
+                <h2 className="mt-3 text-3xl md:text-4xl font-bold" style={MARKER}>
+                  Take it with you
+                </h2>
+                <p className="mt-2 text-black/60 max-w-md mx-auto md:mx-0">
+                  Add Leadership OS to your phone&apos;s home screen for a
+                  full-screen app — no download, works on iPhone &amp; Android.
+                </p>
+                <Bounce>
+                  <Link
+                    href="/download"
+                    className="mt-6 inline-flex items-center justify-center gap-2 min-h-[44px] px-7 py-3 rounded-full text-black font-semibold shadow-md transition-[filter] hover:brightness-105 bg-[#5BC0EB]"
+                  >
+                    <Download className="w-5 h-5" /> Get the app
+                  </Link>
+                </Bounce>
+              </div>
+            </div>
+          </div>
+        </Reveal>
+      </section>
+
       {/* ---- Footer ---- */}
       <footer className="relative z-10 border-t border-black/[0.06] py-8 px-5 md:px-8">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
@@ -154,6 +194,9 @@ function HomeContent() {
             <span className="text-sm text-black/50">&copy; 2026 Leadership OS</span>
           </div>
           <div className="flex items-center gap-5">
+            <Link href="/download" className="text-sm text-black/50 hover:text-black transition-colors">
+              Download app
+            </Link>
             <Link href="/privacy" className="text-sm text-black/50 hover:text-black transition-colors">
               Privacy
             </Link>

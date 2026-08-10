@@ -1,9 +1,22 @@
-const CACHE_NAME = "slo-v1";
-const PRECACHE_URLS = ["/dashboard", "/calendar", "/tasks", "/goals", "/people"];
+// Bump this when the precache list or SW logic changes so old caches (which
+// referenced now-removed routes like /goals, /people) are dropped on activate.
+const CACHE_NAME = "slo-v2";
+const PRECACHE_URLS = ["/dashboard", "/calendar", "/tasks", "/reflections"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
+    caches.open(CACHE_NAME).then((cache) =>
+      // Cache each URL independently: cache.addAll() rejects the whole install
+      // if ANY single request fails (404, auth redirect), which previously left
+      // the SW uninstalled. Per-URL allSettled tolerates individual misses.
+      Promise.allSettled(
+        PRECACHE_URLS.map((url) =>
+          fetch(url, { redirect: "follow" }).then((res) => {
+            if (res.ok) return cache.put(url, res);
+          })
+        )
+      )
+    )
   );
   self.skipWaiting();
 });
