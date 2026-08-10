@@ -6,7 +6,6 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
 import { SessionProvider } from "@/components/SessionProvider";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import { InstallPrompt } from "@/components/InstallPrompt";
 import { Toaster } from "sonner";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -54,7 +53,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className={`${inter.className} ${instrumentSerif.variable} ${fredoka.variable}`}>
         <ThemeProvider attribute="class" defaultTheme="light" forcedTheme="light" enableSystem={false} nonce={nonce}>
           <SessionProvider>{children}</SessionProvider>
-          <InstallPrompt />
           <Toaster richColors position="bottom-right" />
         </ThemeProvider>
         <SpeedInsights />

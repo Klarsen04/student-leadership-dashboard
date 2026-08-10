@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 /**
- * Shared PWA install state, used by both the floating InstallPrompt and the
- * dedicated /download page.
+ * Shared PWA install state, used by the dedicated /download page.
  *
  * Platforms differ:
  *  - Android / desktop Chromium fire `beforeinstallprompt`; we capture it and

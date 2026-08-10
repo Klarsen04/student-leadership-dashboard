@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { Download, FileJson, FileSpreadsheet, User, GraduationCap } from "lucide-react";
+import { Download, FileJson, FileSpreadsheet, User, GraduationCap, Smartphone, ArrowRight } from "lucide-react";
 import { useSemester } from "@/lib/useSemester";
 import { toast } from "sonner";
 import { SeedMascot } from "@/components/reflections/PeaceDecor";
@@ -76,6 +77,29 @@ export default function SettingsPage() {
         </PodCard>
         </StaggerItem>
 
+
+        {/* Get the app */}
+        <StaggerItem>
+        <PodCard>
+          <CardTitle icon={<Smartphone className="w-5 h-5 text-[#2792c0]" />}>Get the app</CardTitle>
+          <div className="space-y-4">
+            <p className="text-sm text-black/55">
+              Add Leadership OS to your phone&apos;s home screen for a full-screen
+              app — free, no app store, works on iPhone &amp; Android.
+            </p>
+            <Bounce lift={-2}>
+              <Link
+                href="/download"
+                className="w-full min-h-[44px] inline-flex items-center justify-center gap-2 py-3 rounded-full text-black font-semibold shadow-md hover:brightness-105 transition-[filter] bg-[#5BC0EB]"
+                style={MARKER}
+              >
+                <Download className="w-4 h-4" /> How to install
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            </Bounce>
+          </div>
+        </PodCard>
+        </StaggerItem>
 
         {/* Semester */}
         <StaggerItem>
