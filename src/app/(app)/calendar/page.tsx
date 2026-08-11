@@ -78,6 +78,9 @@ interface ClassBlock {
   startTime: string;
   endTime: string;
   color: string;
+  /** Sub-calendar this class belongs to (matches SubCalendar.name). Optional for
+   *  legacy stored classes; backfilled to "Personal" on load. */
+  calendar?: string;
 }
 
 interface Task {
@@ -237,7 +240,12 @@ function getStoredClasses(): ClassBlock[] {
   if (typeof window === "undefined") return [];
   try {
     const stored = localStorage.getItem(CLASSES_STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [];
+    if (!stored) return [];
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return [];
+    // Backfill `calendar` for classes saved before classes could be assigned to
+    // a sub-calendar; default them to the built-in "Personal" calendar.
+    return parsed.map((c: any) => ({ ...c, calendar: c.calendar || "Personal" }));
   } catch { return []; }
 }
 
@@ -538,6 +546,11 @@ export default function CalendarPage() {
     return true;
   });
 
+  // Classes render on the grid for the selected calendar (all of them under "All").
+  const filteredClasses = selectedCalendar
+    ? classes.filter((c) => (c.calendar || "Personal") === selectedCalendar)
+    : classes;
+
   const deleteEvent = async (id: string) => {
     try {
       const res = await fetch(`/api/calendar?id=${id}`, { method: "DELETE" });
@@ -742,9 +755,10 @@ export default function CalendarPage() {
           )}
         </div>
 
-        {/* Tags */}
-        {currentTags.length > 0 && (
+        {/* Tags / filters — shown for any selected calendar (and for "All" when tags exist) */}
+        {(selectedCalendar || currentTags.length > 0) && (
           <div className="flex gap-2 flex-wrap items-center mt-2">
+            <span className="text-[11px] font-medium text-black/40">Filters:</span>
             {currentTags.map((tag) => (
               <div key={tag} className="group relative">
                 <button onClick={() => setActiveTag(activeTag === tag ? null : tag)} className={`px-2 py-0.5 rounded-full text-[11px] font-medium transition-all ${activeTag === tag ? "bg-black/10 text-black" : "bg-black/5 text-black/50 hover:bg-black/10"}`}>
@@ -755,15 +769,18 @@ export default function CalendarPage() {
                 </button>
               </div>
             ))}
-            {showAddTag ? (
+            {currentTags.length === 0 && !showAddTag && (
+              <span className="text-[11px] text-black/30">No filters yet</span>
+            )}
+            {selectedCalendar && (showAddTag ? (
               <form onSubmit={(e) => { e.preventDefault(); handleAddTag(); }} className="flex items-center gap-1">
-                <input autoFocus value={newTagName} onChange={(e) => setNewTagName(e.target.value)} placeholder="Tag..." className="h-5 w-20 px-2 text-[11px] border border-black/20 rounded-full bg-white text-black focus:outline-none" onBlur={() => { if (!newTagName) setShowAddTag(false); }} />
+                <input autoFocus value={newTagName} onChange={(e) => setNewTagName(e.target.value)} placeholder="Filter..." className="h-5 w-20 px-2 text-[11px] border border-black/20 rounded-full bg-white text-black focus:outline-none" onBlur={() => { if (!newTagName) setShowAddTag(false); }} />
               </form>
             ) : (
               <button onClick={() => setShowAddTag(true)} className="w-5 h-5 rounded-full border border-dashed border-black/20 flex items-center justify-center text-black/40 hover:border-black/40 hover:text-black transition-colors">
                 <Plus className="w-2.5 h-2.5" />
               </button>
-            )}
+            ))}
           </div>
         )}
       </motion.header>
@@ -855,7 +872,7 @@ export default function CalendarPage() {
             <BlurFade key={`engine-ilamy-${view}`} duration={0.3}>
               <CalendarEngineHost
                 events={filteredEvents}
-                classes={classes}
+                classes={filteredClasses}
                 currentDate={currentDate}
                 view={view}
                 getColor={getCalendarColor}
@@ -1013,7 +1030,7 @@ export default function CalendarPage() {
             <DialogTitle>Add Class</DialogTitle>
             <DialogDescription>Add a recurring class to your schedule</DialogDescription>
           </DialogHeader>
-          {showAddClass && <ClassForm onSaved={addClass} onCancel={() => setShowAddClass(false)} />}
+          {showAddClass && <ClassForm calendars={calendars} defaultCalendar={selectedCalendar || undefined} onSaved={addClass} onCancel={() => setShowAddClass(false)} />}
         </DialogContent>
       </Dialog>
 
@@ -1062,7 +1079,7 @@ export default function CalendarPage() {
                 <DialogTitle>Edit class</DialogTitle>
                 <DialogDescription>Update the details for {selectedClass.title}.</DialogDescription>
               </DialogHeader>
-              <ClassForm existing={selectedClass} onSaved={updateClass} onCancel={() => setEditingClass(false)} />
+              <ClassForm existing={selectedClass} calendars={calendars} onSaved={updateClass} onCancel={() => setEditingClass(false)} />
             </>
           ) : selectedClass && (
             <>
@@ -1249,7 +1266,7 @@ function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defa
 }
 
 /* ---------- Class Form ---------- */
-function ClassForm({ onSaved, onCancel, existing }: { onSaved: (cls: ClassBlock) => void; onCancel: () => void; existing?: ClassBlock }) {
+function ClassForm({ onSaved, onCancel, existing, calendars, defaultCalendar }: { onSaved: (cls: ClassBlock) => void; onCancel: () => void; existing?: ClassBlock; calendars: SubCalendar[]; defaultCalendar?: string }) {
   const [form, setForm] = useState({
     title: existing?.title ?? "",
     professor: existing?.professor ?? "",
@@ -1259,6 +1276,7 @@ function ClassForm({ onSaved, onCancel, existing }: { onSaved: (cls: ClassBlock)
     startTime: existing?.startTime ?? "09:00",
     endTime: existing?.endTime ?? "10:15",
     color: existing?.color ?? CLASS_COLORS[0],
+    calendar: existing?.calendar ?? defaultCalendar ?? calendars[0]?.name ?? "Personal",
   });
 
   const DAY_OPTIONS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
@@ -1284,6 +1302,14 @@ function ClassForm({ onSaved, onCancel, existing }: { onSaved: (cls: ClassBlock)
       <div className="grid grid-cols-2 gap-3">
         <div><label className="text-sm font-medium text-black/80">Professor</label><Input value={form.professor} onChange={(e) => setForm({ ...form, professor: e.target.value })} placeholder="Dr. Smith" /></div>
         <div><label className="text-sm font-medium text-black/80">Location</label><Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Room 201" /></div>
+      </div>
+      <div>
+        <label className="text-sm font-medium text-black/80 block mb-1.5">Calendar</label>
+        <select value={form.calendar} onChange={(e) => setForm({ ...form, calendar: e.target.value })} className="w-full h-10 border rounded-md px-3 text-sm bg-white text-black">
+          {calendars.map((c) => (
+            <option key={c.id} value={c.name}>{c.name}</option>
+          ))}
+        </select>
       </div>
       <div>
         <label className="text-sm font-medium text-black/80 block mb-1.5">Days *</label>
