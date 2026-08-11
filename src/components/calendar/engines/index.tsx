@@ -1,39 +1,19 @@
 "use client";
 
-import { lazy, Suspense, type ComponentType } from "react";
-import type { CalendarEngine } from "@/lib/useCalendars";
+import { lazy, Suspense } from "react";
 import type { CalendarEngineProps } from "./types";
 import "./engine-theme.css";
 
 export type { CalendarEngineProps, EngineEvent, EngineClass, EngineView } from "./types";
 
-// Each non-default engine is lazy-loaded so its bundle only ships when a calendar uses it.
-const DayFlowEngine = lazy(() => import("./DayFlowEngine"));
+// iLamy is the app's single calendar engine. It's lazy-loaded so its bundle only
+// ships when the calendar page mounts.
 const IlamyEngine = lazy(() => import("./IlamyEngine"));
-const MinaEngine = lazy(() => import("./MinaEngine"));
-
-// Registry maps an engine id to its renderer. "default" is null — the page renders its
-// own original views (MonthViewCute / TimeGridView) for that case.
-const ENGINE_COMPONENTS: Partial<Record<CalendarEngine, ComponentType<CalendarEngineProps>>> = {
-  dayflow: DayFlowEngine,
-  ilamy: IlamyEngine,
-  mina: MinaEngine,
-};
-
-export function hasEngine(engine: CalendarEngine): boolean {
-  return engine !== "default" && engine in ENGINE_COMPONENTS;
-}
 
 /**
- * Renders the chosen engine. Returns null for "default" (or not-yet-implemented engines)
- * so the caller falls back to the app's built-in views.
+ * Renders the iLamy calendar engine with a loading fallback.
  */
-export function CalendarEngineHost({
-  engine,
-  ...props
-}: { engine: CalendarEngine } & CalendarEngineProps) {
-  const Comp = ENGINE_COMPONENTS[engine];
-  if (!Comp) return null;
+export function CalendarEngineHost(props: CalendarEngineProps) {
   return (
     <Suspense
       fallback={
@@ -42,7 +22,7 @@ export function CalendarEngineHost({
         </div>
       }
     >
-      <Comp {...props} />
+      <IlamyEngine {...props} />
     </Suspense>
   );
 }

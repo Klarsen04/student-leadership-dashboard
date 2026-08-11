@@ -1,6 +1,6 @@
-/* Shared reskin for the grafted calendar engines so they match the app's cute/warm
-   aesthetic: Instrument Serif headings, pastel-purple accent, enforced light theme.
-   Each engine is scoped by the wrapper class its adapter applies. */
+/* Reskin for the iLamy calendar engine so it matches the app's cute/warm
+   aesthetic: Instrument Serif headings, pastel-purple accent, enforced light
+   theme. Scoped by the `.ilamy-scope` wrapper class the adapter applies. */
 
 /* ---- Brand tokens (mirror the app's light theme) ---- */
 :root {
@@ -14,31 +14,8 @@
   --engine-muted: rgba(0, 0, 0, 0.55);
 }
 
-/* ---- DayFlow: override its own --df-color-* custom properties ---- */
-.dayflow-scope {
-  --df-color-primary: var(--engine-accent);
-  --df-color-primary-foreground: #ffffff;
-  --df-color-background: var(--engine-bg);
-  --df-color-foreground: var(--engine-ink);
-  --df-color-card: var(--engine-bg);
-  --df-color-card-foreground: var(--engine-ink);
-  --df-color-border: var(--engine-border);
-  --df-color-muted: var(--engine-surface);
-  --df-color-muted-foreground: var(--engine-muted);
-  --df-color-hover: var(--engine-accent-soft);
-  --df-color-secondary: var(--engine-surface);
-  --df-color-ring: var(--engine-accent);
-}
-.dayflow-scope h1,
-.dayflow-scope h2,
-.dayflow-scope [class*="title"] {
-  font-family: var(--engine-serif);
-}
-
-/* ---- shadcn-token engines (ilamy / full-calendar / mina): pin light tokens + serif ---- */
-.ilamy-scope,
-.fullcal-scope,
-.mina-engine {
+/* ---- iLamy uses shadcn tokens: pin light tokens + serif ---- */
+.ilamy-scope {
   --background: 0 0% 100%;
   --foreground: 260 25% 12%;
   --card: 0 0% 100%;
@@ -57,15 +34,7 @@
   color: var(--engine-ink);
 }
 
-/* Serif headings across the shadcn-token engines */
-.ilamy-scope h1, .ilamy-scope h2, .ilamy-scope h3,
-.fullcal-scope h1, .fullcal-scope h2, .fullcal-scope h3,
-.mina-engine h1, .mina-engine h2, .mina-engine h3 {
+/* Serif headings inside the iLamy calendar */
+.ilamy-scope h1, .ilamy-scope h2, .ilamy-scope h3 {
   font-family: var(--engine-serif);
-}
-
-/* Mina ships a giant demo heading in some layouts; keep any stray huge text in check */
-.mina-engine .text-8xl {
-  font-size: 1.75rem;
-  line-height: 2rem;
 }

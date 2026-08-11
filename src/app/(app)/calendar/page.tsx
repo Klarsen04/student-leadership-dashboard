@@ -14,7 +14,7 @@ import {
   isTomorrow,
   isThisWeek,
 } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, Trash2, Pencil, X, BookOpen, Flame, AlertTriangle, Clock, MapPin, User, GraduationCap, Calendar as CalendarIcon, LayoutGrid } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Trash2, Pencil, X, BookOpen, Flame, AlertTriangle, Clock, MapPin, User, GraduationCap, Calendar as CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,25 +26,22 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { useCalendars, SubCalendar, CALENDAR_ENGINES } from "@/lib/useCalendars";
-import { CalendarEngineHost, hasEngine } from "@/components/calendar/engines";
+import { useCalendars, SubCalendar } from "@/lib/useCalendars";
+import { CalendarEngineHost } from "@/components/calendar/engines";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { BlurFade } from "@/components/ui/blur-fade";
 import { NumberTicker } from "@/components/ui/number-ticker";
 import { ShineBorder } from "@/components/ui/shine-border";
 import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import { ActivityRing } from "@/components/ui/activity-ring";
-import { BorderBeam } from "@/components/ui/border-beam";
 import { AnimatedGradientText } from "@/components/ui/gradient-text";
 import { ClickSpark } from "@/components/ui/click-spark";
 import { ParticlesBg } from "@/components/ui/particles-bg";
-import { CurrentTimeLine } from "@/components/ui/current-time-line";
 import { Marquee } from "@/components/ui/marquee";
 import { NoiseOverlay } from "@/components/ui/noise-overlay";
 import { GlowCard } from "@/components/ui/glow-card";
 import { AuroraGlow } from "@/components/ui/aurora-glow";
 import { MiniCalendar } from "@/components/ui/mini-calendar";
-import { EventHoverCard, EventHoverProvider } from "@/components/ui/event-hover-card";
 import { UnscheduledPanel } from "@/components/ui/unscheduled-panel";
 import { KeyboardShortcuts } from "@/components/ui/keyboard-shortcuts";
 import { TimeTracker } from "@/components/ui/time-tracker";
@@ -371,11 +368,7 @@ export default function CalendarPage() {
   const [selectedClass, setSelectedClass] = useState<ClassBlock | null>(null);
   const [editingClass, setEditingClass] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
-  const { calendars, addCalendar, deleteCalendar, setEngine, getEngineFor, addTag, deleteTag, getCalendarColor, getTagsForCalendar, COLOR_OPTIONS } = useCalendars();
-
-  // The engine to render depends on which sub-calendar is selected ("All" -> default).
-  const activeEngine = getEngineFor(selectedCalendar);
-  const useCustomEngine = hasEngine(activeEngine);
+  const { calendars, addCalendar, deleteCalendar, addTag, deleteTag, getCalendarColor, getTagsForCalendar, COLOR_OPTIONS } = useCalendars();
 
   const handleTimeSlotClick = (date: Date, hour: number) => {
     const startDate = new Date(date);
@@ -749,33 +742,6 @@ export default function CalendarPage() {
           )}
         </div>
 
-        {/* Calendar-type picker — choose which view engine renders the selected calendar */}
-        {selectedCalendar && (() => {
-          const cal = calendars.find((c) => c.name === selectedCalendar);
-          if (!cal) return null;
-          return (
-            <div className="flex gap-2 flex-wrap items-center mt-2">
-              <span className="text-[11px] font-medium text-black/40 flex items-center gap-1">
-                <LayoutGrid className="w-3 h-3" /> Calendar type:
-              </span>
-              {CALENDAR_ENGINES.map((eng) => (
-                <button
-                  key={eng.id}
-                  title={eng.description}
-                  onClick={() => setEngine(cal.id, eng.id)}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
-                    cal.engine === eng.id
-                      ? "bg-[#7FB800] text-black shadow-sm"
-                      : "bg-black/5 text-black/60 hover:bg-black/10"
-                  }`}
-                >
-                  {eng.label}
-                </button>
-              ))}
-            </div>
-          );
-        })()}
-
         {/* Tags */}
         {currentTags.length > 0 && (
           <div className="flex gap-2 flex-wrap items-center mt-2">
@@ -885,10 +851,9 @@ export default function CalendarPage() {
               />
               <p className="mt-2 text-sm">Loading schedule...</p>
             </div>
-          ) : useCustomEngine ? (
-            <BlurFade key={`engine-${activeEngine}-${view}`} duration={0.3}>
+          ) : (
+            <BlurFade key={`engine-ilamy-${view}`} duration={0.3}>
               <CalendarEngineHost
-                engine={activeEngine}
                 events={filteredEvents}
                 classes={classes}
                 currentDate={currentDate}
@@ -930,14 +895,6 @@ export default function CalendarPage() {
                   } catch { toast.error("Failed to delete event"); }
                 }}
               />
-            </BlurFade>
-          ) : view === "month" ? (
-            <BlurFade key={`month-${currentDate.getMonth()}`} duration={0.3}>
-              <MonthViewCute events={filteredEvents} currentDate={currentDate} onEventClick={setSelectedEvent} getColor={getCalendarColor} classes={classes} onClassClick={setSelectedClass} />
-            </BlurFade>
-          ) : (
-            <BlurFade key={`grid-${view}-${currentDate.toISOString()}`} duration={0.3}>
-              <TimeGridView events={filteredEvents} currentDate={currentDate} view={view} onEventClick={setSelectedEvent} getColor={getCalendarColor} classes={classes} onClassClick={setSelectedClass} onTimeSlotClick={handleTimeSlotClick} onEventDrop={handleEventDrop} />
             </BlurFade>
           )}
         </div>
@@ -1214,352 +1171,6 @@ export default function CalendarPage() {
       ]} />
     </div>
     </ClickSpark>
-  );
-}
-
-/* ---------- Collision layout: positions overlapping items side-by-side ---------- */
-interface LayoutItem { id: string; startMin: number; endMin: number; }
-interface LayoutResult { col: number; totalCols: number; }
-
-function computeColumns(items: LayoutItem[]): Map<string, LayoutResult> {
-  const sorted = [...items].sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
-  const result = new Map<string, LayoutResult>();
-  const groups: LayoutItem[][] = [];
-
-  for (const item of sorted) {
-    let placed = false;
-    for (const group of groups) {
-      if (group.every(g => g.endMin <= item.startMin || g.startMin >= item.endMin)) {
-        group.push(item);
-        placed = true;
-        break;
-      }
-    }
-    if (!placed) groups.push([item]);
-  }
-
-  // Assign columns using greedy coloring
-  const columns: LayoutItem[][] = [];
-  for (const item of sorted) {
-    let col = 0;
-    while (col < columns.length) {
-      if (columns[col].every(c => c.endMin <= item.startMin || c.startMin >= item.endMin)) break;
-      col++;
-    }
-    if (col >= columns.length) columns.push([]);
-    columns[col].push(item);
-  }
-
-  // Find connected groups to determine totalCols per item
-  for (const item of sorted) {
-    const col = columns.findIndex(c => c.includes(item));
-    const overlapping = sorted.filter(o => o.startMin < item.endMin && o.endMin > item.startMin);
-    const maxCol = Math.max(...overlapping.map(o => columns.findIndex(c => c.includes(o))));
-    result.set(item.id, { col, totalCols: maxCol + 1 });
-  }
-  return result;
-}
-
-/* ---------- Time Grid View (Day / 3-Day / 5-Day / Week) ---------- */
-function TimeGridView({ events, currentDate, view, onEventClick, getColor, classes, onClassClick, onTimeSlotClick, onEventDrop }: {
-  events: CalendarEvent[]; currentDate: Date; view: View; onEventClick: (e: CalendarEvent) => void; getColor: (category: string) => string; classes: ClassBlock[]; onClassClick: (cls: ClassBlock) => void; onTimeSlotClick: (date: Date, hour: number) => void; onEventDrop?: (eventId: string, newDate: Date, newHour: number) => void;
-}) {
-  const [draggedEventId, setDraggedEventId] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<{ dayIdx: number; hour: number } | null>(null);
-  const dayCount = view === "day" ? 1 : view === "3day" ? 3 : view === "5day" ? 5 : 7;
-  const weekStart = view === "5day" || view === "week" ? startOfWeek(currentDate, { weekStartsOn: 1 }) : currentDate;
-  const days = Array.from({ length: dayCount }, (_, i) => addDays(weekStart, i));
-  const START_HOUR = 6;
-  const END_HOUR = 23;
-  const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => i + START_HOUR);
-  const HOUR_PX = 56;
-  const CLASS_DAY_MAP: Record<string, number[]> = {
-    MWF: [1, 3, 5], TuTh: [2, 4], MW: [1, 3], TuThF: [2, 4, 5],
-    Mon: [1], Tue: [2], Wed: [3], Thu: [4], Fri: [5], Sat: [6], Sun: [0],
-  };
-
-  const getClassesForDay = (day: Date) => {
-    const dow = getDay(day);
-    return classes.filter((cls) => cls.days.some((d) => (CLASS_DAY_MAP[d] || []).includes(dow)));
-  };
-
-  const getEventsForDay = (day: Date) => {
-    return events.filter((e) => isSameDay(new Date(e.startTime), day));
-  };
-
-  const timeToY = (timeStr: string) => {
-    const [h, m] = timeStr.split(":").map(Number);
-    return Math.max(0, ((h - START_HOUR) + m / 60) * HOUR_PX);
-  };
-
-  const hourHeight = (startStr: string, endStr: string) => {
-    const [sh, sm] = startStr.split(":").map(Number);
-    const [eh, em] = endStr.split(":").map(Number);
-    return Math.max(28, ((eh - sh) + (em - sm) / 60) * HOUR_PX);
-  };
-
-  return (
-    <EventHoverProvider>
-    <div className="intro-cal-grid bg-white rounded-2xl shadow-sm border border-black/5 overflow-hidden relative">
-      <BorderBeam size={100} duration={10} colorFrom="#FFB400" colorTo="#7FB800" borderWidth={2} />
-      {/* Day headers */}
-      <div className="grid border-b border-black/5" style={{ gridTemplateColumns: `3.5rem repeat(${dayCount}, 1fr)` }}>
-        <div className="p-2" />
-        {days.map((day) => {
-          const today = isDateToday(day);
-          return (
-            <div key={day.toISOString()} className={`intro-cal-col p-2 text-center border-l border-black/5 ${today ? "bg-blue-50" : ""}`}>
-              <p className="text-[10px] uppercase text-black/40 font-medium">{format(day, "EEE")}</p>
-              <p className={`text-lg font-bold ${today ? "text-blue-600" : "text-black"}`}>{format(day, "d")}</p>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Time grid */}
-      <div className="relative overflow-y-auto max-h-[600px]">
-        <div className="grid" style={{ gridTemplateColumns: `3.5rem repeat(${dayCount}, 1fr)` }}>
-          {/* Hour labels */}
-          <div className="relative">
-            {hours.map((hour) => (
-              <div key={hour} className="h-14 border-b border-black/5 flex items-start justify-end pr-2">
-                <span className="text-[10px] text-black/30 -mt-1.5">{format(new Date(2024, 0, 1, hour), "h a")}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Day columns */}
-          {days.map((day, dayIdx) => {
-            const dayClasses = getClassesForDay(day);
-            const dayEvents = getEventsForDay(day);
-            const gaps = findGaps(classes, day);
-
-            // Compute side-by-side layout for overlapping classes
-            const classItems: LayoutItem[] = dayClasses.map(cls => ({
-              id: cls.id,
-              startMin: getMinutesFromTime(cls.startTime),
-              endMin: getMinutesFromTime(cls.endTime),
-            }));
-            const classLayout = computeColumns(classItems);
-
-            // Compute side-by-side layout for overlapping events
-            const eventItems: LayoutItem[] = dayEvents.map(ev => {
-              const s = new Date(ev.startTime);
-              const e = new Date(ev.endTime);
-              return { id: ev.id, startMin: s.getHours() * 60 + s.getMinutes(), endMin: e.getHours() * 60 + e.getMinutes() };
-            });
-            const eventLayout = computeColumns(eventItems);
-
-            return (
-              <div key={day.toISOString()} className="relative border-l border-black/5">
-                {hours.map((hour) => (
-                  <div
-                    key={hour}
-                    className={`h-14 border-b border-black/5 cursor-pointer transition-colors ${
-                      draggedEventId && dropTarget?.dayIdx === dayIdx && dropTarget?.hour === hour
-                        ? "bg-amber-100 ring-1 ring-inset ring-[#FFB400]"
-                        : "hover:bg-[#FFF3D6]"
-                    }`}
-                    onClick={() => onTimeSlotClick(day, hour)}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      e.dataTransfer.dropEffect = "move";
-                      setDropTarget({ dayIdx, hour });
-                    }}
-                    onDragLeave={() => {
-                      setDropTarget((prev) => prev?.dayIdx === dayIdx && prev?.hour === hour ? null : prev);
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const eventId = e.dataTransfer.getData("text/plain");
-                      if (eventId && onEventDrop) {
-                        onEventDrop(eventId, day, hour);
-                      }
-                      setDraggedEventId(null);
-                      setDropTarget(null);
-                    }}
-                  />
-                ))}
-                {/* Current time indicator */}
-                <CurrentTimeLine startHour={START_HOUR} hourHeight={HOUR_PX} dayCount={dayCount} isToday={isDateToday(day)} />
-                {/* Gap indicators */}
-                {gaps.map((gap, i) => {
-                  const top = ((gap.start / 60) - START_HOUR) * HOUR_PX;
-                  const height = ((gap.end - gap.start) / 60) * HOUR_PX;
-                  if (top < 0) return null;
-                  const gapMins = gap.end - gap.start;
-                  return (
-                    <div
-                      key={`gap-${i}`}
-                      className="absolute left-1 right-1 rounded-lg border border-dashed border-black/10 flex items-center justify-center pointer-events-none"
-                      style={{ top: `${top}px`, height: `${height}px`, background: "repeating-linear-gradient(135deg, transparent, transparent 4px, rgba(0,0,0,0.02) 4px, rgba(0,0,0,0.02) 8px)" }}
-                    >
-                      <span className="text-[9px] text-black/30 font-medium bg-white/80 px-1.5 py-0.5 rounded">
-                        {gapMins >= 60 ? `${Math.floor(gapMins / 60)}h ${gapMins % 60 > 0 ? `${gapMins % 60}m` : ""} free` : `${gapMins}m free`}
-                      </span>
-                    </div>
-                  );
-                })}
-                {/* Class blocks — side-by-side when overlapping, staggered entrance */}
-                {dayClasses.map((cls, idx) => {
-                  const blockHeight = hourHeight(cls.startTime, cls.endTime);
-                  const isCompact = blockHeight < 42;
-                  const layout = classLayout.get(cls.id) || { col: 0, totalCols: 1 };
-                  const widthPct = 100 / layout.totalCols;
-                  const leftPct = layout.col * widthPct;
-                  return (
-                    <EventHoverCard
-                      key={cls.id}
-                      title={cls.title}
-                      timeRange={`${cls.startTime} – ${cls.endTime}`}
-                      location={cls.location}
-                      category="Class"
-                      colorAccent={cls.color}
-                    >
-                      <motion.button
-                        onClick={() => onClassClick(cls)}
-                        className="absolute rounded-lg px-2 py-1 overflow-hidden shadow-sm text-left cursor-pointer hover:shadow-lg transition-shadow border-l-[3px]"
-                        style={{
-                          top: `${timeToY(cls.startTime)}px`,
-                          height: `${blockHeight}px`,
-                          left: `calc(${leftPct}% + 2px)`,
-                          width: `calc(${widthPct}% - 4px)`,
-                          background: `${cls.color}20`,
-                          borderLeftColor: cls.color,
-                        }}
-                        initial={{ opacity: 0, scale: 0.8, y: 10 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        transition={{ duration: 0.4, delay: idx * 0.08, ease: "easeOut" }}
-                        whileHover={{ scale: 1.03, y: -2 }}
-                      >
-                        <p className="text-[11px] font-bold truncate" style={{ color: cls.color }}>{cls.title}</p>
-                        {!isCompact && <p className="text-[9px] text-black/50 truncate">{cls.location}</p>}
-                        {!isCompact && <p className="text-[9px] text-black/40">{cls.startTime} - {cls.endTime}</p>}
-                      </motion.button>
-                    </EventHoverCard>
-                  );
-                })}
-                {/* Event blocks — side-by-side when overlapping */}
-                {dayEvents.map((ev) => {
-                  const start = new Date(ev.startTime);
-                  const end = new Date(ev.endTime);
-                  const startHour = start.getHours() + start.getMinutes() / 60;
-                  const endHour = end.getHours() + end.getMinutes() / 60;
-                  const top = Math.max(0, (startHour - START_HOUR) * HOUR_PX);
-                  const maxY = (END_HOUR - START_HOUR) * HOUR_PX;
-                  const height = Math.min(Math.max(28, (endHour - startHour) * HOUR_PX), maxY - top);
-                  const layout = eventLayout.get(ev.id) || { col: 0, totalCols: 1 };
-                  const widthPct = 100 / layout.totalCols;
-                  const leftPct = layout.col * widthPct;
-                  const colorClass = getColor(ev.category);
-                  const isDraggable = !ev.id.startsWith("task_");
-                  return (
-                    <EventHoverCard
-                      key={ev.id}
-                      title={ev.title}
-                      timeRange={`${format(start, "h:mm a")} – ${format(end, "h:mm a")}`}
-                      location={ev.location}
-                      category={ev.category}
-                    >
-                      <button
-                        draggable={isDraggable}
-                        onDragStart={(e) => {
-                          if (!isDraggable) return;
-                          e.dataTransfer.setData("text/plain", ev.id);
-                          e.dataTransfer.effectAllowed = "move";
-                          setDraggedEventId(ev.id);
-                        }}
-                        onDragEnd={() => {
-                          setDraggedEventId(null);
-                          setDropTarget(null);
-                        }}
-                        onClick={() => onEventClick(ev)}
-                        className={`absolute rounded-lg px-2 py-1 text-left border border-black/5 shadow-sm hover:shadow-md transition-shadow cursor-pointer overflow-hidden ${
-                          draggedEventId === ev.id ? "opacity-50 ring-2 ring-blue-400" : ""
-                        }`}
-                        style={{ top: `${top}px`, height: `${height}px`, left: `calc(${leftPct}% + 2px)`, width: `calc(${widthPct}% - 4px)`, background: "white" }}
-                      >
-                        <div className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-lg ${colorClass}`} />
-                        <p className="text-[11px] font-semibold text-black truncate ml-1.5">{ev.title}</p>
-                        <p className="text-[9px] text-black/50 ml-1.5">{format(start, "h:mm a")}</p>
-                      </button>
-                    </EventHoverCard>
-                  );
-                })}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-    </EventHoverProvider>
-  );
-}
-
-/* ---------- Month View (Cute Seasonal) ---------- */
-function MonthViewCute({ events, currentDate, onEventClick, getColor, classes, onClassClick }: {
-  events: CalendarEvent[]; currentDate: Date; onEventClick: (e: CalendarEvent) => void; getColor: (category: string) => string; classes: ClassBlock[]; onClassClick: (cls: ClassBlock) => void;
-}) {
-  const monthStart = startOfMonth(currentDate);
-  const monthEnd = endOfMonth(currentDate);
-  const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
-  const startPad = (getDay(monthStart) + 6) % 7;
-  const monthIdx = currentDate.getMonth();
-  const theme = MONTH_THEMES[monthIdx];
-
-  return (
-    <div className="intro-cal-grid bg-white rounded-2xl shadow-sm border border-black/5 overflow-hidden">
-      {/* Month header with seasonal decoration */}
-      <div className="p-4 flex items-center justify-between" style={{ background: theme.bg }}>
-        <div className="flex items-center gap-3">
-          <SeasonalIcon month={monthIdx} size={36} />
-          <h2 className="text-xl font-bold text-black" style={{ fontFamily: "var(--font-instrument-serif), Georgia, serif" }}>
-            {format(currentDate, "MMMM yyyy")}
-          </h2>
-        </div>
-        <SeasonalIcon month={monthIdx} size={28} />
-      </div>
-
-      {/* Day of week headers */}
-      <div className="grid grid-cols-7 border-b border-black/5">
-        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-          <div key={d} className="intro-cal-col text-center py-2 text-[11px] font-semibold text-black/40 uppercase tracking-wider">
-            {d}
-          </div>
-        ))}
-      </div>
-
-      {/* Days grid */}
-      <div className="grid grid-cols-7">
-        {Array.from({ length: startPad }).map((_, i) => (
-          <div key={`pad-${i}`} className="h-24 border-b border-r border-black/5" />
-        ))}
-        {days.map((day) => {
-          const dayEvents = events.filter((e) => {
-            const s = new Date(e.startTime);
-            const end = new Date(e.endTime);
-            return isSameDay(s, day) || isSameDay(end, day) || (s < day && end > day);
-          });
-          const today = isDateToday(day);
-          return (
-            <div key={day.toISOString()} className={`h-24 p-1.5 border-b border-r border-black/5 transition-colors hover:bg-black/[0.02] ${today ? "bg-blue-50/50" : ""}`}>
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium mb-0.5 ${today ? "text-white" : "text-black/70"}`} style={today ? { background: theme.accent } : {}}>
-                {format(day, "d")}
-              </div>
-              <div className="space-y-px overflow-hidden">
-                {dayEvents.slice(0, 3).map((ev) => (
-                  <button key={ev.id} onClick={() => onEventClick(ev)} className="flex items-center gap-0.5 w-full text-left rounded px-0.5 hover:bg-black/5 cursor-pointer">
-                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${getColor(ev.category)}`} />
-                    <span className="text-[9px] text-black/70 truncate">{ev.title}</span>
-                  </button>
-                ))}
-                {dayEvents.length > 3 && <span className="text-[8px] text-black/30 px-0.5">+{dayEvents.length - 3}</span>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 
