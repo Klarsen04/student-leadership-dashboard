@@ -14,8 +14,6 @@
   },
   "dependencies": {
     "@aikidosec/firewall": "1.8.35",
-    "@dayflow/plugin-drag": "^1.5.7",
-    "@dayflow/react": "^3.6.7",
     "@gsap/react": "^2.1.2",
     "@hookform/resolvers": "^5.7.1",
     "@ilamy/calendar": "^2.0.3",

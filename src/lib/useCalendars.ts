@@ -2,30 +2,18 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-// Available calendar view engines. "default" = the app's original cute Time-Grid/Month views.
-// Others are grafted open-source engines, reskinned to match the app aesthetic.
-export type CalendarEngine = "default" | "dayflow" | "mina" | "ilamy";
-
-export const CALENDAR_ENGINES: { id: CalendarEngine; label: string; description: string }[] = [
-  { id: "default", label: "Classic", description: "The original cute day/week/month views" },
-  { id: "dayflow", label: "DayFlow", description: "Clean multi-view big-calendar (day/week/month/year)" },
-  { id: "mina", label: "Scheduler", description: "Minimal scheduler with quick event entry" },
-  { id: "ilamy", label: "iLamy", description: "Lightweight, airy calendar grid" },
-];
-
 export interface SubCalendar {
   id: string;
   name: string;
   color: string;
   visible: boolean;
   tags: string[];
-  engine: CalendarEngine;
 }
 
 const STORAGE_KEY = "leadership-os-calendars";
 
 const DEFAULT_CALENDARS: SubCalendar[] = [
-  { id: "default", name: "Personal", color: "bg-blue-500", visible: true, tags: ["Personal"], engine: "default" },
+  { id: "default", name: "Personal", color: "bg-blue-500", visible: true, tags: ["Personal"] },
 ];
 
 const COLOR_OPTIONS = [
@@ -50,12 +38,11 @@ function getStoredCalendars(): SubCalendar[] {
     if (stored) {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Backfill `engine` for calendars saved before the engine picker existed,
-        // and migrate the removed "full-calendar" engine back to the default view.
-        return parsed.map((c: any) => ({
+        // Strip any legacy `engine` field from calendars saved before the app
+        // standardized on the single iLamy calendar view.
+        return parsed.map(({ engine: _engine, ...c }: any) => ({
           ...c,
           tags: c.tags || [],
-          engine: !c.engine || c.engine === "full-calendar" ? "default" : c.engine,
         }));
       }
     }
@@ -75,25 +62,13 @@ export function useCalendars() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
   }, []);
 
-  const addCalendar = useCallback((name: string, color: string, engine: CalendarEngine = "default") => {
+  const addCalendar = useCallback((name: string, color: string) => {
     const current = getStoredCalendars();
     const id = `cal_${Date.now().toString(36)}`;
-    const newCal: SubCalendar = { id, name, color, visible: true, tags: [], engine };
+    const newCal: SubCalendar = { id, name, color, visible: true, tags: [] };
     save([...current, newCal]);
     return newCal;
   }, [save]);
-
-  const setEngine = useCallback((id: string, engine: CalendarEngine) => {
-    const current = getStoredCalendars();
-    save(current.map((c) => c.id === id ? { ...c, engine } : c));
-  }, [save]);
-
-  // Which engine should render for the given selected-calendar NAME (null = "All").
-  const getEngineFor = useCallback((calendarName: string | null): CalendarEngine => {
-    if (!calendarName) return "default";
-    const cal = getStoredCalendars().find((c) => c.name === calendarName);
-    return cal?.engine || "default";
-  }, []);
 
   const deleteCalendar = useCallback((id: string) => {
     const current = getStoredCalendars();
@@ -149,5 +124,5 @@ export function useCalendars() {
     return getStoredCalendars().find((c) => c.name === name);
   }, []);
 
-  return { calendars, addCalendar, deleteCalendar, toggleVisibility, updateCalendar, setEngine, getEngineFor, addTag, deleteTag, getCalendarColor, getTagsForCalendar, getCalendarByName, COLOR_OPTIONS };
+  return { calendars, addCalendar, deleteCalendar, toggleVisibility, updateCalendar, addTag, deleteTag, getCalendarColor, getTagsForCalendar, getCalendarByName, COLOR_OPTIONS };
 }
