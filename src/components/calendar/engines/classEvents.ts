@@ -5,19 +5,31 @@
 
 import type { EngineClass, EngineEvent, EngineView } from "./types";
 
-const DAY_TO_INDEX: Record<string, number> = {
-  sun: 0, sunday: 0,
-  mon: 1, monday: 1,
-  tue: 2, tues: 2, tuesday: 2,
-  wed: 3, weds: 3, wednesday: 3,
-  thu: 4, thur: 4, thurs: 4, thursday: 4,
-  fri: 5, friday: 5,
-  sat: 6, saturday: 6,
+// A `days` entry may be a single weekday ("Mon", "Wednesday") OR a multi-day
+// preset the class form emits ("MWF", "TuTh", "MW"). Map every token the UI can
+// produce to the concrete weekday indices (0 = Sun … 6 = Sat) it represents.
+const DAY_TOKEN_TO_INDICES: Record<string, number[]> = {
+  // Presets from the "Add Class" form
+  mwf: [1, 3, 5],
+  tuth: [2, 4],
+  tth: [2, 4],
+  mw: [1, 3],
+  tuthf: [2, 4, 5],
+  mtwthf: [1, 2, 3, 4, 5],
+  daily: [1, 2, 3, 4, 5],
+  // Single weekdays (long + short spellings)
+  sun: [0], sunday: [0],
+  mon: [1], monday: [1],
+  tue: [2], tues: [2], tuesday: [2],
+  wed: [3], weds: [3], wednesday: [3],
+  thu: [4], thur: [4], thurs: [4], thursday: [4],
+  fri: [5], friday: [5],
+  sat: [6], saturday: [6],
 };
 
-function dayIndex(day: string): number | null {
+function dayIndices(day: string): number[] {
   const key = day.trim().toLowerCase();
-  return key in DAY_TO_INDEX ? DAY_TO_INDEX[key] : null;
+  return DAY_TOKEN_TO_INDICES[key] ?? [];
 }
 
 // How many days around `currentDate` an engine view needs classes expanded for.
@@ -58,7 +70,7 @@ export function classesToEvents(
     const wd = day.getDay();
 
     for (const cls of classes) {
-      const matches = cls.days.some((d) => dayIndex(d) === wd);
+      const matches = cls.days.some((d) => dayIndices(d).includes(wd));
       if (!matches) continue;
 
       const [sh, sm] = cls.startTime.split(":").map(Number);
