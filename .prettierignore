@@ -1,0 +1,10 @@
+node_modules/
+.next/
+.vercel/
+public/
+android/
+ios/
+prisma/dev.db
+package-lock.json
+*.tsbuildinfo
+next-env.d.ts

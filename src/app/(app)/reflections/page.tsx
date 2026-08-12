@@ -654,7 +654,7 @@ function GuidedFlow({
 
       {alreadyLogged && (
         <p className="mt-4 text-xs text-center text-amber-800 bg-amber-100 border border-amber-200 rounded-xl px-3 py-2">
-          You already reflected in this pod's period. Saving will not overwrite it — edit the existing one from the list instead.
+          You already reflected in this pod&apos;s period. Saving will not overwrite it — edit the existing one from the list instead.
         </p>
       )}
 
@@ -695,7 +695,7 @@ function GuidedFlow({
                 <WellnessSlider label="Energy" value={energy} onChange={setEnergy} lowLabel="Drained" highLabel="Energized" />
                 <WellnessSlider label="Mood" value={mood} onChange={setMood} lowLabel="Low" highLabel="Great" />
                 <div>
-                  <label className="text-sm font-semibold text-black/70">One thing you're grateful for 💛</label>
+                  <label className="text-sm font-semibold text-black/70">One thing you&apos;re grateful for 💛</label>
                   <input
                     value={gratitude}
                     onChange={(e) => setGratitude(e.target.value)}

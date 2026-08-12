@@ -1,0 +1,33 @@
+name: Lighthouse
+
+# Advisory perf/accessibility audit. Builds + starts the app, runs Lighthouse
+# CI (see lighthouserc.js). continue-on-error keeps it non-blocking.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lighthouse:
+    name: Lighthouse (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+        env:
+          NEXTAUTH_SECRET: "ci-build-only-not-a-real-secret"
+          NEXTAUTH_URL: "http://localhost:3000"
+      - name: Run Lighthouse CI
+        run: npx --yes @lhci/cli@0.14.x autorun
+        continue-on-error: true
+        env:
+          NEXTAUTH_SECRET: "ci-build-only-not-a-real-secret"
+          NEXTAUTH_URL: "http://localhost:3000"

@@ -1,0 +1,30 @@
+name: Bundle size
+
+# Comments each PR with the gzipped JS/CSS size change vs main. Informational
+# only (no threshold, never blocks). install-script forces dev deps so the
+# build's `npx prisma generate` uses the pinned local prisma.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  size:
+    name: Compressed size
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: preactjs/compressed-size-action@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          install-script: "npm ci --include=dev"
+          build-script: "npm run build"
+          pattern: ".next/static/**/*.{js,css}"
+          strip-hash: "[.-]([a-f0-9]{8,})"
+        env:
+          NEXTAUTH_SECRET: "ci-build-only-not-a-real-secret"
+          NEXTAUTH_URL: "http://localhost:3000"
