@@ -7,6 +7,8 @@
     "build": "npx prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "db:push": "npx prisma db push",
     "db:studio": "npx prisma studio"
   },
@@ -73,7 +75,10 @@
     "@types/node": "^20.11.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^15.5.23",
     "postcss": "^8.4.33",
+    "prettier": "^3.9.6",
     "prisma": "^5.22.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.3.3"
