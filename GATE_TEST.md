@@ -5,3 +5,5 @@ Throwaway PR to verify the deploy-preview label gate. Safe to close/delete.
 Commit 2: pushed to an already-open, unlabeled PR — expect Ignored again.
 
 Commit 3: new script now active. No label -> expect Ignored.
+
+Commit 4: label now present -> expect a real preview BUILD.
