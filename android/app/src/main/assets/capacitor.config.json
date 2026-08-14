@@ -1,0 +1,31 @@
+{
+	"appId": "app.peacepod.leadership",
+	"appName": "Student Leadership",
+	"webDir": "mobile/www",
+	"server": {
+		"url": "https://student-leadership-dashboard.vercel.app",
+		"cleartext": false
+	},
+	"backgroundColor": "#fffaf5",
+	"ios": {
+		"contentInset": "always",
+		"backgroundColor": "#fffaf5"
+	},
+	"android": {
+		"backgroundColor": "#fffaf5"
+	},
+	"plugins": {
+		"SplashScreen": {
+			"launchShowDuration": 1200,
+			"backgroundColor": "#fffaf5",
+			"showSpinner": false,
+			"androidScaleType": "CENTER_CROP",
+			"splashFullScreen": true,
+			"splashImmersive": false
+		},
+		"StatusBar": {
+			"style": "DARK",
+			"backgroundColor": "#fffaf5"
+		}
+	}
+}
