@@ -49,6 +49,7 @@ model User {
   reflections   Reflection[]
   tasks         Task[]
   checkIns      DailyCheckIn[]
+  plannerInk    PlannerInk[]
 }
 
 model VerificationToken {
@@ -142,6 +143,21 @@ model DailyCheckIn {
   createdAt DateTime @default(now())
 
   @@unique([userId, date])
+}
+
+// Handwritten ink strokes for one page of the /planner notebook. Strokes are
+// stored as vector JSON (normalised 0..1 coordinates) so they re-render crisply
+// at any zoom and stay small on the wire.
+model PlannerInk {
+  id        String   @id @default(cuid())
+  page      Int // 1-based planner page number
+  strokes   String // JSON array of {tool,color,size,points:[[x,y,pressure],...]}
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, page])
 }
 
 model Reflection {
