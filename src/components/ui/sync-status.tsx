@@ -48,7 +48,6 @@ export function SyncStatus({
   className,
 }: SyncStatusProps) {
   const config = stateConfig[state];
-  const Icon = config.icon;
 
   const tooltipText = lastSyncTime
     ? `Last synced ${formatDistanceToNow(lastSyncTime, { addSuffix: true })}`

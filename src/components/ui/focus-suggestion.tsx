@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, X, Clock, Zap } from "lucide-react";
+import { Sparkles, X, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface FocusSuggestionProps {
@@ -21,8 +21,6 @@ export function FocusSuggestion({ gaps, className, onScheduleFocus }: FocusSugge
   , gaps[0]);
 
   const durationMins = bestGap.end - bestGap.start;
-  const startHour = Math.floor(bestGap.start / 60);
-  const startMin = bestGap.start % 60;
   const formatTime = (mins: number) => {
     const h = Math.floor(mins / 60);
     const m = mins % 60;

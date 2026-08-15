@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Calendar, BookOpen, Plus, ArrowRight, Command } from "lucide-react";
+import { Search, ArrowRight, Command } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface CommandItem {
