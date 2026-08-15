@@ -58,6 +58,22 @@ export async function POST() {
       await prisma.$executeRawUnsafe(`ALTER TABLE "Reflection" ADD COLUMN "questions" TEXT`);
     }
 
+    // PlannerInk: handwritten strokes for the /planner notebook pages.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "PlannerInk" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "page" INTEGER NOT NULL,
+        "strokes" TEXT NOT NULL,
+        "userId" TEXT NOT NULL,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL,
+        CONSTRAINT "PlannerInk_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "PlannerInk_userId_page_key" ON "PlannerInk"("userId", "page")
+    `);
+
     return NextResponse.json({ success: true, message: "Migration complete" });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

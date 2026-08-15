@@ -17,6 +17,7 @@ import {
   X,
   Settings,
   Sparkles,
+  NotebookPen,
 } from "lucide-react";
 import { useState } from "react";
 import { NotificationBell } from "@/components/Notifications";
@@ -26,6 +27,7 @@ const nav = [
   { href: "/calendar", label: "Calendar", icon: Calendar },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/reflections", label: "Reflections", icon: BookOpen },
+  { href: "/planner", label: "Planner", icon: NotebookPen },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

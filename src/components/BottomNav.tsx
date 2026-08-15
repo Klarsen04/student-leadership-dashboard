@@ -15,6 +15,7 @@ import {
   BarChart3,
   Settings,
   LogOut,
+  NotebookPen,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
@@ -26,6 +27,7 @@ const primaryNav = [
 
 const moreNav = [
   { href: "/calendar", label: "Calendar", icon: Calendar },
+  { href: "/planner", label: "Planner", icon: NotebookPen },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
