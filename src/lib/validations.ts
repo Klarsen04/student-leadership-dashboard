@@ -9,6 +9,7 @@ export const createTaskSchema = z.object({
   hours: z.number().min(0).max(24).nullable().optional(),
   recurrence: z.enum(["daily", "weekdays", "weekly", "biweekly", "monthly"]).nullable().optional(),
   recurrenceEnd: z.string().nullable().optional(),
+  parentTaskId: z.string().nullable().optional(),
 });
 
 export const updateTaskSchema = z.object({
@@ -22,6 +23,7 @@ export const updateTaskSchema = z.object({
   hours: z.number().min(0).max(24).nullable().optional(),
   recurrence: z.enum(["daily", "weekdays", "weekly", "biweekly", "monthly"]).nullable().optional(),
   recurrenceEnd: z.string().nullable().optional(),
+  parentTaskId: z.string().nullable().optional(),
 });
 
 export const createPersonSchema = z.object({

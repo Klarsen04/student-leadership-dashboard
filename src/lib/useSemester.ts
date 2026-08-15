@@ -8,6 +8,9 @@ interface SemesterInfo {
   totalWeeks: number;
   isExamPeriod: boolean;
   daysUntilEnd: number;
+  /** Where "now" sits relative to the term: before it starts / during / after. */
+  phase: "before" | "active" | "after";
+  daysUntilStart: number;
 }
 
 const STORAGE_KEY = "leadership-os-semester";
@@ -65,13 +68,26 @@ export function useSemester() {
     const end = new Date(config.endDate);
     const examStart = new Date(config.examStart);
 
-    const totalMs = end.getTime() - start.getTime();
-    const elapsedMs = now.getTime() - start.getTime();
-    const totalWeeks = Math.ceil(totalMs / (7 * 24 * 60 * 60 * 1000));
-    const weekNumber = Math.max(1, Math.min(totalWeeks, Math.ceil(elapsedMs / (7 * 24 * 60 * 60 * 1000))));
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const totalWeeks = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / WEEK_MS));
 
-    const daysUntilEnd = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
-    const isExamPeriod = now >= examStart && now <= end;
+    // Phase: before the term begins, during it, or after it ends. Week counting
+    // is only meaningful while active — before the start we show a countdown, not
+    // "Week 1", so a dashboard opened over the break isn't misleading.
+    const phase: "before" | "active" | "after" =
+      now < start ? "before" : now > end ? "after" : "active";
+
+    const weekNumber =
+      phase === "active"
+        ? Math.max(1, Math.min(totalWeeks, Math.ceil((now.getTime() - start.getTime()) / WEEK_MS)))
+        : phase === "after"
+        ? totalWeeks
+        : 0;
+
+    const daysUntilStart = Math.max(0, Math.ceil((start.getTime() - now.getTime()) / DAY_MS));
+    const daysUntilEnd = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / DAY_MS));
+    const isExamPeriod = phase === "active" && now >= examStart;
 
     return {
       name: config.name,
@@ -79,6 +95,8 @@ export function useSemester() {
       totalWeeks,
       isExamPeriod,
       daysUntilEnd,
+      phase,
+      daysUntilStart,
     };
   };
 

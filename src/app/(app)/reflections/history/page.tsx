@@ -7,9 +7,10 @@ import { ArrowLeft, ChevronDown, ChevronRight, BookOpen, Sparkles } from "lucide
 import { getPod } from "@/lib/pods";
 import {
   type Reflection,
+  type GroupMode,
   formatReflectionDate,
   parseQA,
-  groupReflectionsByMonth,
+  groupReflections,
 } from "@/lib/reflections";
 import { SeedMascot } from "@/components/reflections/PeaceDecor";
 
@@ -24,6 +25,7 @@ const GRASS = "#7FB800";
 export default function ReflectionHistoryPage() {
   const [reflections, setReflections] = useState<Reflection[]>([]);
   const [loading, setLoading] = useState(true);
+  const [groupMode, setGroupMode] = useState<GroupMode>("month");
 
   useEffect(() => {
     (async () => {
@@ -39,7 +41,7 @@ export default function ReflectionHistoryPage() {
     })();
   }, []);
 
-  const groups = useMemo(() => groupReflectionsByMonth(reflections), [reflections]);
+  const groups = useMemo(() => groupReflections(reflections, groupMode), [reflections, groupMode]);
 
   return (
     <div className="peace-surface min-h-screen -m-4 md:-m-8 p-4 md:p-8 relative z-20">
@@ -54,11 +56,11 @@ export default function ReflectionHistoryPage() {
             <ArrowLeft className="w-4 h-4" /> Reflect
           </Link>
           <Link
-            href="/"
+            href="/reflections"
             className="inline-flex items-center gap-1.5 text-black/50 text-sm font-medium hover:text-black transition-colors"
             style={MARKER}
           >
-            Home
+            Reflections home
           </Link>
         </div>
 
@@ -73,6 +75,22 @@ export default function ReflectionHistoryPage() {
             </p>
           </div>
         </div>
+
+        {!loading && reflections.length > 0 && (
+          <div className="flex items-center gap-1.5 mb-4">
+            <span className="text-xs text-black/40 mr-1" style={MARKER}>Group by</span>
+            {(["day", "week", "month"] as GroupMode[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => setGroupMode(m)}
+                className={`px-3 py-1 rounded-full text-xs font-semibold capitalize transition-colors ${groupMode === m ? "bg-[#7FB800] text-black" : "bg-black/5 text-black/55 hover:bg-black/10"}`}
+                style={MARKER}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        )}
 
         {loading ? (
           <div className="space-y-3">
