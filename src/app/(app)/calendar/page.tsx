@@ -78,6 +78,10 @@ interface ClassBlock {
   /** Sub-calendar this class belongs to (matches SubCalendar.name). Optional for
    *  legacy stored classes; backfilled to "Personal" on load. */
   calendar?: string;
+  /** Optional term window: the class only repeats on/after startDate and on/before
+   *  endDate (yyyy-MM-dd). Empty = repeats indefinitely (legacy behaviour). */
+  startDate?: string;
+  endDate?: string;
 }
 
 interface Task {
@@ -95,6 +99,27 @@ const CLASS_COLORS = [
   "#c4b5fd", "#67e8f9", "#fca5a5", "#bef264", "#d8b4fe",
 ];
 
+// 15-min time options (HH:mm) for the event time dropdowns — a <datalist> so the
+// field is both a pick-from-list dropdown and freely typeable.
+const TIME_OPTIONS = Array.from({ length: 24 * 4 }, (_, i) => {
+  const h = Math.floor(i / 4);
+  const m = (i % 4) * 15;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+});
+
+
+// Hex for each sub-calendar tailwind color class, so a filter chip can be filled
+// with its calendar's colour (not just a dot) the way the "Next Up" banner is.
+const CAL_HEX: Record<string, string> = {
+  "bg-blue-500": "#3b82f6", "bg-green-500": "#22c55e", "bg-purple-500": "#a855f7",
+  "bg-orange-500": "#f97316", "bg-pink-500": "#ec4899", "bg-cyan-500": "#06b6d4",
+  "bg-red-500": "#ef4444", "bg-amber-500": "#f59e0b", "bg-indigo-500": "#6366f1",
+  "bg-teal-500": "#14b8a6", "bg-rose-500": "#f43f5e", "bg-emerald-500": "#10b981",
+  "bg-gray-400": "#9ca3af",
+};
+function calHex(color: string): string {
+  return CAL_HEX[color] || "#6b7280";
+}
 
 function getMinutesFromTime(time: string): number {
   const [h, m] = time.split(":").map(Number);
@@ -311,7 +336,8 @@ export default function CalendarPage() {
   const [selectedClass, setSelectedClass] = useState<ClassBlock | null>(null);
   const [editingClass, setEditingClass] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
-  const { calendars, addCalendar, deleteCalendar, addTag, deleteTag, getCalendarColor, getTagsForCalendar, COLOR_OPTIONS } = useCalendars();
+  const { calendars, addCalendar, deleteCalendar, updateCalendar, addTag, deleteTag, getCalendarColor, getTagsForCalendar, COLOR_OPTIONS } = useCalendars();
+  const [editCal, setEditCal] = useState<SubCalendar | null>(null);
 
   const handleTimeSlotClick = (date: Date, hour: number) => {
     const startDate = new Date(date);
@@ -654,19 +680,26 @@ export default function CalendarPage() {
           <button onClick={() => setSelectedCalendar(null)} className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${selectedCalendar === null ? "bg-black text-white" : "bg-black/5 text-black/60 hover:bg-black/10"}`}>
             All
           </button>
-          {calendars.map((cal) => (
-            <div key={cal.id} className="group relative flex items-center">
-              <button onClick={() => setSelectedCalendar(selectedCalendar === cal.name ? null : cal.name)} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${selectedCalendar === cal.name ? "ring-2 ring-offset-1 ring-black/20 bg-white text-black shadow-sm" : "bg-black/5 text-black/60 hover:bg-black/10"}`}>
-                <div className={`w-2 h-2 rounded-full ${cal.color}`} />
-                {cal.name}
-              </button>
-              {cal.id !== "default" && (
-                <button onClick={(e) => { e.stopPropagation(); setCalendarToDelete(cal.id); }} className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-400 text-white items-center justify-center text-[8px] hidden group-hover:flex hover:bg-red-500 transition-colors">
-                  <X className="w-2.5 h-2.5" />
+          {calendars.map((cal) => {
+            const active = selectedCalendar === cal.name;
+            const hex = calHex(cal.color);
+            return (
+              <div key={cal.id} className="group relative flex items-center">
+                <button
+                  onClick={() => setSelectedCalendar(active ? null : cal.name)}
+                  className="px-2.5 py-1 rounded-full text-xs font-semibold transition-all hover:-translate-y-px"
+                  style={active
+                    ? { background: hex, color: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.18)" }
+                    : { background: `${hex}22`, color: "#1a1a1a" }}
+                >
+                  {cal.name}
                 </button>
-              )}
-            </div>
-          ))}
+                <button onClick={(e) => { e.stopPropagation(); setEditCal(cal); }} className="ml-0.5 w-4 h-4 rounded-full text-black/40 hover:text-black items-center justify-center hidden group-hover:flex transition-colors" title="Edit calendar">
+                  <Pencil className="w-2.5 h-2.5" />
+                </button>
+              </div>
+            );
+          })}
           {showAddCalendar ? (
             <div className="flex items-center gap-1">
               <input autoFocus value={newCalName} onChange={(e) => setNewCalName(e.target.value)} placeholder="Name..." className="h-6 w-24 px-2 text-xs border border-black/20 rounded-full bg-white text-black focus:outline-none focus:ring-1 focus:ring-black/30" onKeyDown={(e) => { if (e.key === "Enter" && newCalName.trim()) { addCalendar(newCalName.trim(), newCalColor); setNewCalName(""); setShowAddCalendar(false); } }} onBlur={() => { if (!newCalName) setShowAddCalendar(false); }} />
@@ -803,6 +836,9 @@ export default function CalendarPage() {
                 classes={filteredClasses}
                 currentDate={currentDate}
                 view={view}
+                calendars={calendars}
+                defaultCalendar={selectedCalendar || undefined}
+                onInlineSaved={fetchEvents}
                 getColor={getCalendarColor}
                 onEventClick={setSelectedEvent}
                 onClassClick={setSelectedClass}
@@ -1067,6 +1103,20 @@ export default function CalendarPage() {
         </DialogContent>
       </Dialog>
 
+      {editCal && (
+        <EditCalendarDialog
+          key={editCal.id}
+          cal={editCal}
+          calendars={calendars}
+          colorOptions={COLOR_OPTIONS}
+          updateCalendar={updateCalendar}
+          addTag={addTag}
+          deleteTag={deleteTag}
+          onRequestDelete={() => { const id = editCal.id; setEditCal(null); setCalendarToDelete(id); }}
+          onClose={() => setEditCal(null)}
+        />
+      )}
+
       <ConfirmDialog open={!!tagToDelete} onOpenChange={(open) => !open && setTagToDelete(null)} title={`Delete "${tagToDelete}" tag?`} description="Events with this tag will have it removed." onConfirm={confirmDeleteTag} />
       <ConfirmDialog open={!!calendarToDelete} onOpenChange={(open) => !open && setCalendarToDelete(null)} title="Delete this calendar?" description="This will delete the calendar and its events." onConfirm={async () => {
         if (calendarToDelete) {
@@ -1119,6 +1169,77 @@ export default function CalendarPage() {
 }
 
 /* ---------- Event Form ---------- */
+/* ---------- Edit Calendar (rename / recolor / manage filters) ---------- */
+function EditCalendarDialog({ cal, calendars, colorOptions, updateCalendar, addTag, deleteTag, onRequestDelete, onClose }: {
+  cal: SubCalendar;
+  calendars: SubCalendar[];
+  colorOptions: string[];
+  updateCalendar: (id: string, updates: Partial<Pick<SubCalendar, "name" | "color">>) => void;
+  addTag: (calendarId: string, tag: string) => boolean;
+  deleteTag: (calendarId: string, tag: string) => void;
+  onRequestDelete: () => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(cal.name);
+  const [color, setColor] = useState(cal.color);
+  const [newTag, setNewTag] = useState("");
+  // Live tags for this calendar (reflects add/delete immediately).
+  const current = calendars.find((c) => c.id === cal.id) ?? cal;
+
+  const save = () => {
+    if (!name.trim()) return;
+    updateCalendar(cal.id, { name: name.trim(), color });
+    onClose();
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit calendar</DialogTitle>
+          <DialogDescription>Rename it, change its colour, and manage its filters.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium text-black/80">Name</label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-black/80 block mb-1.5">Colour</label>
+            <div className="flex gap-2 flex-wrap">
+              {colorOptions.map((c) => (
+                <button key={c} type="button" onClick={() => setColor(c)} className={`w-7 h-7 rounded-full ${c} transition-all ${color === c ? "ring-2 ring-offset-2 ring-black/30 scale-110" : "hover:scale-105"}`} />
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-sm font-medium text-black/80 block mb-1.5">Filters (tags)</label>
+            <div className="flex gap-1.5 flex-wrap mb-2">
+              {current.tags.length === 0 && <span className="text-xs text-black/35">No filters yet</span>}
+              {current.tags.map((t) => (
+                <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/5 text-xs text-black/70">
+                  {t}
+                  <button type="button" onClick={() => deleteTag(cal.id, t)} className="text-black/30 hover:text-red-500"><X className="w-3 h-3" /></button>
+                </span>
+              ))}
+            </div>
+            <form onSubmit={(e) => { e.preventDefault(); if (newTag.trim()) { addTag(cal.id, newTag.trim()); setNewTag(""); } }} className="flex gap-2">
+              <Input value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="Add a filter..." className="h-9" />
+              <Button type="submit" variant="outline" disabled={!newTag.trim()}>Add</Button>
+            </form>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button onClick={save} className="flex-1" disabled={!name.trim()}>Save</Button>
+            {cal.id !== "default" && (
+              <Button type="button" variant="outline" onClick={onRequestDelete} className="text-red-500 hover:text-red-600">Delete</Button>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defaultEndTime }: { calendars: SubCalendar[]; event?: CalendarEvent; onSaved: () => void; onCancel: () => void; defaultStartTime?: string; defaultEndTime?: string }) {
   const [form, setForm] = useState({
     title: event?.title || "",
@@ -1151,15 +1272,43 @@ function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defa
     finally { setSaving(false); }
   };
 
+  // Start/End are "yyyy-MM-dd'T'HH:mm". Update just the date or the time half,
+  // keeping the other; default a missing half so the combined value stays valid.
+  const updatePart = (field: "startTime" | "endTime", part: "date" | "time", value: string) => {
+    setForm((f) => {
+      const cur = f[field];
+      let d = cur ? cur.slice(0, 10) : "";
+      let t = cur ? cur.slice(11, 16) : "";
+      if (part === "date") d = value; else t = value;
+      if (!d && !t) return { ...f, [field]: "" };
+      if (!d) d = format(new Date(), "yyyy-MM-dd");
+      if (!t) t = "09:00";
+      return { ...f, [field]: `${d}T${t}` };
+    });
+  };
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <datalist id="cal-time-options">{TIME_OPTIONS.map((t) => <option key={t} value={t} />)}</datalist>
       <div>
         <label className="text-sm font-medium text-black/80">Title *</label>
         <Input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <div><label className="text-sm font-medium text-black/80">Start *</label><Input type="datetime-local" required value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></div>
-        <div><label className="text-sm font-medium text-black/80">End *</label><Input type="datetime-local" required value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></div>
+        <div>
+          <label className="text-sm font-medium text-black/80">Start *</label>
+          <div className="flex gap-2">
+            <Input type="date" required value={form.startTime.slice(0, 10)} onChange={(e) => updatePart("startTime", "date", e.target.value)} className="flex-1" />
+            <Input list="cal-time-options" required placeholder="HH:MM" value={form.startTime.slice(11, 16)} onChange={(e) => updatePart("startTime", "time", e.target.value)} className="w-[5.5rem]" />
+          </div>
+        </div>
+        <div>
+          <label className="text-sm font-medium text-black/80">End *</label>
+          <div className="flex gap-2">
+            <Input type="date" required value={form.endTime.slice(0, 10)} onChange={(e) => updatePart("endTime", "date", e.target.value)} className="flex-1" />
+            <Input list="cal-time-options" required placeholder="HH:MM" value={form.endTime.slice(11, 16)} onChange={(e) => updatePart("endTime", "time", e.target.value)} className="w-[5.5rem]" />
+          </div>
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -1204,6 +1353,8 @@ function ClassForm({ onSaved, onCancel, existing, calendars, defaultCalendar }: 
     endTime: existing?.endTime ?? "10:15",
     color: existing?.color ?? CLASS_COLORS[0],
     calendar: existing?.calendar ?? defaultCalendar ?? calendars[0]?.name ?? "Personal",
+    startDate: existing?.startDate ?? "",
+    endDate: existing?.endDate ?? "",
   });
 
   const DAY_OPTIONS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
@@ -1255,6 +1406,11 @@ function ClassForm({ onSaved, onCancel, existing, calendars, defaultCalendar }: 
           ))}
         </div>
       </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><label className="text-sm font-medium text-black/80">Repeats from</label><Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></div>
+        <div><label className="text-sm font-medium text-black/80">Until</label><Input type="date" value={form.endDate} min={form.startDate || undefined} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></div>
+      </div>
+      <p className="text-xs text-black/40 -mt-2">Leave the dates empty to repeat every week with no end.</p>
       <div className="grid grid-cols-3 gap-3">
         <div><label className="text-sm font-medium text-black/80">Start</label><Input type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></div>
         <div><label className="text-sm font-medium text-black/80">End</label><Input type="time" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></div>

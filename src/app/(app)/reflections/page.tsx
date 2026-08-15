@@ -19,7 +19,7 @@ import {
 import { toast } from "sonner";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import confetti from "canvas-confetti";
-import { PODS, getPod, type Pod } from "@/lib/pods";
+import { PODS, getPod, pickQuestions, type Pod } from "@/lib/pods";
 import { INSPIRE_STORIES, type InspireStory } from "@/lib/inspireStories";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { RainbowArc, HeartFlower, SeedMascot } from "@/components/reflections/PeaceDecor";
@@ -130,7 +130,10 @@ export default function ReflectionsPage() {
   const usedPods = useMemo(() => usedPodIds(reflections), [reflections]);
 
   const startPod = (pod: Pod) => {
-    setActivePod(pod);
+    // Rotate through the pod's wider question bank based on how many times it's
+    // been done, so repeat reflections get a fresh trio (reused once cycled).
+    const priorCount = reflections.filter((r) => r.podId === pod.id).length;
+    setActivePod({ ...pod, questions: pickQuestions(pod, priorCount) });
     setScreen("flow");
   };
 

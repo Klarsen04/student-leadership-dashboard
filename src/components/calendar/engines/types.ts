@@ -23,6 +23,9 @@ export interface EngineClass {
   startTime: string; // "HH:mm"
   endTime: string;   // "HH:mm"
   color: string;
+  /** Optional term window (yyyy-MM-dd); empty = repeats indefinitely. */
+  startDate?: string;
+  endDate?: string;
 }
 
 export type EngineView = "day" | "5day" | "week" | "month";
@@ -44,4 +47,10 @@ export interface CalendarEngineProps {
   onEventCreate?: (event: Partial<EngineEvent>) => void | Promise<void>;
   onEventUpdate?: (event: EngineEvent) => void | Promise<void>;
   onEventDelete?: (eventId: string) => void | Promise<void>;
+  /** Sub-calendars (name + tags) for the inline create form's dropdowns. */
+  calendars?: { id?: string; name: string; tags?: string[] }[];
+  /** Default sub-calendar for a new inline event. */
+  defaultCalendar?: string;
+  /** Called after the inline create form persists an event, so the page refetches. */
+  onInlineSaved?: () => void;
 }

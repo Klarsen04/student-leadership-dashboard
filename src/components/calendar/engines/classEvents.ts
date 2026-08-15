@@ -72,6 +72,11 @@ export function classesToEvents(
       const matches = cls.days.some((d) => dayIndices(d).includes(wd));
       if (!matches) continue;
 
+      // Respect the optional term window: skip days outside [startDate, endDate].
+      const dayKey = day.toISOString().slice(0, 10);
+      if (cls.startDate && dayKey < cls.startDate) continue;
+      if (cls.endDate && dayKey > cls.endDate) continue;
+
       const [sh, sm] = cls.startTime.split(":").map(Number);
       const [eh, em] = cls.endTime.split(":").map(Number);
       if (Number.isNaN(sh) || Number.isNaN(eh)) continue;

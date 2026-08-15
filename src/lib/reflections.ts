@@ -47,17 +47,40 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-/** Group reflections by calendar month (newest first). */
-export function groupReflectionsByMonth(reflections: Reflection[]) {
-  const map: Record<string, Reflection[]> = {};
+export type GroupMode = "day" | "week" | "month";
+
+/**
+ * Group reflections by day, week, or month (newest group first). Returns a
+ * `month` label field regardless of mode so the history UI renders any grouping
+ * the same way.
+ */
+export function groupReflections(reflections: Reflection[], mode: GroupMode) {
+  const map: Record<string, { label: string; items: Reflection[] }> = {};
   for (const ref of reflections) {
-    const key = ref.date.slice(0, 7); // YYYY-MM
-    (map[key] ||= []).push(ref);
+    const d = new Date(ref.date);
+    let key: string;
+    let label: string;
+    if (mode === "day") {
+      key = ref.date.slice(0, 10); // YYYY-MM-DD
+      label = format(d, "EEEE, MMMM d, yyyy");
+    } else if (mode === "week") {
+      const ws = startOfWeek(d, { weekStartsOn: 0 });
+      const we = endOfWeek(d, { weekStartsOn: 0 });
+      key = format(ws, "yyyy-MM-dd");
+      label = `Week of ${format(ws, "MMM d")} – ${format(we, "MMM d, yyyy")}`;
+    } else {
+      key = ref.date.slice(0, 7); // YYYY-MM
+      const [year, month] = key.split("-");
+      label = `${MONTH_NAMES[parseInt(month) - 1]} ${year}`;
+    }
+    (map[key] ||= { label, items: [] }).items.push(ref);
   }
   return Object.entries(map)
     .sort(([a], [b]) => b.localeCompare(a))
-    .map(([key, items]) => {
-      const [year, month] = key.split("-");
-      return { key, month: `${MONTH_NAMES[parseInt(month) - 1]} ${year}`, items };
-    });
+    .map(([key, { label, items }]) => ({ key, month: label, items }));
+}
+
+/** Group reflections by calendar month (newest first). */
+export function groupReflectionsByMonth(reflections: Reflection[]) {
+  return groupReflections(reflections, "month");
 }
