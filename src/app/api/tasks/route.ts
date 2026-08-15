@@ -84,6 +84,7 @@ export async function POST(req: NextRequest) {
       hours: data.hours ?? null,
       recurrence: data.recurrence || null,
       recurrenceEnd: data.recurrenceEnd ? new Date(data.recurrenceEnd) : null,
+      parentTaskId: data.parentTaskId || null,
       userId: session.user.id,
     },
   });
@@ -114,6 +115,7 @@ export async function PATCH(req: NextRequest) {
   if (fields.hours !== undefined) data.hours = fields.hours;
   if (fields.recurrence !== undefined) data.recurrence = fields.recurrence;
   if (fields.recurrenceEnd !== undefined) data.recurrenceEnd = fields.recurrenceEnd ? new Date(fields.recurrenceEnd) : null;
+  if (fields.parentTaskId !== undefined) data.parentTaskId = fields.parentTaskId || null;
 
   const task = await prisma.task.update({
     where: { id, userId: session.user.id },
@@ -133,6 +135,8 @@ export async function DELETE(req: NextRequest) {
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
 
+  // Remove any subtasks of this task first so none are left orphaned.
+  await prisma.task.deleteMany({ where: { parentTaskId: id, userId: session.user.id } });
   await prisma.task.delete({ where: { id, userId: session.user.id } });
   return NextResponse.json({ success: true });
 }

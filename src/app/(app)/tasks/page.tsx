@@ -33,6 +33,7 @@ interface Task {
   role: string;
   hours: number | null;
   recurrence: string | null;
+  parentTaskId?: string | null;
   createdAt: string;
 }
 
@@ -130,13 +131,22 @@ export default function TasksPage() {
   const selectedDateStr = format(selectedDate, "yyyy-MM-dd");
   const today = format(new Date(), "yyyy-MM-dd");
 
+  // Subtasks are shown nested under their parent card, never as standalone
+  // column cards, so every top-level filter skips tasks with a parentTaskId.
+  const subtasksByParent = tasks.reduce<Record<string, Task[]>>((m, t) => {
+    if (t.parentTaskId) (m[t.parentTaskId] ||= []).push(t);
+    return m;
+  }, {});
+
   const overdueTasks = tasks.filter((t) => {
+    if (t.parentTaskId) return false;
     if (t.status === "done") return false;
     if (!t.dueDate) return false;
     return t.dueDate.slice(0, 10) < today;
   });
 
   const dayTasks = tasks.filter((t) => {
+    if (t.parentTaskId) return false;
     if (!t.dueDate) return true;
     const taskDate = t.dueDate.slice(0, 10);
     if (taskDate < today && t.status !== "done") return false;
@@ -186,6 +196,17 @@ export default function TasksPage() {
       setAddingTo(null);
       toast.success("Task added");
     } catch { toast.error("Failed to add task"); }
+  };
+
+  const addSubtask = async (parent: Task, title: string) => {
+    if (!title.trim()) return;
+    const dueDate = parent.dueDate ? parent.dueDate.slice(0, 10) : format(selectedDate, "yyyy-MM-dd");
+    try {
+      const res = await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: title.trim(), parentTaskId: parent.id, dueDate, priority: "medium" }) });
+      if (!res.ok) throw new Error();
+      const st = await res.json();
+      setTasks((prev) => [...prev, { ...st, createdAt: st.createdAt || new Date().toISOString() }]);
+    } catch { toast.error("Failed to add subtask"); }
   };
 
   const deleteTask = async () => {
@@ -577,9 +598,9 @@ export default function TasksPage() {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 flex-1">
-            <KanbanColumn title="To Do" count={todoTasks.length} accent={`rgb(${tape.accentRgb})`} dotColor="bg-black/60" tasks={todoTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={(t) => { setFocusTask(t); setFocusRunning(true); if (t.status === "todo") updateTaskStatus(t, "in_progress"); }} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="todo" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} onOpenDetails={() => { setFullAddTitle(newTaskTitle); setShowFullAdd(true); }} nextStatus="in_progress" prevStatus={null} />
-            <KanbanColumn title="In Progress" count={inProgressTasks.length} accent={`rgb(${tape.accentRgb})`} dotColor="bg-amber-500" tasks={inProgressTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={(t) => { setFocusTask(t); setFocusRunning(true); }} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="in_progress" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} onOpenDetails={() => { setFullAddTitle(newTaskTitle); setShowFullAdd(true); }} nextStatus="done" prevStatus="todo" />
-            <KanbanColumn title="Done" count={doneTasks.length} accent={`rgb(${tape.accentRgb})`} dotColor="bg-green-500" tasks={doneTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={() => {}} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="done" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} onOpenDetails={() => { setFullAddTitle(newTaskTitle); setShowFullAdd(true); }} nextStatus={null} prevStatus="in_progress" />
+            <KanbanColumn title="To Do" count={todoTasks.length} accent={`rgb(${tape.accentRgb})`} dotColor="bg-black/60" tasks={todoTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={(t) => { setFocusTask(t); setFocusRunning(true); if (t.status === "todo") updateTaskStatus(t, "in_progress"); }} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="todo" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} onOpenDetails={() => { setFullAddTitle(newTaskTitle); setShowFullAdd(true); }} subtasksByParent={subtasksByParent} onAddSubtask={addSubtask} nextStatus="in_progress" prevStatus={null} />
+            <KanbanColumn title="In Progress" count={inProgressTasks.length} accent={`rgb(${tape.accentRgb})`} dotColor="bg-amber-500" tasks={inProgressTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={(t) => { setFocusTask(t); setFocusRunning(true); }} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="in_progress" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} onOpenDetails={() => { setFullAddTitle(newTaskTitle); setShowFullAdd(true); }} subtasksByParent={subtasksByParent} onAddSubtask={addSubtask} nextStatus="done" prevStatus="todo" />
+            <KanbanColumn title="Done" count={doneTasks.length} accent={`rgb(${tape.accentRgb})`} dotColor="bg-green-500" tasks={doneTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={() => {}} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="done" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} onOpenDetails={() => { setFullAddTitle(newTaskTitle); setShowFullAdd(true); }} subtasksByParent={subtasksByParent} onAddSubtask={addSubtask} nextStatus={null} prevStatus="in_progress" />
           </div>
 
           <div className="mt-4 p-5 rounded-3xl bg-white border border-black/5 shadow-sm relative">
@@ -616,7 +637,7 @@ export default function TasksPage() {
 // Sub-components
 // ========================
 
-function KanbanColumn({ title, count, accent, dotColor, tasks, onStatusChange, onPriorityChange, onDelete, onEdit, onDrop, onStartFocus, addingTo, setAddingTo, columnStatus, newTaskTitle, setNewTaskTitle, onQuickAdd, onOpenDetails, nextStatus, prevStatus }: { title: string; count: number; accent: string; dotColor: string; tasks: Task[]; onStatusChange: (t: Task, s: string) => void; onPriorityChange: (t: Task, p: string) => void; onDelete: (t: Task) => void; onEdit: (t: Task) => void; onDrop: (id: string, s: string) => void; onStartFocus: (t: Task) => void; addingTo: string | null; setAddingTo: (s: string | null) => void; columnStatus: string; newTaskTitle: string; setNewTaskTitle: (s: string) => void; onQuickAdd: (s: string) => void; onOpenDetails: () => void; nextStatus: string | null; prevStatus: string | null; }) {
+function KanbanColumn({ title, count, accent, dotColor, tasks, onStatusChange, onPriorityChange, onDelete, onEdit, onDrop, onStartFocus, addingTo, setAddingTo, columnStatus, newTaskTitle, setNewTaskTitle, onQuickAdd, onOpenDetails, subtasksByParent, onAddSubtask, nextStatus, prevStatus }: { title: string; count: number; accent: string; dotColor: string; tasks: Task[]; onStatusChange: (t: Task, s: string) => void; onPriorityChange: (t: Task, p: string) => void; onDelete: (t: Task) => void; onEdit: (t: Task) => void; onDrop: (id: string, s: string) => void; onStartFocus: (t: Task) => void; addingTo: string | null; setAddingTo: (s: string | null) => void; columnStatus: string; newTaskTitle: string; setNewTaskTitle: (s: string) => void; onQuickAdd: (s: string) => void; onOpenDetails: () => void; subtasksByParent: Record<string, Task[]>; onAddSubtask: (parent: Task, title: string) => void; nextStatus: string | null; prevStatus: string | null; }) {
   const [dragOver, setDragOver] = useState(false);
   const micro = useMicro();
   return (
@@ -634,7 +655,7 @@ function KanbanColumn({ title, count, accent, dotColor, tasks, onStatusChange, o
             <p className="text-[11px] text-black/25 text-center py-6">{columnStatus === "todo" ? "No tasks yet" : columnStatus === "in_progress" ? "No tape playing" : "Nothing finished yet"}</p>
           )}
           {tasks.map((task) => (
-            <TaskCard key={task.id} task={task} accent={accent} onStatusChange={onStatusChange} onPriorityChange={onPriorityChange} onDelete={onDelete} onEdit={onEdit} onStartFocus={onStartFocus} nextStatus={nextStatus} prevStatus={prevStatus} />
+            <TaskCard key={task.id} task={task} accent={accent} onStatusChange={onStatusChange} onPriorityChange={onPriorityChange} onDelete={onDelete} onEdit={onEdit} onStartFocus={onStartFocus} subtasks={subtasksByParent[task.id] || []} onAddSubtask={onAddSubtask} nextStatus={nextStatus} prevStatus={prevStatus} />
           ))}
         </div>
         {addingTo === columnStatus ? (
@@ -653,10 +674,13 @@ function KanbanColumn({ title, count, accent, dotColor, tasks, onStatusChange, o
   );
 }
 
-function TaskCard({ task, accent, onStatusChange, onDelete, onPriorityChange, onEdit, onStartFocus, nextStatus, prevStatus }: { task: Task; accent: string; onStatusChange: (t: Task, s: string) => void; onDelete: (t: Task) => void; onPriorityChange: (t: Task, p: string) => void; onEdit: (t: Task) => void; onStartFocus: (t: Task) => void; nextStatus: string | null; prevStatus: string | null; }) {
+function TaskCard({ task, accent, onStatusChange, onDelete, onPriorityChange, onEdit, onStartFocus, subtasks, onAddSubtask, nextStatus, prevStatus }: { task: Task; accent: string; onStatusChange: (t: Task, s: string) => void; onDelete: (t: Task) => void; onPriorityChange: (t: Task, p: string) => void; onEdit: (t: Task) => void; onStartFocus: (t: Task) => void; subtasks: Task[]; onAddSubtask: (parent: Task, title: string) => void; nextStatus: string | null; prevStatus: string | null; }) {
   const isDone = task.status === "done";
   const priorities = ["low", "medium", "high", "urgent"];
   const micro = useMicro();
+  const [subInput, setSubInput] = useState("");
+  const [addingSub, setAddingSub] = useState(false);
+  const doneSubs = subtasks.filter((s) => s.status === "done").length;
   return (
     <motion.div
       initial={micro.reduce ? false : { opacity: 0, y: 8 }}
@@ -688,6 +712,37 @@ function TaskCard({ task, accent, onStatusChange, onDelete, onPriorityChange, on
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Subtasks — nested under the parent with a done/total count. */}
+      <div className="mt-2 space-y-1">
+        {subtasks.length > 0 && (
+          <>
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold text-black/40 uppercase tracking-wide border-t border-black/5 pt-2">
+              Subtasks <span className="text-black/30">{doneSubs}/{subtasks.length}</span>
+            </div>
+            {subtasks.map((st) => {
+              const stDone = st.status === "done";
+              return (
+                <div key={st.id} className="flex items-center gap-1.5 group/sub">
+                  <button onClick={() => onStatusChange(st, stDone ? "todo" : "done")} className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${stDone ? "border-transparent bg-green-500 text-white" : "border-black/25 hover:border-black/50"}`}>
+                    {stDone && <Check className="w-2.5 h-2.5" />}
+                  </button>
+                  <span className={`text-xs flex-1 truncate ${stDone ? "line-through text-black/35" : "text-black/70"}`}>{st.title}</span>
+                  <button onClick={() => onDelete(st)} className="w-5 h-5 flex items-center justify-center rounded-full text-black/30 hover:text-red-500 opacity-0 group-hover/sub:opacity-100 transition-opacity"><Trash2 className="w-3 h-3" /></button>
+                </div>
+              );
+            })}
+          </>
+        )}
+        {addingSub ? (
+          <form onSubmit={(e) => { e.preventDefault(); onAddSubtask(task, subInput); setSubInput(""); setAddingSub(false); }} className="flex items-center gap-1.5 pt-0.5">
+            <Input autoFocus value={subInput} onChange={(e) => setSubInput(e.target.value)} placeholder="Subtask..." className="h-7 text-xs bg-white border-black/10 text-black placeholder:text-black/40" onBlur={() => { if (!subInput) setAddingSub(false); }} />
+            <Button size="sm" type="submit" className="h-7 px-1.5" disabled={!subInput.trim()}><Plus className="w-3 h-3" /></Button>
+          </form>
+        ) : (
+          <button onClick={() => setAddingSub(true)} className={`flex items-center gap-1 text-[11px] text-black/35 hover:text-black/60 transition-all ${subtasks.length === 0 ? "opacity-0 group-hover:opacity-100" : "pt-0.5"}`}><Plus className="w-3 h-3" /> Subtask</button>
+        )}
       </div>
     </motion.div>
   );
