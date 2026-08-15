@@ -168,7 +168,15 @@ export default function DashboardPage() {
           </div>
           <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border border-black/10 bg-white text-xs ${intro ? "intro-chip" : ""}`}>
             <span className="text-black/50">{semester.name}</span>
-            <span className="font-semibold text-black/70">Week {semester.weekNumber}/{semester.totalWeeks}</span>
+            <span className="font-semibold text-black/70">
+              {semester.phase === "before"
+                ? semester.daysUntilStart <= 14
+                  ? `Starts in ${semester.daysUntilStart} day${semester.daysUntilStart === 1 ? "" : "s"}`
+                  : `Starts in ${Math.ceil(semester.daysUntilStart / 7)} weeks`
+                : semester.phase === "after"
+                ? "Term complete"
+                : `Week ${semester.weekNumber}/${semester.totalWeeks}`}
+            </span>
             {semester.isExamPeriod && (
               <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">EXAMS</span>
             )}
