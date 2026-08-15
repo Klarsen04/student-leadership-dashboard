@@ -78,6 +78,10 @@ interface ClassBlock {
   /** Sub-calendar this class belongs to (matches SubCalendar.name). Optional for
    *  legacy stored classes; backfilled to "Personal" on load. */
   calendar?: string;
+  /** Optional term window: the class only repeats on/after startDate and on/before
+   *  endDate (yyyy-MM-dd). Empty = repeats indefinitely (legacy behaviour). */
+  startDate?: string;
+  endDate?: string;
 }
 
 interface Task {
@@ -94,6 +98,14 @@ const CLASS_COLORS = [
   "#f9a8d4", "#a5b4fc", "#86efac", "#fcd34d", "#fdba74",
   "#c4b5fd", "#67e8f9", "#fca5a5", "#bef264", "#d8b4fe",
 ];
+
+// 15-min time options (HH:mm) for the event time dropdowns — a <datalist> so the
+// field is both a pick-from-list dropdown and freely typeable.
+const TIME_OPTIONS = Array.from({ length: 24 * 4 }, (_, i) => {
+  const h = Math.floor(i / 4);
+  const m = (i % 4) * 15;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+});
 
 
 function getMinutesFromTime(time: string): number {
@@ -1151,15 +1163,43 @@ function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defa
     finally { setSaving(false); }
   };
 
+  // Start/End are "yyyy-MM-dd'T'HH:mm". Update just the date or the time half,
+  // keeping the other; default a missing half so the combined value stays valid.
+  const updatePart = (field: "startTime" | "endTime", part: "date" | "time", value: string) => {
+    setForm((f) => {
+      const cur = f[field];
+      let d = cur ? cur.slice(0, 10) : "";
+      let t = cur ? cur.slice(11, 16) : "";
+      if (part === "date") d = value; else t = value;
+      if (!d && !t) return { ...f, [field]: "" };
+      if (!d) d = format(new Date(), "yyyy-MM-dd");
+      if (!t) t = "09:00";
+      return { ...f, [field]: `${d}T${t}` };
+    });
+  };
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <datalist id="cal-time-options">{TIME_OPTIONS.map((t) => <option key={t} value={t} />)}</datalist>
       <div>
         <label className="text-sm font-medium text-black/80">Title *</label>
         <Input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <div><label className="text-sm font-medium text-black/80">Start *</label><Input type="datetime-local" required value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></div>
-        <div><label className="text-sm font-medium text-black/80">End *</label><Input type="datetime-local" required value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></div>
+        <div>
+          <label className="text-sm font-medium text-black/80">Start *</label>
+          <div className="flex gap-2">
+            <Input type="date" required value={form.startTime.slice(0, 10)} onChange={(e) => updatePart("startTime", "date", e.target.value)} className="flex-1" />
+            <Input list="cal-time-options" required placeholder="HH:MM" value={form.startTime.slice(11, 16)} onChange={(e) => updatePart("startTime", "time", e.target.value)} className="w-[5.5rem]" />
+          </div>
+        </div>
+        <div>
+          <label className="text-sm font-medium text-black/80">End *</label>
+          <div className="flex gap-2">
+            <Input type="date" required value={form.endTime.slice(0, 10)} onChange={(e) => updatePart("endTime", "date", e.target.value)} className="flex-1" />
+            <Input list="cal-time-options" required placeholder="HH:MM" value={form.endTime.slice(11, 16)} onChange={(e) => updatePart("endTime", "time", e.target.value)} className="w-[5.5rem]" />
+          </div>
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -1204,6 +1244,8 @@ function ClassForm({ onSaved, onCancel, existing, calendars, defaultCalendar }: 
     endTime: existing?.endTime ?? "10:15",
     color: existing?.color ?? CLASS_COLORS[0],
     calendar: existing?.calendar ?? defaultCalendar ?? calendars[0]?.name ?? "Personal",
+    startDate: existing?.startDate ?? "",
+    endDate: existing?.endDate ?? "",
   });
 
   const DAY_OPTIONS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
@@ -1255,6 +1297,11 @@ function ClassForm({ onSaved, onCancel, existing, calendars, defaultCalendar }: 
           ))}
         </div>
       </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><label className="text-sm font-medium text-black/80">Repeats from</label><Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></div>
+        <div><label className="text-sm font-medium text-black/80">Until</label><Input type="date" value={form.endDate} min={form.startDate || undefined} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></div>
+      </div>
+      <p className="text-xs text-black/40 -mt-2">Leave the dates empty to repeat every week with no end.</p>
       <div className="grid grid-cols-3 gap-3">
         <div><label className="text-sm font-medium text-black/80">Start</label><Input type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></div>
         <div><label className="text-sm font-medium text-black/80">End</label><Input type="time" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></div>

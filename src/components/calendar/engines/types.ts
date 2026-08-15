@@ -23,6 +23,9 @@ export interface EngineClass {
   startTime: string; // "HH:mm"
   endTime: string;   // "HH:mm"
   color: string;
+  /** Optional term window (yyyy-MM-dd); empty = repeats indefinitely. */
+  startDate?: string;
+  endDate?: string;
 }
 
 export type EngineView = "day" | "5day" | "week" | "month";

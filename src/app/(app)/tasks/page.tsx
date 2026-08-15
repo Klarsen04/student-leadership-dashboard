@@ -653,6 +653,14 @@ function KanbanColumn({ title, count, accent, dotColor, tasks, onStatusChange, o
   );
 }
 
+// Left-edge accent colour per priority, so priority reads at a glance on the board.
+const PRIORITY_HEX: Record<string, string> = {
+  urgent: "#ef4444", // red-500
+  high: "#f97316",   // orange-500
+  medium: "#eab308", // yellow-500
+  low: "#9ca3af",    // gray-400
+};
+
 function TaskCard({ task, accent, onStatusChange, onDelete, onPriorityChange, onEdit, onStartFocus, nextStatus, prevStatus }: { task: Task; accent: string; onStatusChange: (t: Task, s: string) => void; onDelete: (t: Task) => void; onPriorityChange: (t: Task, p: string) => void; onEdit: (t: Task) => void; onStartFocus: (t: Task) => void; nextStatus: string | null; prevStatus: string | null; }) {
   const isDone = task.status === "done";
   const priorities = ["low", "medium", "high", "urgent"];
@@ -666,8 +674,14 @@ function TaskCard({ task, accent, onStatusChange, onDelete, onPriorityChange, on
       draggable
       // Native HTML5 drag — motion's onDragStart is gesture-typed, so cast to preserve the existing drag payload.
       onDragStart={(e: unknown) => { const ev = e as React.DragEvent<HTMLDivElement>; ev.dataTransfer.setData("text/plain", task.id); ev.dataTransfer.effectAllowed = "move"; }}
-      className={`group relative p-3 rounded-xl bg-white border border-black/5 shadow-sm hover:shadow-md hover:bg-white cursor-grab active:cursor-grabbing ${isDone ? "opacity-50" : ""}`}
+      className={`group relative overflow-hidden p-3 pl-4 rounded-xl bg-white border border-black/5 shadow-sm hover:shadow-md hover:bg-white cursor-grab active:cursor-grabbing ${isDone ? "opacity-50" : ""}`}
     >
+      {/* Priority accent bar — colour-coded so priority is obvious on the board. */}
+      <span
+        className="absolute left-0 top-0 bottom-0 w-1.5"
+        style={{ background: PRIORITY_HEX[task.priority] || PRIORITY_HEX.medium }}
+        aria-hidden="true"
+      />
       <div className="flex items-start gap-2">
         <button onClick={() => { if (isDone && prevStatus) onStatusChange(task, prevStatus); else if (nextStatus) onStatusChange(task, nextStatus); }} className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isDone ? "border-transparent text-white" : "border-black/25 hover:border-black/50"}`} style={isDone ? { backgroundColor: accent } : undefined}>
           {isDone && <Check className="w-3 h-3" />}
