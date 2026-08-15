@@ -38,7 +38,6 @@ function dayIndices(day: string): number[] {
 function rangeDays(view: EngineView): number {
   switch (view) {
     case "day":
-    case "3day":
     case "5day":
     case "week":
       return 14; // current + neighbouring week

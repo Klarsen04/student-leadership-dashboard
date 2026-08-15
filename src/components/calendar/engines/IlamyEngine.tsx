@@ -8,7 +8,6 @@ import { classesToEvents, isClassEvent, findClassForEventId } from "./classEvent
 // ilamy views: month | week | day (+ its own). Map the app's granular views onto these.
 const VIEW_MAP: Record<EngineView, string> = {
   day: "day",
-  "3day": "day",
   "5day": "week",
   week: "week",
   month: "month",

@@ -88,7 +88,7 @@ interface Task {
   priority: string;
 }
 
-type View = "day" | "3day" | "5day" | "week" | "month";
+type View = "day" | "5day" | "week" | "month";
 
 const CLASS_COLORS = [
   "#f9a8d4", "#a5b4fc", "#86efac", "#fcd34d", "#fdba74",
@@ -385,9 +385,6 @@ export default function CalendarPage() {
     if (view === "day") {
       start = new Date(currentDate); start.setHours(0, 0, 0, 0);
       end = new Date(currentDate); end.setHours(23, 59, 59, 999);
-    } else if (view === "3day") {
-      start = new Date(currentDate); start.setHours(0, 0, 0, 0);
-      end = addDays(start, 3);
     } else if (view === "5day") {
       start = startOfWeek(currentDate, { weekStartsOn: 1 });
       end = addDays(start, 5);
@@ -436,7 +433,6 @@ export default function CalendarPage() {
 
   const navigate = (dir: number) => {
     if (view === "day") setCurrentDate(addDays(currentDate, dir));
-    else if (view === "3day") setCurrentDate(addDays(currentDate, dir * 3));
     else if (view === "5day") setCurrentDate(addDays(currentDate, dir * 5));
     else if (view === "week") setCurrentDate(addDays(currentDate, dir * 7));
     else setCurrentDate(addDays(currentDate, dir * 30));
@@ -579,7 +575,6 @@ export default function CalendarPage() {
               </h1>
               <p className="text-black/50 text-sm">
                 {view === "day" ? format(currentDate, "EEEE, MMMM d")
-                  : view === "3day" ? `${format(currentDate, "MMM d")} - ${format(addDays(currentDate, 2), "MMM d")}`
                   : view === "5day" ? "Class Schedule View"
                   : view === "week" ? `Week of ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), "MMM d")}`
                   : format(currentDate, "MMMM yyyy")}
@@ -608,7 +603,6 @@ export default function CalendarPage() {
             className="intro-cal-tabs"
             tabs={[
               { id: "day", label: "Day" },
-              { id: "3day", label: "3-Day" },
               { id: "5day", label: "5-Day" },
               { id: "week", label: "Week" },
               { id: "month", label: "Month" },
@@ -1096,7 +1090,6 @@ export default function CalendarPage() {
           case "new-class": setShowAddClass(true); break;
           case "today": setCurrentDate(new Date()); break;
           case "day": setView("day"); break;
-          case "3day": setView("3day"); break;
           case "5day": setView("5day"); break;
           case "week": setView("week"); break;
           case "month": setView("month"); break;
