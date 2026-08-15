@@ -27,7 +27,7 @@ export default function TermsPage() {
 
         <h2>3. User Accounts</h2>
         <ul>
-          <li>You may register using an email and password or through a third-party provider (Google or Microsoft).</li>
+          <li>You may register using an email and password or through a third-party provider (Google).</li>
           <li>You are responsible for maintaining the confidentiality of your account credentials.</li>
           <li>You are responsible for all activities that occur under your account.</li>
           <li>You agree to provide accurate and complete information when creating your account.</li>
@@ -47,7 +47,7 @@ export default function TermsPage() {
 
         <h2>5. Third-Party Integrations</h2>
         <p>
-          The service integrates with third-party platforms including Google and Microsoft
+          The service integrates with third-party platforms including Google
           for authentication and calendar access. Your use of these integrations is subject
           to the respective third-party terms:
         </p>
@@ -57,14 +57,9 @@ export default function TermsPage() {
               Google Terms of Service
             </a>
           </li>
-          <li>
-            <a href="https://www.microsoft.com/servicesagreement" target="_blank" rel="noopener noreferrer">
-              Microsoft Services Agreement
-            </a>
-          </li>
         </ul>
         <p>
-          You may revoke third-party access at any time through your Google or Microsoft
+          You may revoke third-party access at any time through your Google
           account settings.
         </p>
 
