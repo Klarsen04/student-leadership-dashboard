@@ -815,6 +815,9 @@ export default function CalendarPage() {
                 classes={filteredClasses}
                 currentDate={currentDate}
                 view={view}
+                calendars={calendars}
+                defaultCalendar={selectedCalendar || undefined}
+                onInlineSaved={fetchEvents}
                 getColor={getCalendarColor}
                 onEventClick={setSelectedEvent}
                 onClassClick={setSelectedClass}
