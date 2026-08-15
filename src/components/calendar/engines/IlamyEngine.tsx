@@ -4,6 +4,7 @@ import { useMemo, useEffect, useRef } from "react";
 import { IlamyCalendar } from "@ilamy/calendar";
 import type { CalendarEngineProps, EngineView } from "./types";
 import { classesToEvents, isClassEvent, findClassForEventId } from "./classEvents";
+import { calHex } from "@/lib/useCalendars";
 
 // ilamy views: month | week | day (+ its own). Map the app's granular views onto these.
 const VIEW_MAP: Record<EngineView, string> = {
@@ -27,14 +28,18 @@ export default function IlamyEngine({
   classes,
   currentDate,
   view,
+  getColor,
   onEventClick,
   onClassClick,
+  onTimeSlotClick,
   onEventCreate,
   onEventUpdate,
   onEventDelete,
 }: CalendarEngineProps) {
   // ilamy accepts ISO strings for start/end directly. Merge real events with
   // recurring classes expanded into dated instances so classes render too.
+  // Each event is painted with its sub-calendar's colour (classes carry their
+  // own hex), so the grid matches the coloured calendar/filter chips.
   const ilamyEvents = useMemo(
     () =>
       [...events, ...classesToEvents(classes, currentDate, view)].map((e) => ({
@@ -43,9 +48,10 @@ export default function IlamyEngine({
         start: e.startTime,
         end: e.endTime,
         description: e.description,
+        color: calHex(getColor(e.category)),
         data: { category: e.category, role: e.role, isLed: e.isLed, location: e.location },
       })),
-    [events, classes, currentDate, view]
+    [events, classes, currentDate, view, getColor]
   );
 
   // iLamy's day/week grid opens scrolled to midnight, so daytime classes (e.g.
@@ -86,6 +92,14 @@ export default function IlamyEngine({
           }
           const match = events.find((e) => String(e.id) === String(ev.id));
           if (match) onEventClick(match);
+        }}
+        // Route empty-cell clicks to the app's own Add Event dialog (calendar +
+        // filter-tag selects) instead of iLamy's built-in form, whose colour
+        // picker isn't part of the app's data model (colour comes from the
+        // event's sub-calendar, Outlook-style).
+        onCellClick={(info: any) => {
+          const d = typeof info?.start?.toDate === "function" ? info.start.toDate() : new Date(info?.start);
+          onTimeSlotClick?.(d, info?.allDay ? 9 : d.getHours());
         }}
         onEventAdd={(ev: any) =>
           onEventCreate?.({ title: ev.title, startTime: toISO(ev.start), endTime: toISO(ev.end) })

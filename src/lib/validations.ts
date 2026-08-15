@@ -59,7 +59,9 @@ export const createEventSchema = z.object({
   startTime: z.string().min(1),
   endTime: z.string().min(1),
   category: z.string().max(50).default("Personal"),
-  role: z.string().max(50).default("Personal"),
+  // Empty = no filter tag. A non-empty default would make untagged events
+  // phantom-match a filter chip of the same name.
+  role: z.string().max(50).default(""),
   location: z.string().max(200).optional(),
   isLed: z.boolean().default(false),
   actualMinutes: z.number().min(0).max(1440).nullable().optional(),

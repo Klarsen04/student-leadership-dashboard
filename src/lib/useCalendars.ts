@@ -16,6 +16,22 @@ const DEFAULT_CALENDARS: SubCalendar[] = [
   { id: "default", name: "Personal", color: "bg-blue-500", visible: true, tags: ["Personal"] },
 ];
 
+// Hex for each sub-calendar tailwind colour class, so filter chips and the
+// calendar engine can paint events with their calendar's colour. Class colours
+// are stored as hex already and pass through unchanged.
+export const CAL_HEX: Record<string, string> = {
+  "bg-blue-500": "#3b82f6", "bg-green-500": "#22c55e", "bg-purple-500": "#a855f7",
+  "bg-orange-500": "#f97316", "bg-pink-500": "#ec4899", "bg-cyan-500": "#06b6d4",
+  "bg-red-500": "#ef4444", "bg-amber-500": "#f59e0b", "bg-indigo-500": "#6366f1",
+  "bg-teal-500": "#14b8a6", "bg-rose-500": "#f43f5e", "bg-emerald-500": "#10b981",
+  "bg-gray-400": "#9ca3af",
+};
+
+export function calHex(color: string): string {
+  if (color?.startsWith("#")) return color;
+  return CAL_HEX[color] || "#6b7280";
+}
+
 const COLOR_OPTIONS = [
   "bg-blue-500",
   "bg-green-500",

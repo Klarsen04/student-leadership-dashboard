@@ -24,7 +24,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { useCalendars, SubCalendar } from "@/lib/useCalendars";
+import { useCalendars, SubCalendar, calHex } from "@/lib/useCalendars";
 import { CalendarEngineHost } from "@/components/calendar/engines";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { BlurFade } from "@/components/ui/blur-fade";
@@ -98,19 +98,6 @@ const CLASS_COLORS = [
   "#f9a8d4", "#a5b4fc", "#86efac", "#fcd34d", "#fdba74",
   "#c4b5fd", "#67e8f9", "#fca5a5", "#bef264", "#d8b4fe",
 ];
-
-// Hex for each sub-calendar tailwind color class, so a filter chip can be filled
-// with its calendar's colour (not just a dot) the way the "Next Up" banner is.
-const CAL_HEX: Record<string, string> = {
-  "bg-blue-500": "#3b82f6", "bg-green-500": "#22c55e", "bg-purple-500": "#a855f7",
-  "bg-orange-500": "#f97316", "bg-pink-500": "#ec4899", "bg-cyan-500": "#06b6d4",
-  "bg-red-500": "#ef4444", "bg-amber-500": "#f59e0b", "bg-indigo-500": "#6366f1",
-  "bg-teal-500": "#14b8a6", "bg-rose-500": "#f43f5e", "bg-emerald-500": "#10b981",
-  "bg-gray-400": "#9ca3af",
-};
-function calHex(color: string): string {
-  return CAL_HEX[color] || "#6b7280";
-}
 
 function getMinutesFromTime(time: string): number {
   const [h, m] = time.split(":").map(Number);
@@ -854,6 +841,9 @@ export default function CalendarPage() {
                         startTime: ev.startTime,
                         endTime: ev.endTime,
                         category: selectedCalendar || "Personal",
+                        // File the event under the active filter tag, so it shows
+                        // up in the view it was created from (Outlook-style tags).
+                        role: activeTag || "",
                       }),
                     });
                     fetchEvents();
@@ -983,7 +973,7 @@ export default function CalendarPage() {
             <DialogTitle>Add Event</DialogTitle>
             <DialogDescription>Create a new calendar event</DialogDescription>
           </DialogHeader>
-          <EventForm calendars={calendars} defaultCalendar={selectedCalendar || undefined} defaultStartTime={defaultEventTime?.start} defaultEndTime={defaultEventTime?.end} onSaved={() => { setShowAdd(false); setDefaultEventTime(null); fetchEvents(); }} onCancel={() => { setShowAdd(false); setDefaultEventTime(null); }} />
+          <EventForm calendars={calendars} defaultCalendar={selectedCalendar || undefined} defaultTag={activeTag || undefined} defaultStartTime={defaultEventTime?.start} defaultEndTime={defaultEventTime?.end} onSaved={() => { setShowAdd(false); setDefaultEventTime(null); fetchEvents(); }} onCancel={() => { setShowAdd(false); setDefaultEventTime(null); }} />
         </DialogContent>
       </Dialog>
 
@@ -1240,12 +1230,12 @@ function EditCalendarDialog({ cal, calendars, colorOptions, updateCalendar, addT
   );
 }
 
-function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defaultEndTime, defaultCalendar }: { calendars: SubCalendar[]; event?: CalendarEvent; onSaved: () => void; onCancel: () => void; defaultStartTime?: string; defaultEndTime?: string; defaultCalendar?: string }) {
+function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defaultEndTime, defaultCalendar, defaultTag }: { calendars: SubCalendar[]; event?: CalendarEvent; onSaved: () => void; onCancel: () => void; defaultStartTime?: string; defaultEndTime?: string; defaultCalendar?: string; defaultTag?: string }) {
   const [form, setForm] = useState({
     title: event?.title || "",
     startTime: event ? format(new Date(event.startTime), "yyyy-MM-dd'T'HH:mm") : (defaultStartTime || ""),
     endTime: event ? format(new Date(event.endTime), "yyyy-MM-dd'T'HH:mm") : (defaultEndTime || ""),
-    role: event?.role || "",
+    role: event?.role || defaultTag || "",
     category: event?.category || defaultCalendar || calendars[0]?.name || "",
     location: event?.location || "",
   });
