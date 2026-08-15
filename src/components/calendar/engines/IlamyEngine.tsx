@@ -78,6 +78,7 @@ export default function IlamyEngine({
         initialView={VIEW_MAP[view] as any}
         initialDate={currentDate}
         firstDayOfWeek="monday"
+        hiddenDays={view === "5day" ? (["saturday", "sunday"] as any) : undefined}
         onEventClick={(ev: any) => {
           if (isClassEvent(String(ev.id))) {
             const cls = findClassForEventId(String(ev.id), classes);

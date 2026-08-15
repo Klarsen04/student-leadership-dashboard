@@ -9,7 +9,6 @@ import {
   Target,
   TrendingUp,
   Flame,
-  Plus,
   Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -25,7 +24,6 @@ import Link from "next/link";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
 const CREAM = "#FFFAF5";
-const MARIGOLD = "#FFB400";
 const GRASS = "#7FB800";
 
 interface Task {
@@ -62,7 +60,6 @@ export default function DashboardPage() {
       gsap.set(q(".intro-word"), { opacity: 0, y: 14 });
       gsap.set(q(".intro-chip"), { opacity: 0, scale: 0.8 });
       gsap.set(q(".intro-stat"), { opacity: 0, y: 30, scale: 0.85 });
-      gsap.set(q(".intro-quickadd"), { opacity: 0, y: 16 });
       gsap.set(q(".intro-card"), { opacity: 0, y: 40 });
 
       // The dashboard "builds itself" (~2s): mascot pops, greeting words stagger,
@@ -73,7 +70,6 @@ export default function DashboardPage() {
       tl.to(q(".intro-word"), { opacity: 1, y: 0, duration: 0.4, stagger: 0.09 }, "-=0.2");
       tl.to(q(".intro-chip"), { opacity: 1, scale: 1, duration: 0.35 }, "-=0.25");
       tl.to(q(".intro-stat"), { opacity: 1, y: 0, scale: 1, duration: 0.5, stagger: 0.1, ease: "back.out(1.4)" }, "-=0.1");
-      tl.to(q(".intro-quickadd"), { opacity: 1, y: 0, duration: 0.4 }, "-=0.15");
       tl.to(q(".intro-card"), { opacity: 1, y: 0, duration: 0.55, stagger: 0.14 }, "-=0.2");
     },
     { scope, dependencies: [intro] }
@@ -221,11 +217,6 @@ export default function DashboardPage() {
             </StatCard>
           </IntroItem>
         </IntroGroup>
-
-        {/* Quick Add Task */}
-        <div className={intro ? "intro-quickadd" : ""}>
-          <QuickAddTask onAdded={fetchData} />
-        </div>
 
         <IntroGroup intro={intro} className="grid grid-cols-1 lg:grid-cols-2 gap-6" gap={0.1}>
           {/* Priority Tasks */}
@@ -433,52 +424,6 @@ function StreakBadges() {
   );
 }
 
-function QuickAddTask({ onAdded }: { onAdded: () => void }) {
-  const [title, setTitle] = useState("");
-  const [adding, setAdding] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-    setAdding(true);
-    try {
-      const today = format(new Date(), "yyyy-MM-dd");
-      const res = await fetch("/api/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: title.trim(), dueDate: today, priority: "medium" }),
-      });
-      if (!res.ok) throw new Error();
-      setTitle("");
-      toast.success("Task added");
-      onAdded();
-    } catch {
-      toast.error("Failed to add task");
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="flex gap-2">
-      <input
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="Quick add a task for today..."
-        className="flex-1 h-12 px-4 rounded-full border border-black/10 bg-white text-sm text-black placeholder:text-black/35 focus:outline-none focus:ring-2 focus:ring-[#FFB400]/60 focus:border-[#FFB400]/60 transition-all"
-      />
-      <button
-        type="submit"
-        disabled={adding || !title.trim()}
-        aria-label="Add task"
-        className="h-12 w-12 shrink-0 flex items-center justify-center rounded-full text-black shadow-md hover:brightness-105 hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-50 disabled:hover:translate-y-0"
-        style={{ background: MARIGOLD }}
-      >
-        <Plus className="w-5 h-5" />
-      </button>
-    </form>
-  );
-}
 
 function getMotivation(pending: number, overdue: number): string {
   if (overdue > 3) return "Let's tackle those overdue items first";
