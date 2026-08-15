@@ -60,6 +60,7 @@ export default function TasksPage() {
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [showFullAdd, setShowFullAdd] = useState(false);
+  const [fullAddTitle, setFullAddTitle] = useState("");
   const [focusTime, setFocusTime] = useState(25 * 60);
   const [focusRunning, setFocusRunning] = useState(false);
   const [focusElapsed, setFocusElapsed] = useState(0);
@@ -576,9 +577,9 @@ export default function TasksPage() {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 flex-1">
-            <KanbanColumn title="To Do" count={todoTasks.length} accent={`rgb(${tape.accentRgb})`} dotColor="bg-black/60" tasks={todoTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={(t) => { setFocusTask(t); setFocusRunning(true); if (t.status === "todo") updateTaskStatus(t, "in_progress"); }} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="todo" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} nextStatus="in_progress" prevStatus={null} />
-            <KanbanColumn title="In Progress" count={inProgressTasks.length} accent={`rgb(${tape.accentRgb})`} dotColor="bg-amber-500" tasks={inProgressTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={(t) => { setFocusTask(t); setFocusRunning(true); }} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="in_progress" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} nextStatus="done" prevStatus="todo" />
-            <KanbanColumn title="Done" count={doneTasks.length} accent={`rgb(${tape.accentRgb})`} dotColor="bg-green-500" tasks={doneTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={() => {}} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="done" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} nextStatus={null} prevStatus="in_progress" />
+            <KanbanColumn title="To Do" count={todoTasks.length} accent={`rgb(${tape.accentRgb})`} dotColor="bg-black/60" tasks={todoTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={(t) => { setFocusTask(t); setFocusRunning(true); if (t.status === "todo") updateTaskStatus(t, "in_progress"); }} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="todo" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} onOpenDetails={() => { setFullAddTitle(newTaskTitle); setShowFullAdd(true); }} nextStatus="in_progress" prevStatus={null} />
+            <KanbanColumn title="In Progress" count={inProgressTasks.length} accent={`rgb(${tape.accentRgb})`} dotColor="bg-amber-500" tasks={inProgressTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={(t) => { setFocusTask(t); setFocusRunning(true); }} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="in_progress" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} onOpenDetails={() => { setFullAddTitle(newTaskTitle); setShowFullAdd(true); }} nextStatus="done" prevStatus="todo" />
+            <KanbanColumn title="Done" count={doneTasks.length} accent={`rgb(${tape.accentRgb})`} dotColor="bg-green-500" tasks={doneTasks} onStatusChange={updateTaskStatus} onPriorityChange={updateTaskPriority} onDelete={setDeleteTarget} onEdit={setEditTarget} onDrop={handleDrop} onStartFocus={() => {}} addingTo={addingTo} setAddingTo={setAddingTo} columnStatus="done" newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} onQuickAdd={quickAddTask} onOpenDetails={() => { setFullAddTitle(newTaskTitle); setShowFullAdd(true); }} nextStatus={null} prevStatus="in_progress" />
           </div>
 
           <div className="mt-4 p-5 rounded-3xl bg-white border border-black/5 shadow-sm relative">
@@ -591,11 +592,11 @@ export default function TasksPage() {
       <Dialog open={showFullAdd} onOpenChange={setShowFullAdd}>
         <DialogContent>
           <DialogHeader><DialogTitle>New Task</DialogTitle><DialogDescription>Add a detailed task for {tape.day}</DialogDescription></DialogHeader>
-          <AddTaskForm defaultDate={format(selectedDate, "yyyy-MM-dd")} onSaved={() => { setShowFullAdd(false); fetchTasks(); }} />
+          <AddTaskForm defaultTitle={fullAddTitle} defaultDate={format(selectedDate, "yyyy-MM-dd")} onSaved={() => { setShowFullAdd(false); setFullAddTitle(""); fetchTasks(); }} />
         </DialogContent>
       </Dialog>
 
-      <motion.button onClick={() => setShowFullAdd(true)} whileHover={micro.reduce ? undefined : { scale: 1.06, y: -2 }} whileTap={micro.reduce ? undefined : { scale: 0.95 }} transition={SPRING} className="fixed bottom-6 right-6 h-12 px-5 rounded-full bg-black text-white shadow-lg hover:shadow-xl flex items-center justify-center gap-2 font-medium text-sm z-50">
+      <motion.button onClick={() => { setFullAddTitle(""); setShowFullAdd(true); }} whileHover={micro.reduce ? undefined : { scale: 1.06, y: -2 }} whileTap={micro.reduce ? undefined : { scale: 0.95 }} transition={SPRING} className="fixed bottom-6 right-6 h-12 px-5 rounded-full bg-black text-white shadow-lg hover:shadow-xl flex items-center justify-center gap-2 font-medium text-sm z-50">
         <Plus className="w-5 h-5" /> Add Task
       </motion.button>
 
@@ -615,7 +616,7 @@ export default function TasksPage() {
 // Sub-components
 // ========================
 
-function KanbanColumn({ title, count, accent, dotColor, tasks, onStatusChange, onPriorityChange, onDelete, onEdit, onDrop, onStartFocus, addingTo, setAddingTo, columnStatus, newTaskTitle, setNewTaskTitle, onQuickAdd, nextStatus, prevStatus }: { title: string; count: number; accent: string; dotColor: string; tasks: Task[]; onStatusChange: (t: Task, s: string) => void; onPriorityChange: (t: Task, p: string) => void; onDelete: (t: Task) => void; onEdit: (t: Task) => void; onDrop: (id: string, s: string) => void; onStartFocus: (t: Task) => void; addingTo: string | null; setAddingTo: (s: string | null) => void; columnStatus: string; newTaskTitle: string; setNewTaskTitle: (s: string) => void; onQuickAdd: (s: string) => void; nextStatus: string | null; prevStatus: string | null; }) {
+function KanbanColumn({ title, count, accent, dotColor, tasks, onStatusChange, onPriorityChange, onDelete, onEdit, onDrop, onStartFocus, addingTo, setAddingTo, columnStatus, newTaskTitle, setNewTaskTitle, onQuickAdd, onOpenDetails, nextStatus, prevStatus }: { title: string; count: number; accent: string; dotColor: string; tasks: Task[]; onStatusChange: (t: Task, s: string) => void; onPriorityChange: (t: Task, p: string) => void; onDelete: (t: Task) => void; onEdit: (t: Task) => void; onDrop: (id: string, s: string) => void; onStartFocus: (t: Task) => void; addingTo: string | null; setAddingTo: (s: string | null) => void; columnStatus: string; newTaskTitle: string; setNewTaskTitle: (s: string) => void; onQuickAdd: (s: string) => void; onOpenDetails: () => void; nextStatus: string | null; prevStatus: string | null; }) {
   const [dragOver, setDragOver] = useState(false);
   const micro = useMicro();
   return (
@@ -637,8 +638,9 @@ function KanbanColumn({ title, count, accent, dotColor, tasks, onStatusChange, o
           ))}
         </div>
         {addingTo === columnStatus ? (
-          <form onSubmit={(e) => { e.preventDefault(); onQuickAdd(columnStatus); }} className="flex gap-2 mt-2">
+          <form onSubmit={(e) => { e.preventDefault(); onQuickAdd(columnStatus); }} className="flex items-center gap-2 mt-2">
             <Input autoFocus value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} placeholder="Task name..." className="h-8 text-sm bg-white border-black/10 text-black placeholder:text-black/40" onBlur={() => { if (!newTaskTitle) setAddingTo(null); }} />
+            <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => onOpenDetails()} className="h-8 px-2 shrink-0 text-xs text-black/50 hover:text-black/80 whitespace-nowrap transition-colors" title="Add with details">Details</button>
             <Button size="sm" type="submit" className="h-8 px-2" disabled={!newTaskTitle.trim()}><Plus className="w-3 h-3" /></Button>
           </form>
         ) : (
@@ -691,8 +693,8 @@ function TaskCard({ task, accent, onStatusChange, onDelete, onPriorityChange, on
   );
 }
 
-function AddTaskForm({ onSaved, defaultDate }: { onSaved: () => void; defaultDate: string }) {
-  const [form, setForm] = useState({ title: "", description: "", dueDate: defaultDate, priority: "medium", hours: "", recurrence: "" });
+function AddTaskForm({ onSaved, defaultDate, defaultTitle = "" }: { onSaved: () => void; defaultDate: string; defaultTitle?: string }) {
+  const [form, setForm] = useState({ title: defaultTitle, description: "", dueDate: defaultDate, priority: "medium", hours: "", recurrence: "" });
   const [saving, setSaving] = useState(false);
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setSaving(true);

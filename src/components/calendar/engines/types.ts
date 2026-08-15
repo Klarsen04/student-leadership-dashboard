@@ -25,7 +25,7 @@ export interface EngineClass {
   color: string;
 }
 
-export type EngineView = "day" | "3day" | "5day" | "week" | "month";
+export type EngineView = "day" | "5day" | "week" | "month";
 
 export interface CalendarEngineProps {
   events: EngineEvent[];
