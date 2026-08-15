@@ -38,8 +38,9 @@ export default function IlamyEngine({
 }: CalendarEngineProps) {
   // ilamy accepts ISO strings for start/end directly. Merge real events with
   // recurring classes expanded into dated instances so classes render too.
-  // Each event is painted with its sub-calendar's colour (classes carry their
-  // own hex), so the grid matches the coloured calendar/filter chips.
+  // Each event block is filled with its tag's colour (or its sub-calendar's
+  // when untagged; classes carry their own hex). ilamy uses `backgroundColor`
+  // for the block fill and `color` for the text, so set both.
   const ilamyEvents = useMemo(
     () =>
       [...events, ...classesToEvents(classes, currentDate, view)].map((e) => ({
@@ -48,7 +49,8 @@ export default function IlamyEngine({
         start: e.startTime,
         end: e.endTime,
         description: e.description,
-        color: calHex(getColor(e.category)),
+        backgroundColor: calHex(getColor(e.category, e.role)),
+        color: "#ffffff",
         data: { category: e.category, role: e.role, isLed: e.isLed, location: e.location },
       })),
     [events, classes, currentDate, view, getColor]
@@ -77,7 +79,22 @@ export default function IlamyEngine({
   }, [view, currentDate]);
 
   return (
-    <div ref={wrapRef} className="ilamy-scope relative z-20 h-[70vh] rounded-2xl overflow-hidden border border-black/10 bg-white">
+    <div
+      ref={wrapRef}
+      className="ilamy-scope relative z-20 h-[70vh] rounded-2xl overflow-hidden border border-black/10 bg-white"
+      // ilamy's toolbar "New" button opens its own built-in form, whose colour
+      // picker isn't persisted anywhere (events looked blue after saving).
+      // Intercept it in the capture phase and open the app's Add Event dialog
+      // instead. The selector relies on the default English aria-label.
+      onClickCapture={(e) => {
+        const btn = (e.target as HTMLElement).closest?.('button[aria-label="New"]');
+        if (btn && wrapRef.current?.contains(btn)) {
+          e.preventDefault();
+          e.stopPropagation();
+          onTimeSlotClick?.(currentDate, 9);
+        }
+      }}
+    >
       <IlamyCalendar
         events={ilamyEvents as any}
         initialView={VIEW_MAP[view] as any}

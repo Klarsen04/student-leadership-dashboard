@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createReflectionSchema } from "@/lib/validations";
-import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
+import { userPeriod, type PeriodType } from "@/lib/userTime";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -41,18 +41,13 @@ export async function POST(req: NextRequest) {
   const { data } = parsed;
   const now = data.date ? new Date(data.date) : new Date();
 
-  let periodStart: Date;
-  let periodEnd: Date;
-  if (data.type === "daily") {
-    periodStart = startOfDay(now);
-    periodEnd = endOfDay(now);
-  } else if (data.type === "weekly") {
-    periodStart = startOfWeek(now, { weekStartsOn: 0 });
-    periodEnd = endOfWeek(now, { weekStartsOn: 0 });
-  } else {
-    periodStart = startOfMonth(now);
-    periodEnd = endOfMonth(now);
-  }
+  // Period bounds in the USER'S timezone (the server may run in UTC, where a
+  // reflection saved yesterday evening local time would fall on "today" and
+  // wrongly block a fresh one). Older clients that don't send tzOffset get
+  // UTC bounds, matching the previous server behaviour.
+  const periodType: PeriodType =
+    data.type === "weekly" ? "weekly" : data.type === "monthly" ? "monthly" : "daily";
+  const { start: periodStart, end: periodEnd } = userPeriod(now, data.tzOffset ?? 0, periodType);
 
   // Guard against duplicates within the period. When a pod is specified, the
   // guard is per-pod (so different pods can be done the same day); otherwise

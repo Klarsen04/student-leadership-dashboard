@@ -70,6 +70,9 @@ export const createEventSchema = z.object({
 export const createReflectionSchema = z.object({
   type: z.string().min(1).max(50),
   date: z.string().optional(),
+  // Client's Date#getTimezoneOffset() so the one-per-period guard uses the
+  // user's local day/week/month, not the server's (UTC on Vercel).
+  tzOffset: z.number().int().min(-900).max(900).optional(),
   content: z.string().min(1).max(10000),
   mood: z.number().min(1).max(10).optional(),
   energy: z.number().min(1).max(10).optional(),
