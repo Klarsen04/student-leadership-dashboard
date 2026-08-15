@@ -218,7 +218,7 @@ function LoginForm() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1">
           <button
             onClick={() => signIn("google", { callbackUrl })}
             className="flex items-center justify-center gap-2.5 min-h-[44px] bg-[#FFFAF5] border border-black/10 py-2.5 px-4 rounded-full hover:bg-black/[0.03] hover:-translate-y-0.5 transition-all font-semibold text-sm text-black/70"
@@ -231,20 +231,6 @@ function LoginForm() {
               <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
             </svg>
             Google
-          </button>
-
-          <button
-            onClick={() => signIn("azure-ad", { callbackUrl })}
-            className="flex items-center justify-center gap-2.5 min-h-[44px] bg-[#FFFAF5] border border-black/10 py-2.5 px-4 rounded-full hover:bg-black/[0.03] hover:-translate-y-0.5 transition-all font-semibold text-sm text-black/70"
-            style={MARKER}
-          >
-            <svg className="w-4 h-4" viewBox="0 0 21 21" fill="none" aria-hidden="true">
-              <rect x="1" y="1" width="9" height="9" fill="#F25022" />
-              <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
-              <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
-              <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
-            </svg>
-            Microsoft
           </button>
         </div>
 
