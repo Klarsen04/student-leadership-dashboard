@@ -372,6 +372,8 @@ function GuidedFlow({
           gratitude: gratitude.trim() || undefined,
           podId: pod.id,
           questions: JSON.stringify(qa),
+          // Let the server compute the one-per-period window in OUR timezone.
+          tzOffset: new Date().getTimezoneOffset(),
         }),
       });
       if (res.ok) {

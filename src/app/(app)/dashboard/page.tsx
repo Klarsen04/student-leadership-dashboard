@@ -404,7 +404,7 @@ function StreakBadges() {
   const [streaks, setStreaks] = useState<{ taskStreak: number; reflectionStreak: number } | null>(null);
 
   useEffect(() => {
-    fetch("/api/analytics?period=week")
+    fetch(`/api/analytics?period=week&tz=${new Date().getTimezoneOffset()}`)
       .then((r) => r.json())
       .then((d) => setStreaks({ taskStreak: d.taskStreak || 0, reflectionStreak: d.reflectionStreak || 0 }))
       .catch(() => {});

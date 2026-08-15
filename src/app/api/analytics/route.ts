@@ -2,7 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, differenceInMinutes, subDays, isSameDay, format, startOfDay, endOfDay } from "date-fns";
+import { differenceInMinutes, subDays, startOfDay, endOfDay } from "date-fns";
+import { userDayKey, userDayKeyAgo, userPeriod } from "@/lib/userTime";
+
+// Consecutive-day streak over user-local day keys. Today still being in
+// progress doesn't break the streak — an empty today just doesn't count yet.
+function dayStreak(dates: Date[], now: Date, tz: number): number {
+  const keys = new Set(dates.map((d) => userDayKey(d, tz)));
+  let streak = 0;
+  for (let i = 0; i < 60; i++) {
+    if (keys.has(userDayKeyAgo(now, tz, i))) streak++;
+    else if (i === 0) continue;
+    else break;
+  }
+  return streak;
+}
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -12,16 +26,12 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const period = searchParams.get("period") || "week";
+  // Client's Date#getTimezoneOffset(), so days/weeks are bucketed in the
+  // user's timezone rather than the server's (UTC on Vercel).
+  const tz = parseInt(searchParams.get("tz") || "0", 10) || 0;
   const now = new Date();
 
-  let start: Date, end: Date;
-  if (period === "month") {
-    start = startOfMonth(now);
-    end = endOfMonth(now);
-  } else {
-    start = startOfWeek(now, { weekStartsOn: 0 });
-    end = endOfWeek(now, { weekStartsOn: 0 });
-  }
+  const { start, end } = userPeriod(now, tz, period === "month" ? "monthly" : "weekly");
 
   let events: any[] = [], tasks: any[] = [], reflections: any[] = [], allTasks: any[] = [], allReflections: any[] = [];
   try {
@@ -75,31 +85,19 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Task streak (consecutive days with at least one task completed)
-  let taskStreak = 0;
-  let checkDate = new Date();
-  for (let i = 0; i < 60; i++) {
-    const dayTasks = allTasks.filter((t) => t.updatedAt && isSameDay(t.updatedAt, checkDate));
-    if (dayTasks.length > 0) {
-      taskStreak++;
-      checkDate = subDays(checkDate, 1);
-    } else {
-      break;
-    }
-  }
+  // Task streak (consecutive user-local days with at least one task completed)
+  const taskStreak = dayStreak(
+    allTasks.filter((t) => t.updatedAt).map((t) => new Date(t.updatedAt)),
+    now,
+    tz
+  );
 
-  // Reflection streak (consecutive days/weeks with a reflection)
-  let reflectionStreak = 0;
-  let refCheckDate = new Date();
-  for (let i = 0; i < 60; i++) {
-    const dayRefs = allReflections.filter((r) => isSameDay(new Date(r.date), refCheckDate));
-    if (dayRefs.length > 0) {
-      reflectionStreak++;
-      refCheckDate = subDays(refCheckDate, 1);
-    } else {
-      break;
-    }
-  }
+  // Reflection streak (consecutive user-local days with a reflection)
+  const reflectionStreak = dayStreak(
+    allReflections.map((r) => new Date(r.date)),
+    now,
+    tz
+  );
 
   const tasksCompleted = tasks.filter((t) => t.status === "done").length;
   const tasksPending = tasks.filter((t) => t.status !== "done").length;
@@ -144,13 +142,12 @@ export async function GET(req: NextRequest) {
     ]);
 
     for (let i = 29; i >= 0; i--) {
-      const day = subDays(now, i);
-      const dateStr = format(day, "yyyy-MM-dd");
+      const dateStr = userDayKeyAgo(now, tz, i);
       daily.push({
         date: dateStr,
-        tasksCompleted: dailyTasks.filter((t) => isSameDay(t.updatedAt!, day)).length,
-        reflections: dailyReflections.filter((r) => isSameDay(new Date(r.date), day)).length,
-        events: dailyEvents.filter((e) => isSameDay(e.startTime, day)).length,
+        tasksCompleted: dailyTasks.filter((t) => userDayKey(t.updatedAt!, tz) === dateStr).length,
+        reflections: dailyReflections.filter((r) => userDayKey(new Date(r.date), tz) === dateStr).length,
+        events: dailyEvents.filter((e) => userDayKey(e.startTime, tz) === dateStr).length,
       });
     }
   }

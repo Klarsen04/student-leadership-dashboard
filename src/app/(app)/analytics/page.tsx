@@ -49,8 +49,8 @@ export default function AnalyticsPage() {
   useEffect(() => {
     setLoading(true);
     Promise.all([
-      fetch("/api/analytics?period=week").then((r) => r.ok ? r.json() : null),
-      fetch("/api/analytics?period=month").then((r) => r.ok ? r.json() : null),
+      fetch(`/api/analytics?period=week&tz=${new Date().getTimezoneOffset()}`).then((r) => r.ok ? r.json() : null),
+      fetch(`/api/analytics?period=month&tz=${new Date().getTimezoneOffset()}`).then((r) => r.ok ? r.json() : null),
     ]).then(([weekData, monthData]) => {
       if (weekData) {
         setData({ ...weekData, daily: monthData?.daily || [] });
