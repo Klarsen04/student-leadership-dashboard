@@ -983,7 +983,7 @@ export default function CalendarPage() {
             <DialogTitle>Add Event</DialogTitle>
             <DialogDescription>Create a new calendar event</DialogDescription>
           </DialogHeader>
-          <EventForm calendars={calendars} defaultStartTime={defaultEventTime?.start} defaultEndTime={defaultEventTime?.end} onSaved={() => { setShowAdd(false); setDefaultEventTime(null); fetchEvents(); }} onCancel={() => { setShowAdd(false); setDefaultEventTime(null); }} />
+          <EventForm calendars={calendars} defaultCalendar={selectedCalendar || undefined} defaultStartTime={defaultEventTime?.start} defaultEndTime={defaultEventTime?.end} onSaved={() => { setShowAdd(false); setDefaultEventTime(null); fetchEvents(); }} onCancel={() => { setShowAdd(false); setDefaultEventTime(null); }} />
         </DialogContent>
       </Dialog>
 
@@ -1240,13 +1240,13 @@ function EditCalendarDialog({ cal, calendars, colorOptions, updateCalendar, addT
   );
 }
 
-function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defaultEndTime }: { calendars: SubCalendar[]; event?: CalendarEvent; onSaved: () => void; onCancel: () => void; defaultStartTime?: string; defaultEndTime?: string }) {
+function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defaultEndTime, defaultCalendar }: { calendars: SubCalendar[]; event?: CalendarEvent; onSaved: () => void; onCancel: () => void; defaultStartTime?: string; defaultEndTime?: string; defaultCalendar?: string }) {
   const [form, setForm] = useState({
     title: event?.title || "",
     startTime: event ? format(new Date(event.startTime), "yyyy-MM-dd'T'HH:mm") : (defaultStartTime || ""),
     endTime: event ? format(new Date(event.endTime), "yyyy-MM-dd'T'HH:mm") : (defaultEndTime || ""),
     role: event?.role || "",
-    category: event?.category || calendars[0]?.name || "",
+    category: event?.category || defaultCalendar || calendars[0]?.name || "",
     location: event?.location || "",
   });
   const [saving, setSaving] = useState(false);
