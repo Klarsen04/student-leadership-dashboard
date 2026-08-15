@@ -357,6 +357,12 @@ function GuidedFlow({
   };
 
   const save = async () => {
+    // Every question needs a real answer (the Next button enforces this, but
+    // guard here too so an empty reflection can never be submitted).
+    if (answers.some((a) => !a.trim())) {
+      toast.error("Please answer every question before finishing.");
+      return;
+    }
     setSaving(true);
     const qa: QA[] = pod.questions.map((q, i) => ({ question: q, answer: answers[i].trim() }));
     const content = qa.map((x) => `${x.question}\n${x.answer}`).join("\n\n");
@@ -501,14 +507,22 @@ function GuidedFlow({
       {/* Footer action */}
       <div className="pb-10">
         {!isWellness ? (
-          <button
-            onClick={next}
-            className="w-full inline-flex items-center justify-center gap-2 py-3.5 rounded-full text-black font-semibold shadow-md hover:brightness-105 transition-all disabled:opacity-40"
-            style={{ background: MARIGOLD, ...MARKER }}
-          >
-            {step === pod.questions.length - 1 ? "Almost there" : "Next"}
-            <ArrowRight className="w-5 h-5" />
-          </button>
+          <>
+            <button
+              onClick={next}
+              disabled={!currentAnswer.trim()}
+              className="w-full inline-flex items-center justify-center gap-2 py-3.5 rounded-full text-black font-semibold shadow-md hover:brightness-105 transition-all disabled:opacity-40 disabled:hover:brightness-100"
+              style={{ background: MARIGOLD, ...MARKER }}
+            >
+              {step === pod.questions.length - 1 ? "Almost there" : "Next"}
+              <ArrowRight className="w-5 h-5" />
+            </button>
+            {!currentAnswer.trim() && (
+              <p className="mt-2 text-center text-xs text-black/40">
+                Write a little something to continue — even one sentence counts.
+              </p>
+            )}
+          </>
         ) : (
           <button
             onClick={save}

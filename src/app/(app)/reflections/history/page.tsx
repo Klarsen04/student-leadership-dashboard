@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowLeft, ChevronDown, ChevronRight, BookOpen, Sparkles } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, BookOpen, Sparkles, Pencil, Trash2 } from "lucide-react";
 import { getPod } from "@/lib/pods";
 import {
   type Reflection,
@@ -13,6 +13,8 @@ import {
   groupReflections,
 } from "@/lib/reflections";
 import { SeedMascot } from "@/components/reflections/PeaceDecor";
+import { EditReflectionDialog } from "@/components/reflections/EditReflectionDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
 const GRASS = "#7FB800";
@@ -26,6 +28,22 @@ export default function ReflectionHistoryPage() {
   const [reflections, setReflections] = useState<Reflection[]>([]);
   const [loading, setLoading] = useState(true);
   const [groupMode, setGroupMode] = useState<GroupMode>("month");
+  const [editTarget, setEditTarget] = useState<Reflection | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Reflection | null>(null);
+
+  const deleteReflection = async () => {
+    if (!deleteTarget) return;
+    try {
+      const res = await fetch(`/api/reflections?id=${deleteTarget.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      setReflections((prev) => prev.filter((r) => r.id !== deleteTarget.id));
+      toast.success("Reflection deleted");
+    } catch {
+      toast.error("Failed to delete reflection");
+    } finally {
+      setDeleteTarget(null);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -103,11 +121,30 @@ export default function ReflectionHistoryPage() {
         ) : (
           <div className="space-y-4">
             {groups.map(({ key, month, items }) => (
-              <MonthGroup key={key} month={month} items={items} />
+              <MonthGroup key={key} month={month} items={items} onEdit={setEditTarget} onDelete={setDeleteTarget} />
             ))}
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete reflection?"
+        description="This reflection will be permanently deleted."
+        onConfirm={deleteReflection}
+      />
+
+      {editTarget && (
+        <EditReflectionDialog
+          reflection={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSaved={(updated) => {
+            setReflections((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
+            setEditTarget(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -133,7 +170,12 @@ function EmptyState() {
   );
 }
 
-function MonthGroup({ month, items }: { month: string; items: Reflection[] }) {
+function MonthGroup({ month, items, onEdit, onDelete }: {
+  month: string;
+  items: Reflection[];
+  onEdit: (r: Reflection) => void;
+  onDelete: (r: Reflection) => void;
+}) {
   return (
     <section>
       <h2 className="flex items-center gap-2 text-sm font-bold text-black/50 uppercase tracking-wide px-1 mb-2">
@@ -141,14 +183,18 @@ function MonthGroup({ month, items }: { month: string; items: Reflection[] }) {
       </h2>
       <div className="space-y-3">
         {items.map((ref) => (
-          <ReflectionCard key={ref.id} reflection={ref} />
+          <ReflectionCard key={ref.id} reflection={ref} onEdit={onEdit} onDelete={onDelete} />
         ))}
       </div>
     </section>
   );
 }
 
-function ReflectionCard({ reflection }: { reflection: Reflection }) {
+function ReflectionCard({ reflection, onEdit, onDelete }: {
+  reflection: Reflection;
+  onEdit: (r: Reflection) => void;
+  onDelete: (r: Reflection) => void;
+}) {
   const [open, setOpen] = useState(false);
   const pod = getPod(reflection.podId);
   const qa = parseQA(reflection.questions);
@@ -217,6 +263,23 @@ function ReflectionCard({ reflection }: { reflection: Reflection }) {
           {reflection.gratitude && (
             <p className="mt-3 text-xs text-black/50 italic">💛 Grateful for: {reflection.gratitude}</p>
           )}
+
+          <div className="flex items-center gap-2 mt-4 pt-3 border-t border-black/5">
+            <button
+              onClick={() => onEdit(reflection)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-black/60 bg-black/[0.04] hover:bg-black/10 hover:text-black transition-colors"
+              style={MARKER}
+            >
+              <Pencil className="w-3.5 h-3.5" /> Edit
+            </button>
+            <button
+              onClick={() => onDelete(reflection)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-red-500/80 bg-red-50 hover:bg-red-100 hover:text-red-600 transition-colors"
+              style={MARKER}
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete
+            </button>
+          </div>
         </div>
       )}
     </div>
