@@ -24,7 +24,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { useCalendars, SubCalendar, calHex } from "@/lib/useCalendars";
+import { useCalendars, SubCalendar, CalendarTag, calHex } from "@/lib/useCalendars";
 import { CalendarEngineHost } from "@/components/calendar/engines";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { BlurFade } from "@/components/ui/blur-fade";
@@ -306,6 +306,7 @@ export default function CalendarPage() {
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [showAddTag, setShowAddTag] = useState(false);
   const [newTagName, setNewTagName] = useState("");
+  const [newTagColor, setNewTagColor] = useState<string | null>(null);
   const [tagToDelete, setTagToDelete] = useState<string | null>(null);
   const [showAddCalendar, setShowAddCalendar] = useState(false);
   const [newCalName, setNewCalName] = useState("");
@@ -314,7 +315,7 @@ export default function CalendarPage() {
   const [selectedClass, setSelectedClass] = useState<ClassBlock | null>(null);
   const [editingClass, setEditingClass] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
-  const { calendars, addCalendar, deleteCalendar, updateCalendar, addTag, deleteTag, getCalendarColor, getTagsForCalendar, COLOR_OPTIONS } = useCalendars();
+  const { calendars, addCalendar, deleteCalendar, updateCalendar, addTag, setTagColor, deleteTag, getCalendarColor, getTagsForCalendar, COLOR_OPTIONS } = useCalendars();
   const [editCal, setEditCal] = useState<SubCalendar | null>(null);
 
   const handleTimeSlotClick = (date: Date, hour: number) => {
@@ -448,8 +449,8 @@ export default function CalendarPage() {
     if (!newTagName.trim()) return;
     const cal = selectedCalendar ? calendars.find((c) => c.name === selectedCalendar) : calendars[0];
     if (!cal) return;
-    const success = addTag(cal.id, newTagName.trim());
-    if (success) { toast.success(`Added "${newTagName.trim()}" tag`); setNewTagName(""); setShowAddTag(false); }
+    const success = addTag(cal.id, newTagName.trim(), newTagColor || cal.color);
+    if (success) { toast.success(`Added "${newTagName.trim()}" tag`); setNewTagName(""); setNewTagColor(null); setShowAddTag(false); }
     else { toast.error("Tag already exists"); }
   };
 
@@ -461,7 +462,7 @@ export default function CalendarPage() {
       for (const ev of matchingEvents) {
         try { await fetch("/api/calendar", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: ev.id, role: "" }) }); } catch {}
       }
-      const cal = selectedCalendar ? calendars.find((c) => c.name === selectedCalendar) : calendars.find((c) => c.tags.includes(tagToDelete!));
+      const cal = selectedCalendar ? calendars.find((c) => c.name === selectedCalendar) : calendars.find((c) => c.tags.some((t) => t.name === tagToDelete));
       if (cal) deleteTag(cal.id, tagToDelete);
       if (activeTag === tagToDelete) setActiveTag(null);
       setEvents((prev) => prev.map((e) => e.role === tagToDelete ? { ...e, role: "" } : e));
@@ -699,22 +700,19 @@ export default function CalendarPage() {
           <div className="flex gap-2 flex-wrap items-center mt-2">
             <span className="text-[11px] font-medium text-black/40">Filters:</span>
             {currentTags.map((tag) => {
-              // Colour a filter chip with its owning calendar's colour.
-              const owner = selectedCalendar
-                ? calendars.find((c) => c.name === selectedCalendar)
-                : calendars.find((c) => c.tags.includes(tag));
-              const hex = owner ? calHex(owner.color) : "#6b7280";
-              const on = activeTag === tag;
+              // Each filter chip carries its own colour (Outlook-style tags).
+              const hex = calHex(tag.color);
+              const on = activeTag === tag.name;
               return (
-                <div key={tag} className="group relative">
+                <div key={tag.name} className="group relative">
                   <button
-                    onClick={() => setActiveTag(on ? null : tag)}
+                    onClick={() => setActiveTag(on ? null : tag.name)}
                     className="px-2 py-0.5 rounded-full text-[11px] font-semibold transition-all"
                     style={on ? { background: hex, color: "#fff" } : { background: `${hex}22`, color: "#1a1a1a" }}
                   >
-                    {tag}
+                    {tag.name}
                   </button>
-                  <button onClick={() => handleDeleteTag(tag)} className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-400 text-white items-center justify-center text-[7px] hidden group-hover:flex">
+                  <button onClick={() => handleDeleteTag(tag.name)} className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-400 text-white items-center justify-center text-[7px] hidden group-hover:flex">
                     <X className="w-2 h-2" />
                   </button>
                 </div>
@@ -725,7 +723,12 @@ export default function CalendarPage() {
             )}
             {selectedCalendar && (showAddTag ? (
               <form onSubmit={(e) => { e.preventDefault(); handleAddTag(); }} className="flex items-center gap-1">
-                <input autoFocus value={newTagName} onChange={(e) => setNewTagName(e.target.value)} placeholder="Filter..." className="h-5 w-20 px-2 text-[11px] border border-black/20 rounded-full bg-white text-black focus:outline-none" onBlur={() => { if (!newTagName) setShowAddTag(false); }} />
+                <input autoFocus value={newTagName} onChange={(e) => setNewTagName(e.target.value)} placeholder="Filter..." className="h-5 w-20 px-2 text-[11px] border border-black/20 rounded-full bg-white text-black focus:outline-none" onBlur={() => { if (!newTagName) { setShowAddTag(false); setNewTagColor(null); } }} />
+                <div className="flex gap-0.5">
+                  {COLOR_OPTIONS.slice(0, 6).map((c) => (
+                    <button key={c} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setNewTagColor(c)} className={`w-3.5 h-3.5 rounded-full ${c} ${newTagColor === c ? "ring-2 ring-offset-1 ring-black/30" : ""}`} />
+                  ))}
+                </div>
               </form>
             ) : (
               <button onClick={() => setShowAddTag(true)} className="w-5 h-5 rounded-full border border-dashed border-black/20 flex items-center justify-center text-black/40 hover:border-black/40 hover:text-black transition-colors">
@@ -1101,6 +1104,7 @@ export default function CalendarPage() {
           colorOptions={COLOR_OPTIONS}
           updateCalendar={updateCalendar}
           addTag={addTag}
+          setTagColor={setTagColor}
           deleteTag={deleteTag}
           onRequestDelete={() => { const id = editCal.id; setEditCal(null); setCalendarToDelete(id); }}
           onClose={() => setEditCal(null)}
@@ -1160,12 +1164,13 @@ export default function CalendarPage() {
 
 /* ---------- Event Form ---------- */
 /* ---------- Edit Calendar (rename / recolor / manage filters) ---------- */
-function EditCalendarDialog({ cal, calendars, colorOptions, updateCalendar, addTag, deleteTag, onRequestDelete, onClose }: {
+function EditCalendarDialog({ cal, calendars, colorOptions, updateCalendar, addTag, setTagColor, deleteTag, onRequestDelete, onClose }: {
   cal: SubCalendar;
   calendars: SubCalendar[];
   colorOptions: string[];
   updateCalendar: (id: string, updates: Partial<Pick<SubCalendar, "name" | "color">>) => void;
-  addTag: (calendarId: string, tag: string) => boolean;
+  addTag: (calendarId: string, tag: string, color?: string) => boolean;
+  setTagColor: (calendarId: string, tag: string, color: string) => void;
   deleteTag: (calendarId: string, tag: string) => void;
   onRequestDelete: () => void;
   onClose: () => void;
@@ -1173,6 +1178,9 @@ function EditCalendarDialog({ cal, calendars, colorOptions, updateCalendar, addT
   const [name, setName] = useState(cal.name);
   const [color, setColor] = useState(cal.color);
   const [newTag, setNewTag] = useState("");
+  const [newTagColor, setNewTagColor] = useState(cal.color);
+  // Tag currently being recoloured (click a tag chip to select it).
+  const [recolorTag, setRecolorTag] = useState<string | null>(null);
   // Live tags for this calendar (reflects add/delete immediately).
   const current = calendars.find((c) => c.id === cal.id) ?? cal;
 
@@ -1206,16 +1214,49 @@ function EditCalendarDialog({ cal, calendars, colorOptions, updateCalendar, addT
             <label className="text-sm font-medium text-black/80 block mb-1.5">Filters (tags)</label>
             <div className="flex gap-1.5 flex-wrap mb-2">
               {current.tags.length === 0 && <span className="text-xs text-black/35">No filters yet</span>}
-              {current.tags.map((t) => (
-                <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/5 text-xs text-black/70">
-                  {t}
-                  <button type="button" onClick={() => deleteTag(cal.id, t)} className="text-black/30 hover:text-red-500"><X className="w-3 h-3" /></button>
-                </span>
-              ))}
+              {current.tags.map((t) => {
+                const hex = calHex(t.color);
+                const selected = recolorTag === t.name;
+                return (
+                  <span
+                    key={t.name}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs cursor-pointer transition-shadow ${selected ? "ring-2 ring-black/25" : ""}`}
+                    style={{ background: `${hex}22`, color: "#1a1a1a" }}
+                    onClick={() => setRecolorTag(selected ? null : t.name)}
+                    title="Click to change this filter's colour"
+                  >
+                    <span className="w-2 h-2 rounded-full" style={{ background: hex }} />
+                    {t.name}
+                    <button type="button" onClick={(e) => { e.stopPropagation(); if (recolorTag === t.name) setRecolorTag(null); deleteTag(cal.id, t.name); }} className="text-black/30 hover:text-red-500"><X className="w-3 h-3" /></button>
+                  </span>
+                );
+              })}
             </div>
-            <form onSubmit={(e) => { e.preventDefault(); if (newTag.trim()) { addTag(cal.id, newTag.trim()); setNewTag(""); } }} className="flex gap-2">
-              <Input value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="Add a filter..." className="h-9" />
-              <Button type="submit" variant="outline" disabled={!newTag.trim()}>Add</Button>
+            {recolorTag && (
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs text-black/50">Colour for &quot;{recolorTag}&quot;:</span>
+                <div className="flex gap-1.5 flex-wrap">
+                  {colorOptions.map((c) => (
+                    <button key={c} type="button" onClick={() => setTagColor(cal.id, recolorTag, c)} className={`w-5 h-5 rounded-full ${c} transition-all ${current.tags.find((t) => t.name === recolorTag)?.color === c ? "ring-2 ring-offset-1 ring-black/30 scale-110" : "hover:scale-105"}`} />
+                  ))}
+                </div>
+              </div>
+            )}
+            <form onSubmit={(e) => { e.preventDefault(); if (newTag.trim()) { addTag(cal.id, newTag.trim(), newTagColor); setNewTag(""); } }} className="space-y-2">
+              <div className="flex gap-2">
+                <Input value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="Add a filter..." className="h-9" />
+                <Button type="submit" variant="outline" disabled={!newTag.trim()}>Add</Button>
+              </div>
+              {newTag.trim() && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-black/50">Colour:</span>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {colorOptions.map((c) => (
+                      <button key={c} type="button" onClick={() => setNewTagColor(c)} className={`w-5 h-5 rounded-full ${c} transition-all ${newTagColor === c ? "ring-2 ring-offset-1 ring-black/30 scale-110" : "hover:scale-105"}`} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </form>
           </div>
           <div className="flex gap-2 pt-1">
@@ -1277,7 +1318,7 @@ function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defa
           <label className="text-sm font-medium text-black/80">Tag</label>
           <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full h-10 border rounded-md px-3 text-sm bg-white text-black">
             <option value="">No tag</option>
-            {Array.from(new Set([...(calendars.find((c) => c.name === form.category)?.tags || []), ...(event?.role ? [event.role] : [])])).map((t) => (
+            {Array.from(new Set([...(calendars.find((c) => c.name === form.category)?.tags.map((t) => t.name) || []), ...(event?.role ? [event.role] : [])])).map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}
           </select>

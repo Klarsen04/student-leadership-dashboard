@@ -2,18 +2,24 @@
 
 import { useState, useEffect, useCallback } from "react";
 
+export interface CalendarTag {
+  name: string;
+  /** bg-* tailwind class, same palette as calendars */
+  color: string;
+}
+
 export interface SubCalendar {
   id: string;
   name: string;
   color: string;
   visible: boolean;
-  tags: string[];
+  tags: CalendarTag[];
 }
 
 const STORAGE_KEY = "leadership-os-calendars";
 
 const DEFAULT_CALENDARS: SubCalendar[] = [
-  { id: "default", name: "Personal", color: "bg-blue-500", visible: true, tags: ["Personal"] },
+  { id: "default", name: "Personal", color: "bg-blue-500", visible: true, tags: [{ name: "Personal", color: "bg-blue-500" }] },
 ];
 
 // Hex for each sub-calendar tailwind colour class, so filter chips and the
@@ -55,10 +61,14 @@ function getStoredCalendars(): SubCalendar[] {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed) && parsed.length > 0) {
         // Strip any legacy `engine` field from calendars saved before the app
-        // standardized on the single iLamy calendar view.
+        // standardized on the single iLamy calendar view. Tags saved before
+        // they had their own colour were plain strings — give them the
+        // calendar's colour.
         return parsed.map(({ engine: _engine, ...c }: any) => ({
           ...c,
-          tags: c.tags || [],
+          tags: (c.tags || []).map((t: any) =>
+            typeof t === "string" ? { name: t, color: c.color || "bg-blue-500" } : t
+          ),
         }));
       }
     }
@@ -101,36 +111,57 @@ export function useCalendars() {
     save(current.map((c) => c.id === id ? { ...c, ...updates } : c));
   }, [save]);
 
-  const addTag = useCallback((calendarId: string, tag: string) => {
+  const addTag = useCallback((calendarId: string, tag: string, color?: string) => {
     const current = getStoredCalendars();
     const cal = current.find((c) => c.id === calendarId);
     if (!cal) return false;
-    if (cal.tags.some((t) => t.toLowerCase() === tag.toLowerCase())) return false;
-    save(current.map((c) => c.id === calendarId ? { ...c, tags: [...c.tags, tag] } : c));
+    if (cal.tags.some((t) => t.name.toLowerCase() === tag.toLowerCase())) return false;
+    const newTag: CalendarTag = { name: tag, color: color || cal.color };
+    save(current.map((c) => c.id === calendarId ? { ...c, tags: [...c.tags, newTag] } : c));
     return true;
+  }, [save]);
+
+  const setTagColor = useCallback((calendarId: string, tag: string, color: string) => {
+    const current = getStoredCalendars();
+    save(current.map((c) =>
+      c.id === calendarId
+        ? { ...c, tags: c.tags.map((t) => t.name === tag ? { ...t, color } : t) }
+        : c
+    ));
   }, [save]);
 
   const deleteTag = useCallback((calendarId: string, tag: string) => {
     const current = getStoredCalendars();
-    save(current.map((c) => c.id === calendarId ? { ...c, tags: c.tags.filter((t) => t !== tag) } : c));
+    save(current.map((c) => c.id === calendarId ? { ...c, tags: c.tags.filter((t) => t.name !== tag) } : c));
   }, [save]);
 
-  const getCalendarColor = useCallback((categoryName: string): string => {
+  // Colour for an event: its tag's colour when it has one, else its
+  // sub-calendar's colour (Outlook-style categories).
+  const getCalendarColor = useCallback((categoryName: string, role?: string): string => {
     // Expanded class instances carry their own color as "__class__:bg-...".
     if (categoryName?.startsWith("__class__:")) {
       return categoryName.slice("__class__:".length) || "bg-blue-500";
     }
     const current = getStoredCalendars();
     const cal = current.find((c) => c.name === categoryName);
+    if (role) {
+      const tag = cal?.tags.find((t) => t.name === role)
+        // The tag may live on another calendar (e.g. events viewed under "All").
+        ?? current.flatMap((c) => c.tags).find((t) => t.name === role);
+      if (tag) return tag.color;
+    }
     return cal?.color || "bg-gray-400";
   }, []);
 
-  const getTagsForCalendar = useCallback((calendarName: string | null): string[] => {
+  const getTagsForCalendar = useCallback((calendarName: string | null): CalendarTag[] => {
     const current = getStoredCalendars();
     if (!calendarName) {
-      const allTags = new Set<string>();
-      current.forEach((c) => c.tags.forEach((t) => allTags.add(t)));
-      return Array.from(allTags);
+      const seen = new Set<string>();
+      const all: CalendarTag[] = [];
+      current.forEach((c) => c.tags.forEach((t) => {
+        if (!seen.has(t.name)) { seen.add(t.name); all.push(t); }
+      }));
+      return all;
     }
     const cal = current.find((c) => c.name === calendarName);
     return cal?.tags || [];
@@ -140,5 +171,5 @@ export function useCalendars() {
     return getStoredCalendars().find((c) => c.name === name);
   }, []);
 
-  return { calendars, addCalendar, deleteCalendar, toggleVisibility, updateCalendar, addTag, deleteTag, getCalendarColor, getTagsForCalendar, getCalendarByName, COLOR_OPTIONS };
+  return { calendars, addCalendar, deleteCalendar, toggleVisibility, updateCalendar, addTag, setTagColor, deleteTag, getCalendarColor, getTagsForCalendar, getCalendarByName, COLOR_OPTIONS };
 }

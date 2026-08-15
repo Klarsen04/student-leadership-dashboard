@@ -35,8 +35,9 @@ export interface CalendarEngineProps {
   classes: EngineClass[];
   currentDate: Date;
   view: EngineView;
-  /** bg-* tailwind class for a given event category (sub-calendar color) */
-  getColor: (category: string) => string;
+  /** bg-* tailwind class for an event: its tag's colour when tagged, else its
+   *  sub-calendar's colour */
+  getColor: (category: string, role?: string) => string;
   onEventClick: (event: EngineEvent) => void;
   onClassClick?: (cls: EngineClass) => void;
   /** Click an empty slot to create — (date, hour) */
