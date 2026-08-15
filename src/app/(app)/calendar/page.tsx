@@ -720,16 +720,28 @@ export default function CalendarPage() {
         {(selectedCalendar || currentTags.length > 0) && (
           <div className="flex gap-2 flex-wrap items-center mt-2">
             <span className="text-[11px] font-medium text-black/40">Filters:</span>
-            {currentTags.map((tag) => (
-              <div key={tag} className="group relative">
-                <button onClick={() => setActiveTag(activeTag === tag ? null : tag)} className={`px-2 py-0.5 rounded-full text-[11px] font-medium transition-all ${activeTag === tag ? "bg-black/10 text-black" : "bg-black/5 text-black/50 hover:bg-black/10"}`}>
-                  {tag}
-                </button>
-                <button onClick={() => handleDeleteTag(tag)} className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-400 text-white items-center justify-center text-[7px] hidden group-hover:flex">
-                  <X className="w-2 h-2" />
-                </button>
-              </div>
-            ))}
+            {currentTags.map((tag) => {
+              // Colour a filter chip with its owning calendar's colour.
+              const owner = selectedCalendar
+                ? calendars.find((c) => c.name === selectedCalendar)
+                : calendars.find((c) => c.tags.includes(tag));
+              const hex = owner ? calHex(owner.color) : "#6b7280";
+              const on = activeTag === tag;
+              return (
+                <div key={tag} className="group relative">
+                  <button
+                    onClick={() => setActiveTag(on ? null : tag)}
+                    className="px-2 py-0.5 rounded-full text-[11px] font-semibold transition-all"
+                    style={on ? { background: hex, color: "#fff" } : { background: `${hex}22`, color: "#1a1a1a" }}
+                  >
+                    {tag}
+                  </button>
+                  <button onClick={() => handleDeleteTag(tag)} className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-400 text-white items-center justify-center text-[7px] hidden group-hover:flex">
+                    <X className="w-2 h-2" />
+                  </button>
+                </div>
+              );
+            })}
             {currentTags.length === 0 && !showAddTag && (
               <span className="text-[11px] text-black/30">No filters yet</span>
             )}
@@ -836,9 +848,6 @@ export default function CalendarPage() {
                 classes={filteredClasses}
                 currentDate={currentDate}
                 view={view}
-                calendars={calendars}
-                defaultCalendar={selectedCalendar || undefined}
-                onInlineSaved={fetchEvents}
                 getColor={getCalendarColor}
                 onEventClick={setSelectedEvent}
                 onClassClick={setSelectedClass}
@@ -1248,15 +1257,15 @@ function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defa
     role: event?.role || "",
     category: event?.category || calendars[0]?.name || "",
     location: event?.location || "",
-    hours: "",
   });
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    const payload = { ...form, actualMinutes: form.hours ? Math.round(parseFloat(form.hours) * 60) : undefined };
-    delete (payload as any).hours;
+    // Hours per calendar are derived from each event's duration in Analytics —
+    // no manual hours field needed.
+    const payload = { ...form };
     try {
       if (event) {
         const res = await fetch("/api/calendar", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: event.id, ...payload }) });
@@ -1329,9 +1338,9 @@ function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defa
           </select>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div><label className="text-sm font-medium text-black/80">Location</label><Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Optional" /></div>
-        <div><label className="text-sm font-medium text-black/80">Hours</label><Input type="number" step="0.5" min="0" max="24" value={form.hours} onChange={(e) => setForm({ ...form, hours: e.target.value })} placeholder="e.g. 1.5" /></div>
+      <div>
+        <label className="text-sm font-medium text-black/80">Location</label>
+        <Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Optional" />
       </div>
       <div className="flex gap-2">
         <Button type="submit" className="flex-1" disabled={saving || !form.title}>{saving ? "Saving..." : event ? "Save Changes" : "Create Event"}</Button>

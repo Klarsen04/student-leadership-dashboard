@@ -166,6 +166,10 @@ export async function DELETE(req: NextRequest) {
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
 
-  await prisma.reflection.delete({ where: { id, userId: session.user.id } });
-  return NextResponse.json({ success: true });
+  // Use deleteMany (plain filter, idempotent) rather than delete() with a
+  // compound unique-plus-userId where — the latter can behave inconsistently on
+  // the libSQL/Turso driver adapter, leaving the row in place (so a later
+  // reflect on the same pod wrongly reported a duplicate).
+  const { count } = await prisma.reflection.deleteMany({ where: { id, userId: session.user.id } });
+  return NextResponse.json({ success: true, deleted: count });
 }
