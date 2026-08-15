@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { ArrowRight, Heart, Download, Smartphone } from "lucide-react";
-import { useRef } from "react";
 import { motion, useReducedMotion, useScroll, useTransform } from "motion/react";
 import { SeedMascot } from "@/components/reflections/PeaceDecor";
 import { SunDoodle, CloudDoodle } from "@/components/home/HomeDecor";

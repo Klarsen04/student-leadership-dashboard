@@ -7,7 +7,6 @@ import { addDays, format, isWeekend, startOfDay } from "date-fns";
 export const dynamic = "force-dynamic";
 
 function shouldGenerateForDate(recurrence: string, date: Date): boolean {
-  const day = date.getDay();
   switch (recurrence) {
     case "daily":
       return true;

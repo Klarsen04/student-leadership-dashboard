@@ -8,13 +8,11 @@ import {
   isSameDay,
   startOfMonth,
   endOfMonth,
-  eachDayOfInterval,
-  getDay,
   isToday as isDateToday,
   isTomorrow,
   isThisWeek,
 } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, Trash2, Pencil, X, BookOpen, Flame, AlertTriangle, Clock, MapPin, User, GraduationCap, Calendar as CalendarIcon } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Trash2, Pencil, X, BookOpen, Flame, Clock, MapPin, User, GraduationCap, Calendar as CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -48,12 +46,11 @@ import { TimeTracker } from "@/components/ui/time-tracker";
 import { WeekStats } from "@/components/ui/week-stats";
 import { FocusSuggestion } from "@/components/ui/focus-suggestion";
 import { CommandPalette } from "@/components/ui/command-palette";
-import { TaskDetailPanel } from "@/components/ui/task-detail-panel";
 import { ScheduleHeatmap } from "@/components/ui/schedule-heatmap";
 import { ExportButton } from "@/components/ui/export-button";
 import { QuickNote } from "@/components/ui/quick-note";
 import { FocusModeToggle } from "@/components/ui/focus-mode";
-import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { useIntroCalEntrance } from "@/components/home/intro-cal-entrance";
 
 interface CalendarEvent {
@@ -98,75 +95,13 @@ const CLASS_COLORS = [
   "#c4b5fd", "#67e8f9", "#fca5a5", "#bef264", "#d8b4fe",
 ];
 
-const MONTH_THEMES: Record<number, { bg: string; accent: string; name: string }> = {
-  0: { bg: "#e8f4fd", accent: "#93c5fd", name: "January" },
-  1: { bg: "#fce7f3", accent: "#f9a8d4", name: "February" },
-  2: { bg: "#ecfdf5", accent: "#6ee7b7", name: "March" },
-  3: { bg: "#eff6ff", accent: "#93c5fd", name: "April" },
-  4: { bg: "#fdf2f8", accent: "#fbcfe8", name: "May" },
-  5: { bg: "#fefce8", accent: "#fde047", name: "June" },
-  6: { bg: "#fef2f2", accent: "#fca5a5", name: "July" },
-  7: { bg: "#fffbeb", accent: "#fbbf24", name: "August" },
-  8: { bg: "#fff7ed", accent: "#fdba74", name: "September" },
-  9: { bg: "#fef3c7", accent: "#f59e0b", name: "October" },
-  10: { bg: "#fef9c3", accent: "#a3e635", name: "November" },
-  11: { bg: "#f0fdf4", accent: "#4ade80", name: "December" },
-};
-
-interface ScheduleConflict {
-  class1: ClassBlock;
-  class2: ClassBlock;
-  day: string;
-  overlapStart: string;
-  overlapEnd: string;
-}
 
 function getMinutesFromTime(time: string): number {
   const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
 }
 
-function minutesToTimeStr(mins: number): string {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  const period = h >= 12 ? "PM" : "AM";
-  const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
-  return m > 0 ? `${h12}:${m.toString().padStart(2, "0")} ${period}` : `${h12} ${period}`;
-}
 
-function findConflicts(classes: ClassBlock[]): ScheduleConflict[] {
-  const conflicts: ScheduleConflict[] = [];
-  const CLASS_DAY_MAP: Record<string, number[]> = {
-    MWF: [1, 3, 5], TuTh: [2, 4], MW: [1, 3], TuThF: [2, 4, 5],
-    Mon: [1], Tue: [2], Wed: [3], Thu: [4], Fri: [5], Sat: [6], Sun: [0],
-  };
-  const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-  for (let i = 0; i < classes.length; i++) {
-    for (let j = i + 1; j < classes.length; j++) {
-      const a = classes[i], b = classes[j];
-      const aDays = a.days.flatMap(d => CLASS_DAY_MAP[d] || []);
-      const bDays = b.days.flatMap(d => CLASS_DAY_MAP[d] || []);
-      const sharedDays = aDays.filter(d => bDays.includes(d));
-      if (sharedDays.length > 0) {
-        const aStart = getMinutesFromTime(a.startTime), aEnd = getMinutesFromTime(a.endTime);
-        const bStart = getMinutesFromTime(b.startTime), bEnd = getMinutesFromTime(b.endTime);
-        if (aStart < bEnd && bStart < aEnd) {
-          const overlapStartMins = Math.max(aStart, bStart);
-          const overlapEndMins = Math.min(aEnd, bEnd);
-          sharedDays.forEach(d => conflicts.push({
-            class1: a,
-            class2: b,
-            day: DAY_LABELS[d],
-            overlapStart: minutesToTimeStr(overlapStartMins),
-            overlapEnd: minutesToTimeStr(overlapEndMins),
-          }));
-        }
-      }
-    }
-  }
-  return conflicts;
-}
 
 function getNextClass(classes: ClassBlock[]): { cls: ClassBlock; minutesUntil: number } | null {
   if (classes.length === 0) return null;
@@ -420,7 +355,6 @@ export default function CalendarPage() {
   useEffect(() => { setClasses(getStoredClasses()); }, []);
 
   const nextUp = useMemo(() => getNextClass(classes), [classes]);
-  const conflicts = useMemo(() => findConflicts(classes), [classes]);
   const totalCredits = useMemo(() => classes.reduce((sum, c) => sum + c.creditHours, 0), [classes]);
   const weeklyHours = useMemo(() => {
     const CLASS_DAY_MAP: Record<string, number[]> = {

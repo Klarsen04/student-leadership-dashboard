@@ -56,7 +56,6 @@ export function DependencyLines({ connections, className }: DependencyLinesProps
         const key = `${connection.fromId}-${connection.toId}`;
 
         const dx = toPosition.x - fromPosition.x;
-        const dy = toPosition.y - fromPosition.y;
 
         // Control points for cubic bezier: exit right, then curve to target
         const cp1x = fromPosition.x + Math.min(Math.abs(dx) * 0.4, 30);

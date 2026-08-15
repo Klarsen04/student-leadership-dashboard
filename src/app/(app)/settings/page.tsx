@@ -11,7 +11,6 @@ import { Stagger, StaggerItem, Bounce } from "@/components/home/motion-kit";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
 const CREAM = "#FFFAF5";
-const MARIGOLD = "#FFB400";
 const GRASS = "#7FB800";
 
 const EXPORT_TYPES = [
