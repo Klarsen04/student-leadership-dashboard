@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Hand,
   Pen,
+  Brush,
   Highlighter,
   Eraser,
   Undo2,
@@ -95,7 +96,7 @@ import {
   simplifyStroke,
   writeLocal,
 } from "@/lib/planner-ink";
-import { marksPaper, routePointer, type InputMode, type Tool } from "@/lib/planner-input";
+import { isInkTool, marksPaper, routePointer, type InkTool, type InputMode, type Tool } from "@/lib/planner-input";
 import { SHAPE_LABEL, snapStroke } from "@/lib/planner-shapes";
 import {
   type UserPlanner,
@@ -208,7 +209,8 @@ import {
 } from "@/lib/planner-elements";
 import { PageSidebar, THUMB_H } from "@/components/planner/PageSidebar";
 import { PageSetupDialog } from "@/components/planner/PageSetupDialog";
-import { drawStroke } from "@/lib/planner-render";
+import { TOOL_ALPHA, drawStroke, isFlattened, paintStrokes, strokeAlpha } from "@/lib/planner-render";
+import { type EraserMode, ERASER_SIZES, eraseAt as eraseElements } from "@/lib/planner-erase";
 import {
   EXPORT_LONG_EDGE,
   annotatePdf,
@@ -245,6 +247,48 @@ type HistoryOp =
 
 const PEN_COLORS = ["#1a1a1a", "#e03131", "#1971c2", "#2f9e44", "#f08c00", "#9c36b5"];
 const PEN_SIZES = [0.0012, 0.0022, 0.004]; // fine / medium / bold (fraction of page width)
+const HIGHLIGHTER_COLORS = ["#ffd43b", "#a9e34b", "#66d9e8", "#ffa8a8", "#d0bfff", "#ffc078"];
+
+/**
+ * Each drawing tool remembers its own colour, thickness and opacity.
+ *
+ * One shared colour was actively wrong once there was more than one pen: reaching for the
+ * highlighter gave you a black highlighter, and going back to the pen gave you a yellow
+ * pen. `text` is in here too, so a coloured heading doesn't change what your pen writes in.
+ */
+type InkPrefKey = InkTool | "shape" | "text";
+interface InkPref {
+  color: string;
+  size: number;
+  /** 0..1. Starts at the tool's own default — see TOOL_ALPHA. */
+  opacity: number;
+}
+
+const DEFAULT_INK_PREFS: Record<InkPrefKey, InkPref> = {
+  pen: { color: PEN_COLORS[0], size: PEN_SIZES[1], opacity: TOOL_ALPHA.pen },
+  pencil: { color: "#55504a", size: PEN_SIZES[1], opacity: TOOL_ALPHA.pencil },
+  marker: { color: PEN_COLORS[1], size: PEN_SIZES[1], opacity: TOOL_ALPHA.marker },
+  highlighter: { color: HIGHLIGHTER_COLORS[0], size: PEN_SIZES[1], opacity: TOOL_ALPHA.highlighter },
+  shape: { color: PEN_COLORS[0], size: PEN_SIZES[1], opacity: 1 },
+  text: { color: PEN_COLORS[0], size: TEXT_SIZES[1], opacity: 1 },
+};
+
+/** What to call each tool's ink in a tooltip. */
+const TOOL_NAME: Record<InkPrefKey, string> = {
+  pen: "Pen",
+  pencil: "Pencil",
+  marker: "Marker",
+  highlighter: "Highlighter",
+  shape: "Shape",
+  text: "Text",
+};
+
+/** Which tool's settings the ink controls are editing. Anything else falls back to the pen. */
+const prefKeyFor = (t: Tool): InkPrefKey =>
+  t === "shape" || t === "text" || isInkTool(t) ? (t as InkPrefKey) : "pen";
+
+/** What a stroke made by this tool is: the shape tool draws in ordinary pen ink. */
+const strokeToolFor = (t: Tool): Stroke["tool"] => (isInkTool(t) ? t : "pen");
 
 // ---- turning pages -----------------------------------------------------------
 // A planner runs to hundreds of pages and the interesting ones (the weekly and
@@ -1175,10 +1219,23 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   // in — except a blank notebook, which has nothing to navigate to.
   const [tool, setTool] = useState<Tool>(paperBacked ? "pen" : "hand");
   const [copying, setCopying] = useState(false);
-  const [color, setColor] = useState(PEN_COLORS[0]);
-  const [size, setSize] = useState(PEN_SIZES[1]);
+  /**
+   * Per-tool ink settings. The controls in the toolbar read and write the armed tool's
+   * entry, so `color`/`size`/`opacity` below are always "what this tool draws with".
+   */
+  const [inkPrefs, setInkPrefs] = useState<Record<InkPrefKey, InkPref>>(DEFAULT_INK_PREFS);
+  const prefKey = prefKeyFor(tool);
+  const { color, size, opacity } = inkPrefs[prefKey];
+  const setPref = (patch: Partial<InkPref>, key: InkPrefKey = prefKey) =>
+    setInkPrefs((p) => ({ ...p, [key]: { ...p[key], ...patch } }));
+  const setColor = (c: string) => setPref({ color: c });
+  const setSize = (s: number) => setPref({ size: s });
+  /** Which way the eraser works, and how big its tip is. */
+  const [eraserMode, setEraserMode] = useState<EraserMode>("precise");
+  const [eraserSize, setEraserSize] = useState(ERASER_SIZES[1]);
   const [font, setFont] = useState(PLANNER_FONTS[0].key);
-  const [textSize, setTextSize] = useState(TEXT_SIZES[1]);
+  const textSize = inkPrefs.text.size;
+  const setTextSize = (s: number) => setPref({ size: s }, "text");
   const [saveState, setSaveState] = useState<"saved" | "saving" | "unsaved" | "offline">("saved");
   const [boxSize, setBoxSize] = useState({ w: 0, h: 0 });
   /**
@@ -1218,6 +1275,8 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
    * flick rather than the length of the whole stroke.
    */
   const liveCanvasRef = useRef<HTMLCanvasElement>(null);
+  /** The ring showing where the eraser will rub, moved without re-rendering. */
+  const eraserTipRef = useRef<HTMLDivElement>(null);
   /** How many of the live stroke's points have already been painted. */
   const livePainted = useRef(0);
   /** The background <img>, so a page can be captured as a template. */
@@ -1513,7 +1572,9 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
         cc.clearRect(0, 0, rect.width, rect.height);
         cc.save();
         clipPaper(cc);
-        for (const el of elementsRef.current) if (isStroke(el)) drawStroke(cc, el, rect.width, rect.height);
+        // Through `paintStrokes`, so a pencil or a highlighter is laid down whole and
+        // looks the same here as it does in an export.
+        paintStrokes(cc, elementsRef.current.filter(isStroke), rect.width, rect.height);
         cc.restore();
       }
       inkCachePainted.current = elementsRef.current;
@@ -1602,9 +1663,19 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     const live = liveRef.current;
     if (!live) {
       ctx.clearRect(0, 0, rect.width, rect.height);
+      canvas.style.opacity = "1";
+      canvas.style.mixBlendMode = "normal";
       livePainted.current = 0;
       return;
     }
+    // A see-through stroke (pencil, highlighter, anything with its opacity turned down)
+    // is painted at full strength and the *layer* is made see-through, exactly as
+    // `paintStrokes` flattens it when it's committed. Painting each new segment at a
+    // fraction of alpha instead would darken every join as the pen slowed down, and the
+    // stroke would visibly change the moment you lifted the pen.
+    const flat = isFlattened(live);
+    canvas.style.opacity = flat ? String(strokeAlpha(live)) : "1";
+    canvas.style.mixBlendMode = live.tool === "highlighter" ? "multiply" : "normal";
     if (livePainted.current === 0) ctx.clearRect(0, 0, rect.width, rect.height);
     if (live.points.length <= livePainted.current) return;
     const wa = writeAreaRef.current;
@@ -1612,7 +1683,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     ctx.beginPath();
     ctx.rect(wa.x * rect.width, wa.y * rect.height, wa.w * rect.width, wa.h * rect.height);
     ctx.clip();
-    drawStroke(ctx, live, rect.width, rect.height, livePainted.current);
+    drawStroke(ctx, flat ? { ...live, opacity: 1 } : live, rect.width, rect.height, livePainted.current);
     ctx.restore();
     livePainted.current = live.points.length;
   }, []);
@@ -1632,14 +1703,23 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   }, [redraw]);
   useEffect(() => () => { if (redrawFrame.current) cancelAnimationFrame(redrawFrame.current); }, []);
 
-  /** The style a new stroke starts out with, from the armed tool and the chosen colour. */
+  /**
+   * The style a new stroke starts out with: the tool it was drawn by, and that tool's own
+   * colour, thickness and opacity. `opacity` is left off when it's the tool's default, so
+   * a stroke drawn now serialises exactly as one drawn before the control existed.
+   */
   const strokeStyle = useCallback(
-    (t: Tool): Omit<Stroke, "points"> => ({
-      tool: t === "highlighter" ? "highlighter" : "pen",
-      color,
-      size,
-    }),
-    [color, size],
+    (t: Tool): Omit<Stroke, "points"> => {
+      const pref = inkPrefs[prefKeyFor(t)];
+      const tool = strokeToolFor(t);
+      return {
+        tool,
+        color: pref.color,
+        size: pref.size,
+        ...(pref.opacity === TOOL_ALPHA[tool] ? {} : { opacity: pref.opacity }),
+      };
+    },
+    [inkPrefs],
   );
 
   // The page box's *layout* size — its size at zoom 1, which is what normalised
@@ -2284,20 +2364,37 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
   };
 
+  /**
+   * Rub out at one point. The whole drag is one undo step (a burst), so taking back an
+   * erase restores everything that gesture removed rather than one tip-width of it.
+   * Positions where the tip touched nothing don't reach `setElements` at all.
+   */
   const eraseAt = useCallback((x: number, y: number) => {
-    const R = 0.012; // eraser radius as a fraction of page width
-    const before = elementsRef.current;
-    const after = before.filter((el) => {
-      if (!isStroke(el)) return true;
-      return !el.points.some(([px, py]) => {
-        // Normalised coordinates squash the page, so the vertical distance is
-        // corrected by the aspect ratio of the page you're actually on.
-        const dx = px - x, dy = (py - y) / aspectRef.current;
-        return dx * dx + dy * dy < R * R;
-      });
-    });
-    if (after.length !== before.length) setElements(after);
-  }, [setElements]);
+    const next = eraseElements(
+      elementsRef.current,
+      { x, y, r: eraserSize, aspect: aspectRef.current },
+      eraserMode,
+    );
+    if (next) setElements(next, { history: false });
+  }, [eraserMode, eraserSize, setElements]);
+
+  /**
+   * Show the eraser's tip where the pointer is. Positioned straight from the pointer
+   * handler — no state, no re-render — so it keeps up with the pen. The tip is a circle
+   * on screen: its radius is in width units, so the height has to be corrected by the
+   * page's aspect ratio.
+   */
+  const showEraserTip = useCallback((x: number | null, y = 0) => {
+    const tip = eraserTipRef.current;
+    if (!tip) return;
+    if (x === null) { tip.style.display = "none"; return; }
+    const r = eraserSize;
+    tip.style.display = "block";
+    tip.style.left = `${x * 100}%`;
+    tip.style.top = `${y * 100}%`;
+    tip.style.width = `${r * 2 * 100}%`;
+    tip.style.height = `${r * 2 * aspectRef.current * 100}%`;
+  }, [eraserSize]);
 
   /** A pending tap from this pointer, recorded so a drag can pan and a tap can navigate. */
   const beginTap = (e: React.PointerEvent, opts: { chromeOnly: boolean; flip: boolean }) => {
@@ -2422,6 +2519,8 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     e.preventDefault();
     beginGesture(e, mode);
     if (mode === "erase") {
+      beginBurst(); // one drag of the eraser is one undo step
+      showEraserTip(x, y);
       eraseAt(x, y);
       return;
     }
@@ -2459,6 +2558,13 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       return;
     }
 
+    // The eraser tip follows a hovering pointer too, so you can see what it'll take
+    // before you touch the paper.
+    if (toolRef.current === "eraser" && !readOnly && !gestureRef.current && e.pointerType !== "touch") {
+      const [hx, hy] = norm(e);
+      showEraserTip(hx, hy);
+    }
+
     // From here on, only the pointer that owns the page is listened to, and only in the
     // mode it claimed at pointerdown. This is what stops one gesture being handled as
     // another: before, a palm's pan was checked ahead of the pen's own moves, so while
@@ -2492,6 +2598,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (g.mode === "erase") {
       e.preventDefault();
       const [x, y] = gestureNorm(e);
+      showEraserTip(x, y);
       eraseAt(x, y);
       return;
     }
@@ -2589,7 +2696,12 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       return;
     }
 
-    if (g.mode === "erase" || g.mode === "text") return;
+    if (g.mode === "erase") {
+      endBurst(); // the next drag is a new undo step
+      showEraserTip(null);
+      return;
+    }
+    if (g.mode === "text") return;
 
     // Tap navigation (finger, hand tool, or a stylus tap on a tab).
     const start = tapStart.current;
@@ -2883,8 +2995,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
 
   const ToolButton = ({ t, icon, title }: { t: Tool; icon: React.ReactNode; title: string }) => (
     <button
-      onClick={() => { setTool(t); setSelectedText(null); }}
+      onClick={() => { setTool(t); setSelectedText(null); if (t !== "eraser") showEraserTip(null); }}
       title={title}
+      // A stable handle for tests: the tooltip explains the tool, so its wording changes.
+      data-tool={t}
+      aria-pressed={tool === t}
       className={`p-2 rounded-xl transition-colors ${tool === t ? "bg-[#FFB400] text-black shadow-sm" : "text-black/50 hover:bg-black/5"}`}
     >
       {icon}
@@ -2892,7 +3007,9 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   );
 
   const textBoxes = elementsRef.current.filter(isText);
-  const showInkControls = tool === "pen" || tool === "highlighter" || tool === "shape";
+  const showInkControls = isInkTool(tool) || tool === "shape";
+  /** The swatches offered for the armed tool: a highlighter wants bright, not black. */
+  const swatches = tool === "highlighter" ? HIGHLIGHTER_COLORS : PEN_COLORS;
   // The box round the selection, in page coordinates: where the handles and the
   // action bar hang. Recomputed each render, so it follows a drag frame by frame.
   const selBounds = tool === "select" && selection.size ? selectionBounds(elementsRef.current, selection, pageGeom()) : null;
@@ -2950,25 +3067,29 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
         ) : (
           <div className="flex items-center gap-0.5 rounded-2xl bg-black/[0.04] p-0.5">
             <ToolButton t="hand" icon={<Hand className="w-4 h-4" />} title="Navigate (tap tabs & days)" />
-            <ToolButton t="pen" icon={<Pen className="w-4 h-4" />} title="Pen" />
-            <ToolButton t="highlighter" icon={<Highlighter className="w-4 h-4" />} title="Highlighter" />
+            <ToolButton t="pen" icon={<Pen className="w-4 h-4" />} title="Pen — crisp ink, pressure-sensitive" />
+            <ToolButton t="pencil" icon={<Pencil className="w-4 h-4" />} title="Pencil — soft graphite, shades with pressure" />
+            <ToolButton t="marker" icon={<Brush className="w-4 h-4" />} title="Marker — a broad felt tip, one steady width" />
+            <ToolButton t="highlighter" icon={<Highlighter className="w-4 h-4" />} title="Highlighter — see-through, never covers your writing" />
             <ToolButton t="shape" icon={<Shapes className="w-4 h-4" />} title="Shapes — draw roughly and it snaps to a circle, box, triangle, line or arrow" />
             <ToolButton t="text" icon={<Type className="w-4 h-4" />} title="Text box (tap the paper to type)" />
             <ToolButton t="select" icon={<Lasso className="w-4 h-4" />} title="Select — move, resize, recolour or copy what you've written" />
-            <ToolButton t="eraser" icon={<Eraser className="w-4 h-4" />} title="Eraser (removes whole strokes)" />
+            <ToolButton t="eraser" icon={<Eraser className="w-4 h-4" />} title="Eraser" />
           </div>
         )}
 
         {showInkControls && (
           <>
             <div className="flex items-center gap-1 ml-1">
-              {PEN_COLORS.map((c) => (
+              {swatches.map((c) => (
                 <button
                   key={c}
                   onClick={() => setColor(c)}
                   className={`w-5 h-5 rounded-full transition-transform ${color === c ? "ring-2 ring-offset-1 ring-black/40 scale-110" : "hover:scale-110"}`}
                   style={{ background: c }}
-                  title="Pen colour"
+                  title={`${TOOL_NAME[prefKey]} colour`}
+                  data-swatch={c}
+                  aria-pressed={color === c}
                 />
               ))}
             </div>
@@ -2984,7 +3105,55 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
                 </button>
               ))}
             </div>
+            {/* How see-through this tool is. Kept per tool, so turning the highlighter
+                down doesn't fade the pen. */}
+            <label className="flex items-center gap-1.5 ml-1" title="How see-through this tool is">
+              <input
+                type="range"
+                min={10}
+                max={100}
+                step={5}
+                value={Math.round(opacity * 100)}
+                onChange={(e) => setPref({ opacity: Number(e.target.value) / 100 })}
+                className="w-16 accent-[#8A6DE9]"
+                aria-label="Opacity"
+              />
+              <span className="text-[10px] text-black/40 tabular-nums w-7">{Math.round(opacity * 100)}%</span>
+            </label>
           </>
+        )}
+
+        {tool === "eraser" && (
+          <div className="flex items-center gap-1 ml-1">
+            <div className="flex items-center gap-0.5 rounded-xl bg-black/[0.04] p-0.5">
+              {([
+                ["precise", "Precise", "Precise — rubs out only the bit you touch, and leaves the rest of the stroke exactly as you drew it"],
+                ["stroke", "Whole stroke", "Whole stroke — touch a stroke anywhere and all of it goes"],
+              ] as const).map(([m, label, title]) => (
+                <button
+                  key={m}
+                  onClick={() => setEraserMode(m)}
+                  title={title}
+                  className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors ${eraserMode === m ? "bg-white shadow-sm text-black/75" : "text-black/40 hover:bg-black/5"}`}
+                  style={MARKER}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-0.5">
+              {ERASER_SIZES.map((r, i) => (
+                <button
+                  key={r}
+                  onClick={() => setEraserSize(r)}
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center ${eraserSize === r ? "bg-black/10" : "hover:bg-black/5"}`}
+                  title={`${["Small", "Medium", "Large"][i]} tip`}
+                >
+                  <span className="rounded-full border border-black/50" style={{ width: 5 + i * 4, height: 5 + i * 4 }} />
+                </button>
+              ))}
+            </div>
+          </div>
         )}
 
         {tool === "shape" && (
@@ -3185,6 +3354,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
             onPointerMove={onPointerMove}
             onPointerUp={endStroke}
             onPointerCancel={endStroke}
+            onPointerLeave={() => { if (!gestureRef.current) showEraserTip(null); }}
           >
             {bgSrc ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -3205,6 +3375,14 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
                 ink: while the pen is down only this canvas is touched, and only its
                 newest segments. Nothing below it is cleared, blitted or re-rendered. */}
             <canvas ref={liveCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+
+            {/* Where the eraser will rub. Hidden until the eraser is over the page, and
+                moved by `showEraserTip` rather than by rendering. */}
+            <div
+              ref={eraserTipRef}
+              className="absolute rounded-full pointer-events-none border border-black/40 bg-black/[0.06]"
+              style={{ display: "none", transform: "translate(-50%, -50%)" }}
+            />
 
             {/* Typed text boxes sit above the ink so they can be edited and moved. */}
             {textBoxes.map((t) => (
@@ -3404,6 +3582,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
           </button>
           {/* One tap in and back out again — the two zooms people actually want. */}
           <button
+            data-zoom
             onClick={() => (isFit(view) ? zoomTo(2) : setView(FIT))}
             className="text-[11px] text-black/45 tabular-nums w-12 text-center py-1.5 rounded-lg hover:bg-black/5"
             title={isFit(view) ? "Zoom to 200%" : "Back to the whole page (⌘0)"}

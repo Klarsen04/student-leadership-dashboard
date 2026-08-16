@@ -20,6 +20,7 @@
 //    drag it, recolour it and send it to the back.
 
 import { type PageElement, type Stroke, type TextBox, isText } from "./planner-ink";
+import { TOOL_WIDTH } from "./planner-render";
 
 export interface Bounds {
   x: number;
@@ -84,7 +85,7 @@ export const selectedElements = (els: PageElement[], ids: ReadonlySet<string>) =
 // ---- bounds ---------------------------------------------------------------------
 
 /** Half the width of a stroke's nib, as a fraction of page width. */
-const nib = (s: Stroke) => (s.size * (s.tool === "highlighter" ? 6 : 1)) / 2;
+const nib = (s: Stroke) => (s.size * (TOOL_WIDTH[s.tool] ?? 1)) / 2;
 
 /**
  * Rough height for an unmeasured text box: how many lines its text wraps to at

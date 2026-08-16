@@ -157,10 +157,49 @@ The cache is invalidated by **identity** (`inkCachePainted !== elementsRef.curre
 plus an explicit reset on a page turn — a flag was how undo used to leave a stroke on
 screen until the next edit.
 
+### Writing tools (pen, pencil, marker, highlighter)
+All four are the same `Stroke` on the same pipeline above — the tool is a field, not
+a separate renderer, so none of them can be the slow one. What differs is how
+`planner-render.ts` paints it:
+- `TOOL_WIDTH` / `TOOL_ALPHA` give each tool its nib and its default opacity;
+  `strokeAlpha(s) = s.opacity ?? TOOL_ALPHA[s.tool]` (a stroke stores `opacity`
+  only when the user overrode it, so the defaults stay tunable).
+- marker and highlighter are **flat** — width ignores pressure, because a felt tip
+  and a chisel highlighter don't taper. Pen and pencil scale with it.
+- pencil adds a second, lighter, laterally-offset pass per segment with grain from
+  a deterministic `sin`-hash of index+position, so the same stroke grains
+  identically in the viewer, a thumbnail and an export.
+
+A see-through stroke is **flattened** (`isFlattened`): painted at full strength into
+a scratch canvas and composited once at its own alpha (`paintStrokes`). Compositing
+per *stroke* rather than per segment is what stops overlapping segment joins beading
+into dark blobs. The highlighter composites with `globalCompositeOperation =
+"multiply"`, so it darkens the paper but can never cover handwriting — and repeated
+passes deepen without turning into a solid block (measured: 681 → 682 dark ink px
+after four passes over the same words). Mid-stroke the live canvas reproduces this
+with CSS `opacity` + `mixBlendMode`, so nothing changes appearance when the pen lifts.
+
+Each tool remembers **its own colour, thickness and opacity** (`inkPrefs`, keyed by
+`InkPrefKey` = the ink tools plus `shape` and `text`) — reaching for the highlighter
+shouldn't hand you a black one, so it has its own bright `HIGHLIGHTER_COLORS`.
+
+**Erasing** (`src/lib/planner-erase.ts`) has two modes. `stroke` takes the whole
+stroke the tip touched; `precise` **splits** its polyline and keeps the surviving runs
+as ordinary strokes with their original pressures — nothing is rasterised. Hit-testing
+is against segments, not samples, so a fast pen's long gaps still get cut, and
+distances put y in width units so the tip stays round on a non-square page. Untouched
+strokes are returned **by identity**, which is what keeps a missed erase from
+invalidating element ids, the selection or the render cache. One drag is one undo step
+(`beginBurst`/`endBurst`). The tip ring follows the pointer through a ref, never state.
+
 Pages hold **strokes and text boxes** (`PageElement` in `src/lib/planner-ink.ts`).
 The Text tool drops an editable, draggable, resizable text box; fonts come from
 `PLANNER_FONTS` (Inter/Instrument Serif/Fredoka/Caveat/Patrick Hand/mono, wired
 up as CSS variables in `src/app/layout.tsx`).
+
+Toolbar controls carry stable hooks for tests — `data-tool` on each tool button,
+`data-swatch` on each colour, `data-zoom` on the zoom readout, `aria-pressed` for
+what's armed. Tooltips describe the tool and get reworded; select on these instead.
 
 Content is stored per planner/page in the `PlannerInk` table via `/api/planner`
 (the `strokes` column holds the serialized `PageElement[]`, text boxes included).

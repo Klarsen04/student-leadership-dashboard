@@ -15,6 +15,7 @@ import { ELEMENT_STORE, idbAll, idbDelete, idbGet, idbPut, syncRecords } from "@
 import { deleteDoc, pushDoc } from "@/lib/sync";
 import { isText, type PageElement, type Stroke, type TextBox } from "@/lib/planner-ink";
 import { elementBounds, unionBounds, type Bounds, type PageGeom } from "@/lib/planner-select";
+import { TOOL_WIDTH, strokeAlpha } from "@/lib/planner-render";
 
 /** A sticker with more pieces than this came from a whole page, not a doodle. */
 const MAX_PIECES = 400;
@@ -238,8 +239,8 @@ export function stickerPreview(saved: SavedElement): StickerPreview {
     strokes.push({
       d: s.points.length === 1 ? `${d} L${s.points[0][0].toFixed(4)} ${s.points[0][1].toFixed(4)}` : d,
       color: s.color,
-      width: s.size * (s.tool === "highlighter" ? 6 : 1),
-      opacity: s.tool === "highlighter" ? 0.35 : 1,
+      width: s.size * (TOOL_WIDTH[s.tool] ?? 1),
+      opacity: strokeAlpha(s),
     });
   }
   return { viewBox: `0 0 ${saved.aspect.toFixed(4)} 1`, strokes, texts };
