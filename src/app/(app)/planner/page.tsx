@@ -50,6 +50,7 @@ import {
   SendToBack,
   RotateCw,
   Shapes,
+  Stamp,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Hotspot, Rect } from "@/lib/planner";
@@ -182,8 +183,20 @@ import {
   stepZoom,
   zoomAbout,
 } from "@/lib/planner-viewport";
+import {
+  type SavedElement,
+  STAMP_HEIGHT,
+  captureElements,
+  clampStamp,
+  deleteSavedElement,
+  listSavedElements,
+  renameSavedElement,
+  saveElement,
+  stampElements,
+} from "@/lib/planner-elements";
 import { PageSidebar, THUMB_H } from "@/components/planner/PageSidebar";
 import { PageSetupDialog } from "@/components/planner/PageSetupDialog";
+import { StickerNameDialog, StickerTray } from "@/components/planner/StickerTray";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
 
@@ -1064,6 +1077,12 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const [sidebar, setSidebar] = useState(false);
   const [setupFor, setSetupFor] = useState<null | { positions: number[]; mode: "insert" | "apply" }>(null);
   const [customTemplates, setCustomTemplates] = useState<TemplateDefinition[]>([]);
+  /** The user's saved stickers, and which one (if any) is armed to be stamped. */
+  const [stickers, setStickers] = useState<SavedElement[]>([]);
+  const [trayOpen, setTrayOpen] = useState(false);
+  const [armedSticker, setArmedSticker] = useState<SavedElement | null>(null);
+  /** A selection on its way into the tray, waiting for a name. */
+  const [namingSticker, setNamingSticker] = useState<Omit<SavedElement, "id" | "createdAt"> | null>(null);
   const [bgImageUrl, setBgImageUrl] = useState<string | null>(null);
   const pages = index.pages.length;
   const pageMeta = index.pages[page - 1];
@@ -1139,6 +1158,9 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   selectionRef.current = selection;
   /** The loop or rectangle being swept right now. Drawn on the ink canvas. */
   const marquee = useRef<Region | null>(null);
+  /** The sticker armed to be stamped, mirrored so the pointer handler sees it at once. */
+  const armedStickerRef = useRef<SavedElement | null>(null);
+  armedStickerRef.current = armedSticker;
   /** Set when the stroke being drawn is one the Shapes tool will snap on release. */
   const snapping = useRef(false);
   const [snapped, setSnapped] = useState<string | null>(null);
@@ -1232,6 +1254,13 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   useEffect(() => {
     let alive = true;
     listUserTemplates().then((t) => { if (alive) setCustomTemplates(t); });
+    return () => { alive = false; };
+  }, []);
+
+  // The user's saved stickers, shared across every notebook on this device.
+  useEffect(() => {
+    let alive = true;
+    listSavedElements().then((s) => { if (alive) setStickers(s); });
     return () => { alive = false; };
   }, []);
 
@@ -1741,6 +1770,62 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     setElements(recolor(elementsRef.current, selectionRef.current, c));
   }, [setElements]);
 
+  // ---- stickers ----
+  // A saved element is the selection's own strokes and text boxes, lifted into their
+  // own coordinate space (see src/lib/planner-elements.ts). Nothing is flattened, so a
+  // stamped copy is ordinary ink that moves, resizes, recolours and undoes like the
+  // rest.
+
+  /** Offer to save the selection as a reusable sticker. */
+  const saveSelectionAsSticker = useCallback(() => {
+    const picked = selectedElements(elementsRef.current, selectionRef.current);
+    if (!picked.length) return;
+    try {
+      setNamingSticker(captureElements(picked, pageGeom(), "Saved element"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't save that as a sticker.");
+    }
+  }, [pageGeom]);
+
+  const confirmSaveSticker = useCallback(async (name: string) => {
+    const draft = namingSticker;
+    setNamingSticker(null);
+    if (!draft) return;
+    try {
+      const saved = await saveElement({ ...draft, name });
+      setStickers((prev) => [saved, ...prev]);
+      setTrayOpen(true);
+      toast.success("Saved to your stickers.");
+    } catch {
+      toast.error("Couldn't save that sticker — your device storage may be full.");
+    }
+  }, [namingSticker]);
+
+  /** Drop an armed sticker onto the page at a page-coordinate point. */
+  const stampAt = useCallback((sticker: SavedElement, x: number, y: number) => {
+    const A = aspectRef.current;
+    const place = clampStamp(sticker, { x, y, height: STAMP_HEIGHT, aspect: A }, writeAreaRef.current);
+    const stamped = stampElements(sticker, { x: place.x, y: place.y, height: STAMP_HEIGHT, aspect: A });
+    beginBurst();
+    setElements([...elementsRef.current, ...stamped]);
+    endBurst();
+    // Select what was just placed, so it can be nudged into position at once.
+    applySelection(new Set(stamped.map((el) => elementId(el))));
+    setTool("select");
+    setArmedSticker(null);
+  }, [applySelection, setElements, beginBurst, endBurst]);
+
+  const renameSticker = useCallback((id: string, name: string) => {
+    setStickers((prev) => prev.map((s) => (s.id === id ? { ...s, name: name.trim().slice(0, 40) || s.name } : s)));
+    renameSavedElement(id, name).catch(() => {});
+  }, []);
+
+  const deleteSticker = useCallback((id: string) => {
+    setStickers((prev) => prev.filter((s) => s.id !== id));
+    setArmedSticker((a) => (a?.id === id ? null : a));
+    deleteSavedElement(id).catch(() => {});
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
@@ -1887,6 +1972,14 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     // Read-only planner: every input is navigation, whatever the tool says.
     if (readOnly) {
       beginTap(e, { chromeOnly: false, flip: true });
+      return;
+    }
+
+    // A sticker armed for placement: the next tap on the paper stamps it. Off the
+    // paper (a tab or the margin) it's ignored, so it can't land where ink is clipped.
+    if (armedStickerRef.current && inkAllowed(x, y)) {
+      e.preventDefault();
+      stampAt(armedStickerRef.current, x, y);
       return;
     }
 
@@ -2550,6 +2643,29 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
         )}
 
         {!readOnly && (
+          <div className="relative flex items-center ml-1">
+            <button
+              data-sticker-toggle
+              onClick={() => { setTrayOpen((o) => !o); if (trayOpen) setArmedSticker(null); }}
+              className={`p-2 rounded-xl transition-colors ${armedSticker ? "bg-[#8A6DE9] text-white" : trayOpen ? "bg-black/[0.07] text-black/70" : "text-black/50 hover:bg-black/5"}`}
+              title={armedSticker ? "Tap the page to place your sticker" : "My stickers — reusable bits you've saved"}
+            >
+              <Stamp className="w-4 h-4" />
+            </button>
+            {trayOpen && (
+              <StickerTray
+                stickers={stickers}
+                armed={armedSticker?.id ?? null}
+                onArm={(s) => setArmedSticker(s)}
+                onRename={renameSticker}
+                onDelete={deleteSticker}
+                onClose={() => setTrayOpen(false)}
+              />
+            )}
+          </div>
+        )}
+
+        {!readOnly && (
           <div className="flex items-center ml-1">
             <button onClick={undo} disabled={undoRef.current.length === 0} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Undo">
               <Undo2 className="w-4 h-4" />
@@ -2730,6 +2846,9 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
                   <button onClick={() => selAction("cut")} className="p-1.5 rounded-lg text-black/60 hover:bg-black/5" title="Cut (⌘X)">
                     <Scissors className="w-3.5 h-3.5" />
                   </button>
+                  <button onClick={saveSelectionAsSticker} className="p-1.5 rounded-lg text-black/60 hover:bg-black/5" title="Save as a sticker to reuse">
+                    <Stamp className="w-3.5 h-3.5" />
+                  </button>
                   <span className="w-px h-4 bg-black/10 mx-0.5" />
                   {PEN_COLORS.map((c) => (
                     <button
@@ -2888,6 +3007,14 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
           onApply={(patch) => applyPageSetup(setupFor.positions, patch)}
           onTemplatesChanged={() => { listUserTemplates().then(setCustomTemplates); }}
           onSaveCurrentAsTemplate={saveAsTemplate}
+        />
+      )}
+
+      {namingSticker && (
+        <StickerNameDialog
+          initial={namingSticker.name}
+          onCancel={() => setNamingSticker(null)}
+          onSave={confirmSaveSticker}
         />
       )}
     </div>
