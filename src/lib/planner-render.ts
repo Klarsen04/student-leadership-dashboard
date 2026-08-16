@@ -58,7 +58,7 @@ function canvasFontFamily(key: string): string {
   const cached = familyCache.get(key);
   if (cached) return cached;
   const stack = fontStack(key);
-  let resolved = stack;
+  let resolved: string;
   if (typeof document !== "undefined") {
     // Replace each var(--x[, fallback]) with the computed value of --x.
     const root = getComputedStyle(document.documentElement);
