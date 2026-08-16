@@ -3,9 +3,16 @@
 // them same-origin: the library imports pdf.js at runtime with webpackIgnore
 // (webpack's ESM interop mangles pdf.js), and the CSP allows no external scripts.
 //
-// Runs from predev/prebuild rather than being committed, so neither file can
-// drift out of step with the installed pdfjs-dist — a mismatch between the main
-// module and its worker makes pdf.js refuse to render.
+// Generated rather than committed, so neither file can drift out of step with the
+// installed pdfjs-dist — a mismatch between the main module and its worker makes
+// pdf.js refuse to render.
+//
+// It runs as the first step of `npm run build` (and of `predev`), *not* as a
+// `prebuild` hook: Vercel's build command calls `npm run build`, but a deploy that
+// overrode it with `next build` skipped the hook silently, and importing a PDF in
+// production died on a 404 for /pdf.min.mjs. Being part of the build command is what
+// makes that impossible — and a missing source file now fails the build rather than
+// warning into a log nobody reads.
 
 import fs from "fs";
 import path from "path";
@@ -23,8 +30,12 @@ fs.mkdirSync(path.join(repoRoot, "public"), { recursive: true });
 for (const f of files) {
   const src = f.from.map((r) => path.join(nm, r)).find((p) => fs.existsSync(p));
   if (!src) {
-    console.warn(`[copy-pdf-worker] ${f.out} not found in pdfjs-dist — importing PDFs will not work.`);
-    continue;
+    console.error(
+      `[copy-pdf-worker] ${f.out} not found in pdfjs-dist — importing PDFs would fail at runtime.\n` +
+        `  Looked in: ${f.from.join(", ")}\n` +
+        `  Run \`npm install\`, or check whether pdfjs-dist moved its build output.`,
+    );
+    process.exit(1);
   }
   fs.copyFileSync(src, path.join(repoRoot, "public", f.out));
   console.log(`[copy-pdf-worker] ${path.relative(repoRoot, src)} → public/${f.out}`);
