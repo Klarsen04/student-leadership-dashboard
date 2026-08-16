@@ -143,9 +143,9 @@ export async function fetchPlannerIndex(): Promise<PlannerInfo[]> {
 /** Per-planner manifest with link hotspots; falls back to the index entry. */
 export async function fetchPlannerManifest(info: PlannerInfo): Promise<PlannerManifest> {
   // Imported PDFs carry their links in the index entry itself, blank notebooks
-  // have no manifest to fetch, and a duplicate reads the manifest of the planner
-  // it copied.
-  if (info.pdfKey || info.paper) return info;
+  // have no manifest to fetch, a template-driven planner gets its hotspots from
+  // code, and a duplicate reads the manifest of the planner it copied.
+  if (info.pdfKey || info.paper || info.template) return info;
   try {
     const res = await fetch(`/planner/${info.sourceId ?? info.id}/manifest.json`);
     // The manifest repeats the source's identity, so the caller's id, name and

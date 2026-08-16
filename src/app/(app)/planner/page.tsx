@@ -35,7 +35,27 @@ import {
   MoreHorizontal,
   Lock,
   Plus,
+  PanelLeft,
+  LayoutTemplate,
+  Maximize2,
+  ZoomIn,
+  ZoomOut,
   X,
+  Lasso,
+  SquareDashed,
+  Scissors,
+  ClipboardPaste,
+  CopyPlus,
+  BringToFront,
+  SendToBack,
+  RotateCw,
+  Shapes,
+  Stamp,
+  Download,
+  FileText,
+  FileImage,
+  Files,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Hotspot, Rect } from "@/lib/planner";
@@ -74,11 +94,11 @@ import {
   simplifyStroke,
   writeLocal,
 } from "@/lib/planner-ink";
+import { SHAPE_LABEL, snapStroke } from "@/lib/planner-shapes";
 import {
   type UserPlanner,
   PdfRenderer,
   USER_CATEGORY,
-  addPages,
   createBlankNotebook,
   deleteUserPlanner,
   duplicatePlanner,
@@ -89,58 +109,148 @@ import {
   suggestedCopyName,
 } from "@/lib/planner-library";
 import {
+  type TemplateDefinition,
   DEFAULT_PAPER,
+  DEFAULT_TEMPLATE,
   PAPER_SIZES,
   PAPER_TINTS,
   PAPER_TYPES,
   paperSrc,
+  templateFor,
 } from "@/lib/planner-paper";
+import {
+  type PageIndex,
+  type PageMeta,
+  type NewPageSpec,
+  MAX_SLOT,
+  clearSlot,
+  copySlot,
+  defaultIndex,
+  deletePages,
+  duplicatePages,
+  fetchSlot,
+  insertPages,
+  loadPageIndex,
+  movePages,
+  pageAspect,
+  pageGeometry,
+  resolveBackground,
+  savePageIndex,
+  setPageProps,
+} from "@/lib/planner-pages";
+import {
+  capturePage,
+  listUserTemplates,
+  saveUserTemplate,
+  templateImageUrl,
+  templateImageUrlNow,
+} from "@/lib/planner-user-templates";
+import {
+  type Bounds,
+  type Handle,
+  type PageGeom,
+  type Region,
+  type SelectMode,
+  HANDLES,
+  HANDLE_CURSOR,
+  addCopies,
+  angleTo,
+  boundsContain,
+  clampMove,
+  clipboardSize,
+  elementBounds,
+  elementId,
+  getClipboard,
+  handleAt,
+  pick,
+  pickAt,
+  recolor,
+  remove as removeSelected,
+  reorder,
+  resizeScale,
+  rotate as rotateSelection,
+  scale as scaleSelection,
+  selectedElements,
+  selectionBounds,
+  setClipboard,
+  snapAngle,
+  translate,
+} from "@/lib/planner-select";
+import {
+  type Viewport,
+  FIT,
+  MAX_ZOOM,
+  clampViewport,
+  inkPixelRatio,
+  isFit,
+  moved as viewMoved,
+  panBy,
+  stepZoom,
+  zoomAbout,
+} from "@/lib/planner-viewport";
+import {
+  type SavedElement,
+  STAMP_HEIGHT,
+  captureElements,
+  clampStamp,
+  deleteSavedElement,
+  listSavedElements,
+  renameSavedElement,
+  saveElement,
+  stampElements,
+} from "@/lib/planner-elements";
+import { PageSidebar, THUMB_H } from "@/components/planner/PageSidebar";
+import { PageSetupDialog } from "@/components/planner/PageSetupDialog";
+import { drawStroke } from "@/lib/planner-render";
+import {
+  EXPORT_LONG_EDGE,
+  annotatePdf,
+  canvasToBlob,
+  canvasesToPdf,
+  downloadBlob,
+  loadImage,
+  renderPageCanvas,
+  renderSelectionCanvas,
+  safeName,
+} from "@/lib/planner-export";
+import { getFile } from "@/lib/planner-library";
+import { StickerNameDialog, StickerTray } from "@/components/planner/StickerTray";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
 
 // ---- page content ------------------------------------------------------------
 // Strokes and text boxes are normalised to the page (0..1 in both axes) so
 // content stays put at any screen size. See src/lib/planner-ink.ts.
-type Tool = "hand" | "pen" | "highlighter" | "eraser" | "text";
+type Tool = "hand" | "pen" | "highlighter" | "eraser" | "text" | "select" | "shape";
+
+/**
+ * One undoable step.
+ *
+ * `content` is an edit to one page's elements, remembered with the slot it applies
+ * to so undo still works after you've turned the page. `pages` is a change to the
+ * notebook's arrangement — insert, duplicate, delete, reorder, or a change of
+ * paper, colour or page size — remembered as the index either side, which is
+ * metadata rather than pixels.
+ */
+type HistoryOp =
+  | { kind: "content"; slot: number; before: PageElement[]; after: PageElement[] }
+  | { kind: "pages"; label: string; before: PageIndex; after: PageIndex; page: number; toPage: number };
 
 const PEN_COLORS = ["#1a1a1a", "#e03131", "#1971c2", "#2f9e44", "#f08c00", "#9c36b5"];
 const PEN_SIZES = [0.0012, 0.0022, 0.004]; // fine / medium / bold (fraction of page width)
-const HIGHLIGHT_ALPHA = 0.35;
 
-function drawStroke(ctx: CanvasRenderingContext2D, s: Stroke, W: number, H: number) {
-  if (s.points.length === 0) return;
-  ctx.save();
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.strokeStyle = s.color;
-  ctx.globalAlpha = s.tool === "highlighter" ? HIGHLIGHT_ALPHA : 1;
-  const base = s.size * W * (s.tool === "highlighter" ? 6 : 1);
+// ---- turning pages -----------------------------------------------------------
+// A planner runs to hundreds of pages and the interesting ones (the weekly and
+// daily spreads behind a month) sit right after the page a tab lands you on, so
+// there are three ways to step one page without reaching for the toolbar arrows:
+// tap the outer edge of the page, swipe sideways, or scroll.
 
-  if (s.points.length === 1) {
-    const [x, y, p] = s.points[0];
-    ctx.beginPath();
-    ctx.arc(x * W, y * H, Math.max(0.5, (base * (0.4 + p)) / 2), 0, Math.PI * 2);
-    ctx.fillStyle = s.color;
-    ctx.fill();
-    ctx.restore();
-    return;
-  }
-
-  // Variable-width polyline: draw segment-by-segment with midpoint smoothing.
-  for (let i = 1; i < s.points.length; i++) {
-    const [x0, y0, p0] = s.points[i - 1];
-    const [x1, y1, p1] = s.points[i];
-    ctx.beginPath();
-    ctx.lineWidth = Math.max(0.6, base * (0.4 + (p0 + p1) / 2));
-    const mx = ((x0 + x1) / 2) * W;
-    const my = ((y0 + y1) / 2) * H;
-    ctx.moveTo(x0 * W, y0 * H);
-    ctx.quadraticCurveTo(x0 * W, y0 * H, mx, my);
-    ctx.lineTo(x1 * W, y1 * H);
-    ctx.stroke();
-  }
-  ctx.restore();
-}
+/** Fraction of the page width, at either side, where a tap turns the page. */
+const EDGE_FLIP = 0.07;
+/** Sideways travel (px) that makes a drag a flip rather than a tap. */
+const SWIPE_FLIP_PX = 55;
+/** Accumulated wheel/trackpad travel (px) that turns one page. */
+const WHEEL_FLIP_PX = 90;
 
 const inside = (h: Hotspot | Rect, x: number, y: number) =>
   x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h;
@@ -440,7 +550,8 @@ function PlannerLibrary({ planners, onOpen, onChanged }: {
         className="hidden"
         onChange={(e) => onImport(e.target.files?.[0])}
       />
-      <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 px-2 py-2 rounded-full bg-white/85 backdrop-blur border border-black/5 shadow-lg">
+      {/* Clears the app's mobile bottom nav, which is 4rem tall and sits above this. */}
+      <div className="fixed bottom-20 md:bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 px-2 py-2 rounded-full bg-white/85 backdrop-blur border border-black/5 shadow-lg">
         <button
           onClick={() => setDialog({ mode: "new" })}
           className="flex items-center gap-2 px-3.5 py-2 rounded-full text-[13px] font-semibold text-black/70 hover:bg-black/5 transition-colors"
@@ -928,9 +1039,9 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   // copy to write in one. Anything already written in one still shows, so ink
   // from before this rule isn't hidden — it just can't be changed here.
   const readOnly = !isOwned(planner);
-  // Only paper-backed notebooks can grow: everything else has exactly as many
-  // pages as the file or folder it renders from.
-  const canAddPages = paperBacked && !readOnly;
+  // Any notebook you own can grow now, whatever its pages are made of: a new page
+  // is a sheet of template paper, so you can add one to an imported PDF too.
+  const canEditPages = !readOnly;
 
   const initialPage = (() => {
     const p = parseInt(searchParams.get("page") || "", 10);
@@ -940,7 +1051,32 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const debug = searchParams.get("debug") === "1";
 
   const [page, setPage] = useState(initialPage);
-  const [pages, setPages] = useState(planner.pages);
+  // The page index: which pages this notebook has, in what order, and what each
+  // one is made of. It starts as the plain "page N = source page N" arrangement so
+  // the first frame renders without waiting on IndexedDB, then the saved
+  // arrangement (if the user has rearranged anything) replaces it.
+  const [index, setIndex] = useState<PageIndex>(() => defaultIndex(planner));
+  const [sidebar, setSidebar] = useState(false);
+  const [setupFor, setSetupFor] = useState<null | { positions: number[]; mode: "insert" | "apply" }>(null);
+  const [customTemplates, setCustomTemplates] = useState<TemplateDefinition[]>([]);
+  /** The user's saved stickers, and which one (if any) is armed to be stamped. */
+  const [stickers, setStickers] = useState<SavedElement[]>([]);
+  const [trayOpen, setTrayOpen] = useState(false);
+  const [armedSticker, setArmedSticker] = useState<SavedElement | null>(null);
+  /** A selection on its way into the tray, waiting for a name. */
+  const [namingSticker, setNamingSticker] = useState<Omit<SavedElement, "id" | "createdAt"> | null>(null);
+  /** Export menu open, and a running-export message for the busy overlay. */
+  const [exportMenu, setExportMenu] = useState(false);
+  const [exportBusy, setExportBusy] = useState<string | null>(null);
+  const [bgImageUrl, setBgImageUrl] = useState<string | null>(null);
+  const pages = index.pages.length;
+  const pageMeta = index.pages[page - 1];
+  /**
+   * Where this page's content is stored. Deliberately *not* the page's position:
+   * see the note at the top of src/lib/planner-pages.ts — the slot is what keeps
+   * handwriting welded to its page when pages are inserted or reordered.
+   */
+  const slot = pageMeta?.slot ?? page;
   // Hand first, because most planners are things you tap around before you write
   // in — except a blank notebook, which has nothing to navigate to.
   const [tool, setTool] = useState<Tool>(paperBacked ? "pen" : "hand");
@@ -951,28 +1087,103 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const [textSize, setTextSize] = useState(TEXT_SIZES[1]);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "unsaved" | "offline">("saved");
   const [boxSize, setBoxSize] = useState({ w: 0, h: 0 });
+  /**
+   * How much of the page is in view. A pure view transform — see
+   * src/lib/planner-viewport.ts — so nothing here is ever written to a page.
+   */
+  const [view, setView] = useState<Viewport>(FIT);
   const [selectedText, setSelectedText] = useState<string | null>(null);
+  /** What the selection tool has picked out, by element id. */
+  const [selection, setSelection] = useState<ReadonlySet<string>>(() => new Set());
+  const [selMode, setSelMode] = useState<SelectMode>("lasso");
   const [pdfSrc, setPdfSrc] = useState<string | null>(null);
   const [, forceRender] = useState(0);
   const rerender = useCallback(() => forceRender((n) => n + 1), []);
 
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  /**
+   * Committed strokes are painted once to this offscreen canvas and blitted each frame;
+   * only the live stroke is repainted on top. Without it, drawing on a page that already
+   * holds thousands of strokes repaints every one of them on every pointer move. It's
+   * rebuilt (flagged by `inkCacheDirty`) only when the committed set, the page size or
+   * the zoom actually changes.
+   */
+  const inkCacheRef = useRef<HTMLCanvasElement | null>(null);
+  const inkCacheDirty = useRef(true);
+  /** The background <img>, so a page can be captured as a template. */
+  const bgImgRef = useRef<HTMLImageElement>(null);
+  const pageRef = useRef(page);
+  pageRef.current = page;
   const elementsRef = useRef<PageElement[]>([]);
   const liveRef = useRef<Stroke | null>(null);
-  const undoRef = useRef<PageElement[][]>([]);
-  const redoRef = useRef<PageElement[][]>([]);
+  const undoRef = useRef<HistoryOp[]>([]);
+  const redoRef = useRef<HistoryOp[]>([]);
+  /** Page content by slot, so flipping back and forth doesn't refetch. */
   const cacheRef = useRef<Map<number, PageElement[]>>(new Map());
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryAttempt = useRef(0);
   const lastToastAt = useRef(0);
   const drawingPointer = useRef<number | null>(null);
   const rendererRef = useRef<PdfRenderer | null>(null);
+  /** A high-resolution PDF renderer used only while exporting. */
+  const exportRendererRef = useRef<PdfRenderer | null>(null);
   // A pending tap. `chromeOnly` taps came from a stylus landing on page
   // furniture, so they may only activate tabs — never a writable day cell.
-  const tapStart = useRef<{ x: number; y: number; t: number; chromeOnly: boolean } | null>(null);
+  // `flip` marks the pointer as one that's navigating rather than writing, so an
+  // edge tap or a sideways drag may turn the page. `lx`/`ly` are where the pointer
+  // was last seen, which is what a drag pans by while zoomed in.
+  const tapStart = useRef<
+    { x: number; y: number; t: number; chromeOnly: boolean; flip: boolean; lx: number; ly: number } | null
+  >(null);
   const toolRef = useRef(tool);
   toolRef.current = tool;
+  const slotRef = useRef(slot);
+  slotRef.current = slot;
+  const indexRef = useRef(index);
+  indexRef.current = index;
+  /** Wheel travel banked since the last flip, so a trackpad's dribble of small deltas adds up. */
+  const wheelAccum = useRef(0);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  /** Pointers currently down, so two fingers can be recognised as a pinch. */
+  const pointers = useRef<Map<number, { x: number; y: number; type: string }>>(new Map());
+  /** The pinch in progress: the last finger separation and midpoint. */
+  const pinch = useRef<{ dist: number; x: number; y: number } | null>(null);
+  const selectionRef = useRef<ReadonlySet<string>>(selection);
+  selectionRef.current = selection;
+  /** The loop or rectangle being swept right now. Drawn on the ink canvas. */
+  const marquee = useRef<Region | null>(null);
+  /** The sticker armed to be stamped, mirrored so the pointer handler sees it at once. */
+  const armedStickerRef = useRef<SavedElement | null>(null);
+  armedStickerRef.current = armedSticker;
+  /** Set when the stroke being drawn is one the Shapes tool will snap on release. */
+  const snapping = useRef(false);
+  const [snapped, setSnapped] = useState<string | null>(null);
+  const snapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * A transform in progress. `from` is the page as it was when the gesture started
+   * and every frame is computed from it, so a long drag can't accumulate rounding
+   * error and letting go needs no fix-up pass.
+   */
+  const dragSel = useRef<
+    | {
+        kind: "move" | "scale" | "rotate";
+        handle?: Handle;
+        from: PageElement[];
+        bounds: Bounds;
+        x: number;
+        y: number;
+      }
+    | null
+  >(null);
+  /** Wrapped heights of the text boxes, reported by the DOM, as page fractions. */
+  const textHeights = useRef<Map<string, number>>(new Map());
+  // Edge taps and swipes only turn the page when nothing else wants the gesture:
+  // the hand tool (and a read-only planner, where every tool is a hand) navigates
+  // instead of drawing. Zoomed in, those same drags pan the page instead — there's
+  // more page than frame, so getting around it is what the gesture is for.
+  const flipGestures = (readOnly || tool === "hand") && isFit(view);
 
   // Link-based planners get their tab strips inferred from the link geometry.
   const pageLinks = planner.links?.[String(page)];
@@ -991,14 +1202,113 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const writeAreaRef = useRef(writeArea);
   writeAreaRef.current = writeArea;
 
-  const label = template ? template.label(page) : `Page ${page}`;
+  const label = pageMeta?.label ?? (template ? template.label(page) : `Page ${page}`);
 
-  // Every page of a blank notebook is the same sheet of paper, so it's drawn once
-  // and reused — no fetch, no preload, nothing to cache per page.
-  const paperUrl = useMemo(
-    () => (paperBacked ? paperSrc(planner.paper, planner.aspect, planner.tint) : null),
-    [paperBacked, planner.paper, planner.aspect, planner.tint],
+  // Page shape is per page, which is what lets one notebook hold an A5 portrait
+  // dotted page and a Letter landscape weekly planner.
+  const geometry = useMemo(() => pageGeometry(pageMeta, planner), [pageMeta, planner]);
+  const aspect = geometry.w / geometry.h;
+  const aspectRef = useRef(aspect);
+  aspectRef.current = aspect;
+
+  // What goes behind the page: generated paper, a rendered planner page, or a page
+  // of the imported PDF. This is a *reference*, resolved at render time — changing
+  // a page's paper never touches what's written on it.
+  const background = useMemo(
+    () => resolveBackground(pageMeta, planner, { customTemplates, imageUrl: bgImageUrl ?? undefined }),
+    [pageMeta, planner, customTemplates, bgImageUrl],
   );
+  const bgSrc = background.kind === "image" ? background.src : background.kind === "pdf" ? pdfSrc : null;
+
+  /**
+   * The same resolution for a thumbnail in the page rail. Picture templates use
+   * whatever URL is already in hand rather than waiting on IndexedDB, so scrolling
+   * the rail never blocks; the picture appears when the page itself loads it. The
+   * ruling is thickened for the size it'll be drawn at, or a lined page would show
+   * up in the rail as a blank one.
+   */
+  const thumbBackground = useCallback((p: PageMeta) => {
+    const bg = p.background;
+    const imageUrl = bg.kind === "template" && bg.templateId ? templateImageUrlNow(bg.templateId) : null;
+    return resolveBackground(p, planner, {
+      customTemplates,
+      imageUrl: imageUrl ?? undefined,
+      shrink: pageGeometry(p, planner).h / THUMB_H,
+    });
+  }, [planner, customTemplates]);
+
+  /** A small render of one PDF page, on its own renderer so the rail can't evict
+   *  the full-size render of the page being written on. */
+  const thumbRendererRef = useRef<PdfRenderer | null>(null);
+  const pdfThumb = useCallback(async (sourcePage: number) => {
+    if (!planner.pdfKey) return "";
+    thumbRendererRef.current ??= new PdfRenderer(planner.pdfKey, 240);
+    return thumbRendererRef.current.page(sourcePage);
+  }, [planner.pdfKey]);
+
+  // The user's own templates, so a page can reference one by id.
+  useEffect(() => {
+    let alive = true;
+    listUserTemplates().then((t) => { if (alive) setCustomTemplates(t); });
+    return () => { alive = false; };
+  }, []);
+
+  // The user's saved stickers, shared across every notebook on this device.
+  useEffect(() => {
+    let alive = true;
+    listSavedElements().then((s) => { if (alive) setStickers(s); });
+    return () => { alive = false; };
+  }, []);
+
+  // A picture template (a saved page, or an imported image) keeps its picture in
+  // IndexedDB, so it has to be fetched before the page can draw it.
+  useEffect(() => {
+    const bg = pageMeta?.background;
+    const def = bg?.kind === "template" ? templateFor(bg.templateId, customTemplates) : null;
+    if (!def?.imageKey) { setBgImageUrl(null); return; }
+    setBgImageUrl(templateImageUrlNow(def.id)); // already loaded: no blank frame
+    let alive = true;
+    templateImageUrl(def).then((u) => { if (alive) setBgImageUrl(u); });
+    return () => { alive = false; };
+  }, [pageMeta, customTemplates]);
+
+  // Load the saved arrangement. Keyed on the planner *id*, not the object: the
+  // library hands down a fresh object for the same notebook, and reloading then
+  // would throw away a rearrangement made a moment earlier.
+  const plannerRef = useRef(planner);
+  plannerRef.current = planner;
+  useEffect(() => {
+    let alive = true;
+    loadPageIndex(plannerRef.current).then((i) => {
+      if (!alive) return;
+      setIndex(i);
+      setPage((p) => Math.min(Math.max(1, p), i.pages.length));
+    });
+    return () => { alive = false; };
+  }, [plannerId]);
+
+  // A pointer let go of outside the page box never reaches the handlers below, and
+  // a finger left behind in the list would make the next single touch look like a
+  // pinch. Watching the window as well is what keeps that list honest.
+  useEffect(() => {
+    const forget = (e: PointerEvent) => {
+      pointers.current.delete(e.pointerId);
+      if (pinch.current && [...pointers.current.values()].filter((p) => p.type === "touch").length < 2) {
+        pinch.current = null;
+      }
+    };
+    window.addEventListener("pointerup", forget);
+    window.addEventListener("pointercancel", forget);
+    return () => {
+      window.removeEventListener("pointerup", forget);
+      window.removeEventListener("pointercancel", forget);
+    };
+  }, []);
+
+  // Opening a different notebook starts fitted. Turning a page deliberately does
+  // *not*: staying zoomed is what lets you write the same corner of one page after
+  // another without setting the zoom up again each time.
+  useEffect(() => { setView(FIT); }, [plannerId]);
 
   /** Ink is allowed on paper only: inside the write area and clear of the tabs. */
   const inkAllowed = useCallback((x: number, y: number) => {
@@ -1006,40 +1316,129 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     return !hotspotsRef.current.some((h) => h.kind === "chrome" && inside(h, x, y));
   }, []);
 
+  /**
+   * What the selection maths needs to know about this page: its shape, and how tall
+   * each text box's text has actually wrapped to.
+   */
+  const pageGeom = useCallback((): PageGeom => ({
+    aspect: aspectRef.current,
+    textHeight: (t) => textHeights.current.get(t.id),
+  }), []);
+
   // ---- rendering ----
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
     const box = boxRef.current;
     if (!canvas || !box) return;
+    // The *displayed* size, zoom included: the canvas is sized to how big the page
+    // currently is on screen, so ink zoomed into stays as sharp as the paper behind
+    // it rather than being a magnified bitmap. `inkPixelRatio` caps that.
     const rect = box.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    if (canvas.width !== Math.round(rect.width * dpr) || canvas.height !== Math.round(rect.height * dpr)) {
-      canvas.width = Math.round(rect.width * dpr);
-      canvas.height = Math.round(rect.height * dpr);
+    const dpr = inkPixelRatio(rect.width, rect.height, window.devicePixelRatio || 1);
+    const pw = Math.round(rect.width * dpr);
+    const ph = Math.round(rect.height * dpr);
+    if (canvas.width !== pw || canvas.height !== ph) {
+      canvas.width = pw;
+      canvas.height = ph;
+      inkCacheDirty.current = true; // a resize invalidates the cached bitmap
     }
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    // Clip strokes to the writable paper so one that strays into the tabs or the outer
+    // margin is trimmed rather than painted over the furniture. Text boxes are DOM
+    // overlays and clip themselves.
+    const wa = writeAreaRef.current;
+    const clipPaper = (c: CanvasRenderingContext2D) => {
+      c.beginPath();
+      c.rect(wa.x * rect.width, wa.y * rect.height, wa.w * rect.width, wa.h * rect.height);
+      c.clip();
+    };
+
+    // Rebuild the committed-stroke cache only when something it depends on changed.
+    if (inkCacheDirty.current) {
+      let cache = inkCacheRef.current;
+      if (!cache) { cache = document.createElement("canvas"); inkCacheRef.current = cache; }
+      if (cache.width !== pw || cache.height !== ph) { cache.width = pw; cache.height = ph; }
+      const cc = cache.getContext("2d");
+      if (cc) {
+        cc.setTransform(dpr, 0, 0, dpr, 0, 0);
+        cc.clearRect(0, 0, rect.width, rect.height);
+        cc.save();
+        clipPaper(cc);
+        for (const el of elementsRef.current) if (isStroke(el)) drawStroke(cc, el, rect.width, rect.height);
+        cc.restore();
+      }
+      inkCacheDirty.current = false;
+    }
+
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, rect.width, rect.height);
-    // Clip strokes to the writable paper so one that strays into the tabs or the
-    // outer margin is trimmed rather than painted over the furniture. Text boxes
-    // are DOM overlays and clip themselves.
-    const wa = writeAreaRef.current;
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(wa.x * rect.width, wa.y * rect.height, wa.w * rect.width, wa.h * rect.height);
-    ctx.clip();
-    for (const el of elementsRef.current) if (isStroke(el)) drawStroke(ctx, el, rect.width, rect.height);
-    if (liveRef.current) drawStroke(ctx, liveRef.current, rect.width, rect.height);
-    ctx.restore();
-  }, []);
+    // Blit the cached committed strokes 1:1 in device pixels, then paint only the live
+    // stroke on top — the whole point of the cache.
+    if (inkCacheRef.current) {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(inkCacheRef.current, 0, 0);
+      ctx.restore();
+    }
+    if (liveRef.current) {
+      ctx.save();
+      clipPaper(ctx);
+      drawStroke(ctx, liveRef.current, rect.width, rect.height);
+      ctx.restore();
+    }
 
+    // Selection furniture, drawn outside the clip: a lasso often strays over a
+    // margin on its way round a word, and cutting it off there looks broken.
+    const W = rect.width, H = rect.height;
+    const sel = selectionRef.current;
+    if (sel.size) {
+      // Every picked element gets its own outline, so it's clear *what* is coming
+      // along, and one box round the lot for the handles to sit on.
+      ctx.save();
+      ctx.strokeStyle = "#8A6DE9";
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.5;
+      ctx.setLineDash([3, 3]);
+      for (const el of elementsRef.current) {
+        if (isText(el) || !sel.has(elementId(el))) continue; // text boxes outline themselves
+        const b = elementBounds(el, pageGeom());
+        ctx.strokeRect(b.x * W, b.y * H, b.w * W, b.h * H);
+      }
+      ctx.restore();
+    }
+    const m = marquee.current;
+    if (m) {
+      ctx.save();
+      ctx.strokeStyle = "#8A6DE9";
+      ctx.fillStyle = "rgba(138,109,233,0.10)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      if (m.mode === "rect") {
+        ctx.rect(m.a[0] * W, m.a[1] * H, (m.b[0] - m.a[0]) * W, (m.b[1] - m.a[1]) * H);
+      } else {
+        m.points.forEach(([x, y], i) => (i ? ctx.lineTo(x * W, y * H) : ctx.moveTo(x * W, y * H)));
+        ctx.closePath();
+      }
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+  }, [pageGeom]);
+
+  // The page box's *layout* size — its size at zoom 1, which is what normalised
+  // coordinates are a fraction of. Deliberately not the bounding rect: that one
+  // carries the zoom transform, and a text box's font size would then be scaled
+  // twice. ResizeObserver reports the layout box, so a zoom doesn't fire it.
   useEffect(() => {
     const box = boxRef.current;
     if (!box) return;
     const apply = () => {
-      const r = box.getBoundingClientRect();
-      setBoxSize({ w: r.width, h: r.height });
+      const w = box.offsetWidth, h = box.offsetHeight;
+      setBoxSize({ w, h });
+      // A window resize changes how far the page may be panned.
+      setView((v) => clampViewport(v, { w, h }));
       redraw();
     };
     apply();
@@ -1048,23 +1447,38 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     return () => ro.disconnect();
   }, [redraw]);
 
+  // Zoom changes the canvas's displayed size without touching its layout size, so
+  // the observer above can't see it: resize the backing store here instead.
+  useEffect(() => { redraw(); }, [view.z, redraw]);
+
+  /** The page box's layout size: what the pan limits are measured against. */
+  const layout = () => ({ w: boxRef.current?.offsetWidth ?? 0, h: boxRef.current?.offsetHeight ?? 0 });
+
+  /** Zoom, keeping the given page point (default: the middle) where it is. */
+  const zoomTo = useCallback((z: number, at: { x: number; y: number } = { x: 0.5, y: 0.5 }) => {
+    const box = { w: boxRef.current?.offsetWidth ?? 0, h: boxRef.current?.offsetHeight ?? 0 };
+    setView((v) => zoomAbout(v, z, box, at));
+  }, []);
+
   // ---- persistence ----
   // Every edit is mirrored to localStorage *before* the network call and the
   // mirror is cleared only once the server acknowledges. A failed save therefore
   // degrades to "not synced yet" and survives a reload, rather than losing ink.
-  const saveNow = useCallback(async (forPage: number) => {
-    const json = serializeElements(cacheRef.current.get(forPage) ?? []);
-    writeLocal(planner.id, forPage, json);
-    if (forPage === page) setSaveState("saving");
-    const res = await pushPage(planner.id, forPage, json);
+  //
+  // Content is keyed by slot, so a page keeps its handwriting when it moves.
+  const saveNow = useCallback(async (forSlot: number) => {
+    const json = serializeElements(cacheRef.current.get(forSlot) ?? []);
+    writeLocal(planner.id, forSlot, json);
+    if (forSlot === slotRef.current) setSaveState("saving");
+    const res = await pushPage(planner.id, forSlot, json);
     if (res.ok) {
-      clearLocal(planner.id, forPage);
+      clearLocal(planner.id, forSlot);
       retryAttempt.current = 0;
-      if (forPage === page && !saveTimer.current) setSaveState("saved");
+      if (forSlot === slotRef.current && !saveTimer.current) setSaveState("saved");
       return true;
     }
     // Left on disk; reflect the failure and back off before retrying.
-    if (forPage === page) setSaveState(res.status === 0 ? "offline" : "unsaved");
+    if (forSlot === slotRef.current) setSaveState(res.status === 0 ? "offline" : "unsaved");
     const now = Date.now();
     if (now - lastToastAt.current > 8000) {
       lastToastAt.current = now;
@@ -1073,34 +1487,71 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       saveTimer.current = null;
-      saveNow(forPage);
+      saveNow(forSlot);
     }, retryDelay(retryAttempt.current++));
     return false;
-  }, [planner.id, page]);
+  }, [planner.id]);
 
-  const scheduleSave = useCallback((forPage: number) => {
+  const scheduleSave = useCallback((forSlot: number) => {
     setSaveState("unsaved");
-    writeLocal(planner.id, forPage, serializeElements(cacheRef.current.get(forPage) ?? []));
+    writeLocal(planner.id, forSlot, serializeElements(cacheRef.current.get(forSlot) ?? []));
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       saveTimer.current = null;
-      saveNow(forPage);
+      saveNow(forSlot);
     }, 1000);
   }, [planner.id, saveNow]);
 
+  /**
+   * Record one undoable step. History is a list of operations rather than of page
+   * snapshots: a content edit remembers the slot it happened on (so undo still
+   * works after flipping the page), and a page operation remembers the index
+   * either side, which is a few hundred bytes of metadata — no rasterising, and
+   * undoing a page deletion brings its handwriting back with it.
+   */
+  /**
+   * A run of small edits that should undo as one step — a typing session, a text
+   * box being dragged. `before` is the state the burst started from; `op` is the
+   * single history entry it feeds, created on the first change so an empty burst
+   * leaves no trace.
+   */
+  const burstRef = useRef<
+    { slot: number; before: PageElement[]; op: Extract<HistoryOp, { kind: "content" }> | null } | null
+  >(null);
+
+  const pushOp = useCallback((op: HistoryOp) => {
+    undoRef.current.push(op);
+    if (undoRef.current.length > 100) undoRef.current.shift();
+    redoRef.current = [];
+    rerender();
+  }, [rerender]);
+
   const setElements = useCallback((next: PageElement[], { history = true }: { history?: boolean } = {}) => {
     if (readOnly) return; // built-in planner: nothing here is editable
+    const forSlot = slotRef.current;
     if (history) {
-      undoRef.current.push(elementsRef.current);
-      if (undoRef.current.length > 60) undoRef.current.shift();
-      redoRef.current = [];
+      burstRef.current = null;
+      pushOp({ kind: "content", slot: forSlot, before: elementsRef.current, after: next });
+    } else {
+      // Part of a burst (typing a word, dragging a text box): the burst's single op
+      // keeps up with each change, so one undo takes the whole thing back rather
+      // than a keystroke at a time.
+      const burst = burstRef.current;
+      if (burst && burst.slot === forSlot) {
+        if (burst.op) burst.op.after = next;
+        else {
+          burst.op = { kind: "content", slot: forSlot, before: burst.before, after: next };
+          pushOp(burst.op);
+        }
+      }
     }
     elementsRef.current = next;
-    cacheRef.current.set(page, next);
-    scheduleSave(page);
+    cacheRef.current.set(forSlot, next);
+    inkCacheDirty.current = true; // committed set changed — the cached bitmap is stale
+    scheduleSave(forSlot);
     redraw();
     rerender();
-  }, [page, readOnly, redraw, rerender, scheduleSave]);
+  }, [readOnly, redraw, rerender, scheduleSave, pushOp]);
 
   // Recover any pages a previous session couldn't sync.
   useEffect(() => {
@@ -1113,29 +1564,36 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
 
   // Load a page's content when it changes: memory cache → unsynced local mirror
   // → server. A local mirror means an edit never reached the server, so it wins.
+  // Keyed on the slot: two positions never share one, and moving a page doesn't
+  // change it, so this doesn't refetch after a reorder.
   useEffect(() => {
     let cancelled = false;
-    undoRef.current = [];
-    redoRef.current = [];
     liveRef.current = null;
     setSelectedText(null);
+    // A selection is a set of things on *this* page, and the measured text heights
+    // go with them.
+    selectionRef.current = new Set();
+    setSelection(selectionRef.current);
+    textHeights.current.clear();
+    burstRef.current = null; // a typing session doesn't span pages
+    inkCacheDirty.current = true; // a new page's strokes need a fresh cache
 
-    const cached = cacheRef.current.get(page);
+    const cached = cacheRef.current.get(slot);
     if (cached) {
       elementsRef.current = cached;
       redraw();
       rerender();
       return;
     }
-    const local = readLocal(planner.id, page);
+    const local = readLocal(planner.id, slot);
     if (local) {
       const parsed = parseElements(local.json);
       elementsRef.current = parsed;
-      cacheRef.current.set(page, parsed);
+      cacheRef.current.set(slot, parsed);
       redraw();
       rerender();
       setSaveState("unsaved");
-      saveNow(page);
+      saveNow(slot);
       return;
     }
     elementsRef.current = [];
@@ -1143,91 +1601,103 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     rerender();
     (async () => {
       try {
-        const res = await fetch(`/api/planner?planner=${planner.id}&page=${page}`);
+        const res = await fetch(`/api/planner?planner=${planner.id}&page=${slot}`);
         if (!res.ok || cancelled) return;
         const data = await res.json();
         if (cancelled) return;
         const parsed = parseElements(data.strokes);
-        cacheRef.current.set(page, parsed);
+        cacheRef.current.set(slot, parsed);
         elementsRef.current = parsed;
+        inkCacheDirty.current = true; // the fetched strokes replace the empty page
         redraw();
         rerender();
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [page, planner.id, redraw, rerender, saveNow]);
+  }, [slot, planner.id, redraw, rerender, saveNow]);
 
-  // Render the current page image: a folder WebP, or a PDF page on demand.
+  // Render the current page's PDF page on demand. A page of this notebook that
+  // isn't from the PDF (an inserted template page) resolves to an image instead,
+  // so there's nothing to render.
   useEffect(() => {
-    if (!pdfBacked || !planner.pdfKey) return;
+    if (background.kind !== "pdf" || !planner.pdfKey) return;
     rendererRef.current ??= new PdfRenderer(planner.pdfKey);
     let alive = true;
     setPdfSrc(null);
-    rendererRef.current.page(page).then((url) => { if (alive) setPdfSrc(url); }).catch(() => {});
+    rendererRef.current.page(background.page).then((url) => { if (alive) setPdfSrc(url); }).catch(() => {});
     return () => { alive = false; };
-  }, [page, pdfBacked, planner.pdfKey]);
+  }, [background, planner.pdfKey]);
 
-  useEffect(() => () => { rendererRef.current?.destroy(); rendererRef.current = null; }, []);
+  useEffect(() => () => {
+    rendererRef.current?.destroy();
+    rendererRef.current = null;
+    thumbRendererRef.current?.destroy();
+    thumbRendererRef.current = null;
+    exportRendererRef.current?.destroy();
+    exportRendererRef.current = null;
+  }, []);
 
   // Flush any pending save if the tab is closed or backgrounded.
   useEffect(() => {
     const flush = () => {
       if (!saveTimer.current) return;
-      const json = serializeElements(cacheRef.current.get(page) ?? []);
-      writeLocal(planner.id, page, json);
+      const json = serializeElements(cacheRef.current.get(slot) ?? []);
+      writeLocal(planner.id, slot, json);
       navigator.sendBeacon?.(
         "/api/planner",
-        new Blob([JSON.stringify({ planner: planner.id, page, strokes: json })], { type: "application/json" }),
+        new Blob([JSON.stringify({ planner: planner.id, page: slot, strokes: json })], { type: "application/json" }),
       );
     };
     window.addEventListener("pagehide", flush);
     return () => { window.removeEventListener("pagehide", flush); flush(); };
-  }, [page, planner.id]);
+  }, [slot, planner.id]);
 
   // Keep the URL shareable. Deliberately keyed on the planner *id*, not the
   // planner object: reloading the library hands down a fresh object for the same
   // notebook, and rewriting the URL then would stomp a navigation in flight (e.g.
   // "make a copy to write", which points the URL at the new notebook).
   useEffect(() => {
-    router.replace(`/planner?planner=${plannerId}&page=${page}`, { scroll: false });
-  }, [page, plannerId, router]);
+    // `debug` rides along, or this rewrite would switch the overlays off the
+    // moment you opened a planner with ?debug=1.
+    router.replace(`/planner?planner=${plannerId}&page=${page}${debug ? "&debug=1" : ""}`, { scroll: false });
+  }, [page, plannerId, router, debug]);
 
-  // Preload neighbouring pages for snappy flips.
+  // Preload the neighbouring pages for snappy flips. Generated paper is a data URL
+  // built on the spot, so only fetched backgrounds are worth warming.
   useEffect(() => {
-    // Blank notebooks share one paper image across every page — nothing to fetch.
-    if (paperBacked) return;
-    if (pdfBacked) {
-      for (const p of [page + 1, page - 1]) if (p >= 1 && p <= pages) rendererRef.current?.page(p).catch(() => {});
-    } else {
-      for (const p of [page - 1, page + 1]) {
-        if (p >= 1 && p <= pages) { const img = new Image(); img.src = imageSrc(planner, p); }
+    for (const p of [page + 1, page - 1]) {
+      if (p < 1 || p > pages) continue;
+      const bg = resolveBackground(index.pages[p - 1], planner, { customTemplates });
+      if (bg.kind === "pdf") rendererRef.current?.page(bg.page).catch(() => {});
+      else if (bg.kind === "image" && !bg.src.startsWith("data:")) {
+        const img = new Image();
+        img.src = bg.src;
       }
     }
-  }, [page, pages, planner, pdfBacked, paperBacked]);
+  }, [page, pages, planner, index, customTemplates]);
+
+  /** Persist the page being left right away, keeping its mirror until acked. */
+  const flushPending = useCallback(() => {
+    if (!saveTimer.current) return;
+    clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    saveNow(slotRef.current);
+  }, [saveNow]);
 
   const go = useCallback((p: number) => {
     if (p < 1 || p > pages || p === page) return;
-    // Persist the page we're leaving right away, keeping its mirror until acked.
-    if (saveTimer.current) {
-      clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-      saveNow(page);
-    }
+    flushPending();
     setPage(p);
-  }, [page, pages, saveNow]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement;
-      if (t?.tagName === "INPUT" || t?.tagName === "TEXTAREA" || t?.isContentEditable) return;
-      if (e.key === "ArrowLeft") go(page - 1);
-      if (e.key === "ArrowRight") go(page + 1);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [page, go]);
+  }, [page, pages, flushPending]);
 
   // ---- text boxes ----
+  /** Start treating the edits that follow as one undo step. */
+  const beginBurst = useCallback(() => {
+    burstRef.current = { slot: slotRef.current, before: elementsRef.current, op: null };
+  }, []);
+  /** Close the burst, so the next edit starts a new step. */
+  const endBurst = useCallback(() => { burstRef.current = null; }, []);
+
   const updateText = useCallback((id: string, patch: Partial<TextBox>, history = false) => {
     const next = elementsRef.current.map((el) =>
       isText(el) && el.id === id ? { ...el, ...patch } : el,
@@ -1251,14 +1721,329 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     setSelectedText(id);
   }, [color, font, textSize, setElements]);
 
+  // ---- selection ----
+  // A selection is a set of element identities, and every action on it rewrites
+  // those elements: a moved word is still a stroke with pressure behind it, so it
+  // stays sharp at any zoom, can be moved again, recoloured, or undone. Nothing is
+  // ever flattened to a picture. See src/lib/planner-select.ts.
+
+  /** Change the selection, keeping the ref in step so `redraw` sees it at once. */
+  const applySelection = useCallback((ids: ReadonlySet<string>) => {
+    selectionRef.current = ids;
+    setSelection(ids);
+    redraw();
+  }, [redraw]);
+
+  const selBoundsNow = useCallback(
+    () => (selectionRef.current.size ? selectionBounds(elementsRef.current, selectionRef.current, pageGeom()) : null),
+    [pageGeom],
+  );
+
+  /** A text box reporting how tall it wrapped to. */
+  const measureText = useCallback((id: string, height: number) => {
+    const prev = textHeights.current.get(id);
+    if (prev !== undefined && Math.abs(prev - height) < 1e-4) return;
+    textHeights.current.set(id, height);
+    // Only worth a repaint if it changes a box that's currently outlined.
+    if (selectionRef.current.has(id)) { redraw(); rerender(); }
+  }, [redraw, rerender]);
+
+  /** Nudge the selection by a fraction of the page, as the arrow keys do. */
+  const nudgeSelection = useCallback((dx: number, dy: number) => {
+    const ids = selectionRef.current;
+    const b = selBoundsNow();
+    if (!ids.size || !b) return;
+    const d = clampMove(b, dx, dy, writeAreaRef.current);
+    setElements(translate(elementsRef.current, ids, d.dx, d.dy));
+  }, [selBoundsNow, setElements]);
+
+  type SelAction = "duplicate" | "copy" | "cut" | "paste" | "delete" | "front" | "back";
+
+  const selAction = useCallback((action: SelAction) => {
+    const ids = selectionRef.current;
+    const els = elementsRef.current;
+    if (action === "paste") {
+      const clip = getClipboard();
+      if (!clip.length) return;
+      const { elements, ids: pasted } = addCopies(els, clip, { dx: 0.02, dy: 0.02 });
+      setElements(elements);
+      applySelection(pasted);
+      return;
+    }
+    if (!ids.size) return;
+    const picked = selectedElements(els, ids);
+    switch (action) {
+      case "duplicate": {
+        const { elements, ids: copies } = addCopies(els, picked, { dx: 0.02, dy: 0.02 });
+        setElements(elements);
+        applySelection(copies);
+        return;
+      }
+      case "copy":
+        setClipboard(picked);
+        rerender(); // the paste button lights up
+        return;
+      case "cut":
+        setClipboard(picked);
+        setElements(removeSelected(els, ids));
+        applySelection(new Set());
+        return;
+      case "delete":
+        setElements(removeSelected(els, ids));
+        applySelection(new Set());
+        return;
+      case "front":
+      case "back":
+        setElements(reorder(els, ids, action));
+        return;
+    }
+  }, [applySelection, rerender, setElements]);
+
+  const recolorSelection = useCallback((c: string) => {
+    if (!selectionRef.current.size) return;
+    setElements(recolor(elementsRef.current, selectionRef.current, c));
+  }, [setElements]);
+
+  // ---- stickers ----
+  // A saved element is the selection's own strokes and text boxes, lifted into their
+  // own coordinate space (see src/lib/planner-elements.ts). Nothing is flattened, so a
+  // stamped copy is ordinary ink that moves, resizes, recolours and undoes like the
+  // rest.
+
+  /** Offer to save the selection as a reusable sticker. */
+  const saveSelectionAsSticker = useCallback(() => {
+    const picked = selectedElements(elementsRef.current, selectionRef.current);
+    if (!picked.length) return;
+    try {
+      setNamingSticker(captureElements(picked, pageGeom(), "Saved element"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't save that as a sticker.");
+    }
+  }, [pageGeom]);
+
+  const confirmSaveSticker = useCallback(async (name: string) => {
+    const draft = namingSticker;
+    setNamingSticker(null);
+    if (!draft) return;
+    try {
+      const saved = await saveElement({ ...draft, name });
+      setStickers((prev) => [saved, ...prev]);
+      setTrayOpen(true);
+      toast.success("Saved to your stickers.");
+    } catch {
+      toast.error("Couldn't save that sticker — your device storage may be full.");
+    }
+  }, [namingSticker]);
+
+  /** Drop an armed sticker onto the page at a page-coordinate point. */
+  const stampAt = useCallback((sticker: SavedElement, x: number, y: number) => {
+    const A = aspectRef.current;
+    const place = clampStamp(sticker, { x, y, height: STAMP_HEIGHT, aspect: A }, writeAreaRef.current);
+    const stamped = stampElements(sticker, { x: place.x, y: place.y, height: STAMP_HEIGHT, aspect: A });
+    beginBurst();
+    setElements([...elementsRef.current, ...stamped]);
+    endBurst();
+    // Select what was just placed, so it can be nudged into position at once.
+    applySelection(new Set(stamped.map((el) => elementId(el))));
+    setTool("select");
+    setArmedSticker(null);
+  }, [applySelection, setElements, beginBurst, endBurst]);
+
+  const renameSticker = useCallback((id: string, name: string) => {
+    setStickers((prev) => prev.map((s) => (s.id === id ? { ...s, name: name.trim().slice(0, 40) || s.name } : s)));
+    renameSavedElement(id, name).catch(() => {});
+  }, []);
+
+  const deleteSticker = useCallback((id: string) => {
+    setStickers((prev) => prev.filter((s) => s.id !== id));
+    setArmedSticker((a) => (a?.id === id ? null : a));
+    deleteSavedElement(id).catch(() => {});
+  }, []);
+
+  // ---- export ----
+  // Every export is composited fresh from the page's background image and its vector
+  // ink — never a screenshot — so it's as crisp as the paper allows. See
+  // src/lib/planner-export.ts. A whole-notebook export is capped so a 400-page built-in
+  // planner can't try to build a half-gigabyte PDF; what's left out is reported.
+
+  const EXPORT_PAGE_CAP = 120;
+
+  /** Ink for a slot: the cache and the offline mirror first, then the server. */
+  const fetchInkFor = useCallback(async (s: number): Promise<PageElement[]> => {
+    const cached = cacheRef.current.get(s);
+    if (cached) return cached;
+    const local = readLocal(planner.id, s);
+    if (local) return parseElements(local.json);
+    return fetchSlot(planner.id, s);
+  }, [planner.id]);
+
+  /** The background image for a page, resolved at export resolution. */
+  const exportBackground = useCallback(async (pm: PageMeta): Promise<HTMLImageElement | null> => {
+    const bg = pm.background;
+    let imageUrl: string | undefined;
+    if (bg.kind === "template" && bg.templateId) {
+      const def = templateFor(bg.templateId, customTemplates);
+      if (def?.imageKey) imageUrl = (await templateImageUrl(def)) ?? undefined;
+    }
+    const resolved = resolveBackground(pm, planner, { customTemplates, imageUrl });
+    if (resolved.kind === "image") return loadImage(resolved.src).catch(() => null);
+    if (resolved.kind === "pdf" && planner.pdfKey) {
+      exportRendererRef.current ??= new PdfRenderer(planner.pdfKey, EXPORT_LONG_EDGE);
+      const url = await exportRendererRef.current.page(resolved.page).catch(() => "");
+      return url ? loadImage(url).catch(() => null) : null;
+    }
+    return null;
+  }, [customTemplates, planner]);
+
+  /** A finished canvas for one page of the notebook, background and ink composited. */
+  const exportPageCanvas = useCallback(async (idx: number) => {
+    const pm = indexRef.current.pages[idx];
+    const [bg, elements] = await Promise.all([exportBackground(pm), fetchInkFor(pm.slot ?? idx + 1)]);
+    return renderPageCanvas({ background: bg, elements, aspect: pageAspect(pm, planner) });
+  }, [exportBackground, fetchInkFor, planner]);
+
+  const runExport = useCallback(async (message: string, job: () => Promise<void>) => {
+    setExportMenu(false);
+    setExportBusy(message);
+    try {
+      await job();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "That export didn't work.");
+    } finally {
+      setExportBusy(null);
+    }
+  }, []);
+
+  const exportCurrentPage = useCallback((kind: "png" | "pdf") => {
+    runExport(kind === "png" ? "Saving this page as an image…" : "Saving this page as a PDF…", async () => {
+      // The on-screen background is already decoded; fall back to a fresh render only if
+      // it isn't (a page that hasn't finished loading its picture).
+      const bg = bgImgRef.current?.complete ? bgImgRef.current : await exportBackground(pageMeta);
+      const canvas = renderPageCanvas({
+        background: bg,
+        elements: elementsRef.current,
+        aspect,
+        textHeight: (t) => textHeights.current.get(t.id),
+      });
+      const stem = `${safeName(planner.name)}-p${page}`;
+      if (kind === "png") downloadBlob(await canvasToBlob(canvas), `${stem}.png`);
+      else downloadBlob(await canvasesToPdf([{ canvas, hasPhoto: pdfBacked }]), `${stem}.pdf`);
+    });
+  }, [runExport, exportBackground, pageMeta, aspect, planner.name, page, pdfBacked]);
+
+  const exportSelection = useCallback(() => {
+    const ids = selectionRef.current;
+    if (!ids.size) return;
+    runExport("Saving your selection as an image…", async () => {
+      const picked = selectedElements(elementsRef.current, ids);
+      const b = selectionBounds(elementsRef.current, ids, pageGeom());
+      if (!b) throw new Error("Nothing to export.");
+      const canvas = renderSelectionCanvas(picked, b, aspect, (t) => textHeights.current.get(t.id));
+      downloadBlob(await canvasToBlob(canvas), `${safeName(planner.name)}-selection.png`);
+    });
+  }, [runExport, aspect, planner.name, pageGeom]);
+
+  const exportNotebook = useCallback(() => {
+    const total = indexRef.current.pages.length;
+    const count = Math.min(total, EXPORT_PAGE_CAP);
+    runExport(`Building a PDF of ${count} page${count === 1 ? "" : "s"}…`, async () => {
+      const canvases: { canvas: HTMLCanvasElement; hasPhoto?: boolean }[] = [];
+      for (let i = 0; i < count; i++) canvases.push({ canvas: await exportPageCanvas(i), hasPhoto: pdfBacked });
+      downloadBlob(await canvasesToPdf(canvases), `${safeName(planner.name)}.pdf`);
+      if (count < total) {
+        toast.message(`Exported the first ${count} pages of ${total}.`, {
+          description: "That's the per-file limit — export a shorter range if you need the rest.",
+        });
+      }
+    });
+  }, [runExport, exportPageCanvas, planner.name, pdfBacked]);
+
+  /** Ink drawn back onto the original PDF, keeping its own text selectable underneath. */
+  const exportAnnotatedPdf = useCallback(() => {
+    if (!planner.pdfKey) return;
+    runExport("Adding your notes to the original PDF…", async () => {
+      const blob = await getFile(planner.pdfKey!);
+      if (!blob) throw new Error("This notebook's PDF isn't on this device to annotate.");
+      const pages = indexRef.current.pages;
+      const inkByPage = new Map<number, HTMLCanvasElement>();
+      for (const pm of pages) {
+        // Only pages that map to a real page of the original PDF can be annotated onto
+        // it — inserted template pages have no home in the source document, so they're
+        // left out (the whole-notebook PDF export carries those).
+        if (pm.background.kind !== "source") continue;
+        const sourcePage = pm.background.sourcePage ?? 1;
+        const elements = await fetchInkFor(pm.slot ?? sourcePage);
+        if (!elements.length) continue;
+        // Ink on transparency at the PDF page's own aspect, so it drops on 1:1.
+        const canvas = renderPageCanvas({ background: null, elements, aspect: pageAspect(pm, planner), fill: "rgba(0,0,0,0)" });
+        inkByPage.set(sourcePage, canvas);
+      }
+      if (!inkByPage.size) throw new Error("There are no notes on this PDF yet.");
+      downloadBlob(await annotatePdf(await blob.arrayBuffer(), inkByPage), `${safeName(planner.name)}-annotated.pdf`);
+    });
+  }, [runExport, planner, fetchInkFor]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (t?.tagName === "INPUT" || t?.tagName === "TEXTAREA" || t?.isContentEditable) return;
+      const picked = selectionRef.current.size > 0;
+      // ⌘/ctrl with +, − and 0, as every document viewer does it — and the
+      // clipboard keys, which act on the selection.
+      if (e.metaKey || e.ctrlKey) {
+        const key = e.key.toLowerCase();
+        if (e.key === "+" || e.key === "=") { e.preventDefault(); zoomTo(stepZoom(viewRef.current.z, 1)); }
+        else if (e.key === "-" || e.key === "_") { e.preventDefault(); zoomTo(stepZoom(viewRef.current.z, -1)); }
+        else if (e.key === "0") { e.preventDefault(); setView(FIT); }
+        else if (key === "c" && picked) { e.preventDefault(); selAction("copy"); }
+        else if (key === "x" && picked) { e.preventDefault(); selAction("cut"); }
+        else if (key === "v" && !readOnly) { e.preventDefault(); setTool("select"); selAction("paste"); }
+        else if (key === "a" && !readOnly && elementsRef.current.length) {
+          e.preventDefault();
+          setTool("select");
+          applySelection(new Set(elementsRef.current.map(elementId)));
+        }
+        return;
+      }
+      if (picked) {
+        if (e.key === "Escape") { applySelection(new Set()); return; }
+        if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); selAction("delete"); return; }
+        // Arrows nudge what's selected instead of turning the page: with something
+        // in hand, that's what they're for.
+        const step = e.shiftKey ? 0.02 : 0.004;
+        if (e.key === "ArrowLeft") { e.preventDefault(); nudgeSelection(-step, 0); return; }
+        if (e.key === "ArrowRight") { e.preventDefault(); nudgeSelection(step, 0); return; }
+        if (e.key === "ArrowUp") { e.preventDefault(); nudgeSelection(0, -step * aspectRef.current); return; }
+        if (e.key === "ArrowDown") { e.preventDefault(); nudgeSelection(0, step * aspectRef.current); return; }
+      }
+      if (e.key === "ArrowLeft") go(page - 1);
+      if (e.key === "ArrowRight") go(page + 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [page, go, zoomTo, readOnly, selAction, nudgeSelection, applySelection]);
+
+  // The selection belongs to the tool that made it: switching away lets it go, so
+  // no invisible handles are left holding a page's ink.
+  useEffect(() => {
+    if (tool !== "select" && selectionRef.current.size) applySelection(new Set());
+  }, [tool, applySelection]);
+
+  useEffect(() => () => { if (snapTimer.current) clearTimeout(snapTimer.current); }, []);
+
   // ---- pointer handling ----
   // GoodNotes-style input routing: Apple Pencil (pointerType "pen") draws on
   // paper and taps tabs; fingers always navigate (tap hotspots); the mouse
   // follows the selected tool.
-  const norm = (e: React.PointerEvent): [number, number] => {
+  //
+  // Zoom needs no term in any of this. It's a CSS transform on the page box, so
+  // the box's bounding rect is already the zoomed rect and a client point divided
+  // by it is still the page coordinate — see src/lib/planner-viewport.ts.
+  const norm = (e: { clientX: number; clientY: number }): [number, number] => {
     const rect = boxRef.current!.getBoundingClientRect();
     return [(e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height];
   };
+
 
   const shouldDraw = (e: React.PointerEvent) =>
     !readOnly && (e.pointerType === "pen" || (e.pointerType === "mouse" && toolRef.current !== "hand"));
@@ -1269,19 +2054,108 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     const after = before.filter((el) => {
       if (!isStroke(el)) return true;
       return !el.points.some(([px, py]) => {
-        const dx = px - x, dy = (py - y) / planner.aspect;
+        // Normalised coordinates squash the page, so the vertical distance is
+        // corrected by the aspect ratio of the page you're actually on.
+        const dx = px - x, dy = (py - y) / aspectRef.current;
         return dx * dx + dy * dy < R * R;
       });
     });
     if (after.length !== before.length) setElements(after);
-  }, [setElements, planner.aspect]);
+  }, [setElements]);
+
+  /** A pending tap from this pointer, recorded so a drag can pan and a tap can navigate. */
+  const beginTap = (e: React.PointerEvent, opts: { chromeOnly: boolean; flip: boolean }) => {
+    tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), lx: e.clientX, ly: e.clientY, ...opts };
+    // Zoomed in this pointer is going to pan, and a pan mustn't stop the moment it
+    // leaves the page box.
+    if (!isFit(viewRef.current)) boxRef.current?.setPointerCapture(e.pointerId);
+  };
+
+  /** Recompute a transform in progress from the snapshot it started with. */
+  const applyDrag = (x: number, y: number, shift: boolean) => {
+    const g = dragSel.current;
+    const ids = selectionRef.current;
+    if (!g || !ids.size) return;
+    if (g.kind === "move") {
+      const { dx, dy } = clampMove(g.bounds, x - g.x, y - g.y, writeAreaRef.current);
+      setElements(translate(g.from, ids, dx, dy), { history: false });
+      return;
+    }
+    if (g.kind === "scale") {
+      setElements(scaleSelection(g.from, ids, resizeScale(g.bounds, g.handle!, x, y)), { history: false });
+      return;
+    }
+    const geom = pageGeom();
+    const centre = { x: g.bounds.x + g.bounds.w / 2, y: g.bounds.y + g.bounds.h / 2 };
+    let angle = angleTo(centre, x, y, geom.aspect) - angleTo(centre, g.x, g.y, geom.aspect);
+    if (shift) angle = snapAngle(angle);
+    setElements(rotateSelection(g.from, ids, centre, angle, geom), { history: false });
+  };
+
+  /**
+   * A resize or rotate handle taking over. Capture goes to the page box, so the rest
+   * of the gesture arrives at the handlers below however far it strays.
+   */
+  const startHandle = (e: React.PointerEvent, kind: "scale" | "rotate", handle?: Handle) => {
+    const b = selBoundsNow();
+    if (!b) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const [x, y] = norm(e);
+    boxRef.current?.setPointerCapture(e.pointerId);
+    drawingPointer.current = e.pointerId;
+    beginBurst(); // the whole gesture is one undo step
+    dragSel.current = { kind, handle, from: elementsRef.current, bounds: b, x, y };
+  };
 
   const onPointerDown = (e: React.PointerEvent) => {
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
+
+    // A second finger is a pinch, not a tap: two fingers zoom and pan the page.
+    const touches = [...pointers.current.values()].filter((p) => p.type === "touch");
+    if (touches.length >= 2) {
+      tapStart.current = null;
+      const [a, b] = touches;
+      pinch.current = { dist: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      return;
+    }
+
+    // A finger or palm landing while the pen is writing is the hand resting on the
+    // page. Ignoring it outright is what stops a stroke turning into a page flip.
+    if (drawingPointer.current !== null && e.pointerType === "touch") return;
+
     const [x, y] = norm(e);
 
     // Read-only planner: every input is navigation, whatever the tool says.
     if (readOnly) {
-      tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: false };
+      beginTap(e, { chromeOnly: false, flip: true });
+      return;
+    }
+
+    // A sticker armed for placement: the next tap on the paper stamps it. Off the
+    // paper (a tab or the margin) it's ignored, so it can't land where ink is clipped.
+    if (armedStickerRef.current && inkAllowed(x, y)) {
+      e.preventDefault();
+      stampAt(armedStickerRef.current, x, y);
+      return;
+    }
+
+    // Selection tool: grab what's already picked to move it, or sweep a new region.
+    // Fingers are left out deliberately — they go on panning and tapping tabs, so
+    // the page never feels locked while the tool is armed.
+    if (toolRef.current === "select" && shouldDraw(e)) {
+      e.preventDefault();
+      boxRef.current?.setPointerCapture(e.pointerId);
+      drawingPointer.current = e.pointerId; // also makes a resting hand a no-op
+      const b = selBoundsNow();
+      if (b && boundsContain(b, x, y, 0.008)) {
+        beginBurst();
+        dragSel.current = { kind: "move", from: elementsRef.current, bounds: b, x, y };
+        return;
+      }
+      marquee.current =
+        selMode === "rect" ? { mode: "rect", a: [x, y], b: [x, y] } : { mode: "lasso", points: [[x, y]] };
+      redraw();
       return;
     }
 
@@ -1291,18 +2165,19 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     // Text tool: a tap on the paper drops a new box; taps elsewhere navigate.
     if (toolRef.current === "text") {
       if (inkAllowed(x, y)) { e.preventDefault(); addTextAt(x, y); }
-      else tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: e.pointerType === "pen" };
+      else beginTap(e, { chromeOnly: e.pointerType === "pen", flip: false });
       return;
     }
 
     if (e.pointerType === "touch" || !shouldDraw(e)) {
-      // Fingers and the hand tool navigate anywhere on the page.
-      tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: false };
+      // Fingers and the hand tool navigate anywhere on the page — and pan it when
+      // there's more page than frame.
+      beginTap(e, { chromeOnly: false, flip: true });
       return;
     }
     if (!inkAllowed(x, y)) {
       // Landed on a tab or the outer margin: no ink here, but a tab tap counts.
-      tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: true };
+      beginTap(e, { chromeOnly: true, flip: false });
       return;
     }
     e.preventDefault();
@@ -1315,6 +2190,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     }
     drawingPointer.current = e.pointerId;
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    snapping.current = activeTool === "shape";
     liveRef.current = {
       tool: activeTool === "highlighter" ? "highlighter" : "pen",
       color, size,
@@ -1324,6 +2200,55 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    const tracked = pointers.current.get(e.pointerId);
+    if (tracked) { tracked.x = e.clientX; tracked.y = e.clientY; }
+
+    // Two fingers: the change in their separation zooms about their midpoint, and
+    // the midpoint's own travel pans. Both are measured against the last frame, so
+    // the gesture follows the fingers however it's combined.
+    if (pinch.current) {
+      const touches = [...pointers.current.values()].filter((p) => p.type === "touch");
+      if (touches.length < 2) return;
+      const [a, b] = touches;
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const prev = pinch.current;
+      pinch.current = { dist, x: mx, y: my };
+      if (prev.dist > 8 && dist > 8) {
+        const box = layout();
+        const [ax, ay] = norm({ clientX: mx, clientY: my });
+        setView((v) =>
+          panBy(zoomAbout(v, v.z * (dist / prev.dist), box, { x: ax, y: ay }), mx - prev.x, my - prev.y, box),
+        );
+      }
+      return;
+    }
+
+    // A selection gesture: sweeping a region, or transforming what's picked.
+    if (drawingPointer.current === e.pointerId && (marquee.current || dragSel.current)) {
+      e.preventDefault();
+      const [x, y] = norm(e);
+      const m = marquee.current;
+      if (m) {
+        if (m.mode === "rect") marquee.current = { mode: "rect", a: m.a, b: [x, y] };
+        else m.points.push([x, y]);
+        redraw();
+        return;
+      }
+      applyDrag(x, y, e.shiftKey);
+      return;
+    }
+
+    // Zoomed in, a navigating pointer drags the page about.
+    const tap = tapStart.current;
+    if (tap && !isFit(viewRef.current)) {
+      const dx = e.clientX - tap.lx, dy = e.clientY - tap.ly;
+      tap.lx = e.clientX;
+      tap.ly = e.clientY;
+      if (dx || dy) setView((v) => panBy(v, dx, dy, layout()));
+      return;
+    }
+
     if (drawingPointer.current !== e.pointerId) return;
     e.preventDefault();
     // Coalesced events give the full high-frequency pen path; some inputs and
@@ -1347,12 +2272,59 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   };
 
   const endStroke = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId);
+    // A pinch ends when a finger lifts, and the finger still down isn't a tap.
+    if (pinch.current) {
+      if ([...pointers.current.values()].filter((p) => p.type === "touch").length < 2) pinch.current = null;
+      tapStart.current = null;
+      return;
+    }
+
+    // A selection gesture finishing.
+    if (marquee.current || dragSel.current) {
+      const m = marquee.current;
+      const transform = dragSel.current;
+      marquee.current = null;
+      dragSel.current = null;
+      if (drawingPointer.current === e.pointerId) drawingPointer.current = null;
+      if (transform) {
+        endBurst(); // the next gesture is a new undo step
+        redraw();
+        return;
+      }
+      if (!m) return;
+      const [x, y] = norm(e);
+      const travel =
+        m.mode === "rect"
+          ? Math.hypot(m.b[0] - m.a[0], m.b[1] - m.a[1])
+          : m.points.reduce((d, p, i) => (i ? d + Math.hypot(p[0] - m.points[i - 1][0], p[1] - m.points[i - 1][1]) : 0), 0);
+      // A tap rather than a sweep: take whatever is under it — or nothing, which is
+      // how you let a selection go.
+      if (travel < 0.015) {
+        const hit = pickAt(elementsRef.current, x, y, pageGeom());
+        applySelection(hit ? new Set([hit]) : new Set());
+        return;
+      }
+      applySelection(pick(elementsRef.current, m, pageGeom()));
+      return;
+    }
+
     if (drawingPointer.current === e.pointerId) {
       drawingPointer.current = null;
       if (liveRef.current) {
-        const s = simplifyStroke(liveRef.current);
+        const live = liveRef.current;
         liveRef.current = null;
-        setElements([...elementsRef.current, s]);
+        // The Shapes tool: if the path was meant to be a circle, a box, a line or an
+        // arrow, commit the ideal one instead. It's still a stroke either way — see
+        // src/lib/planner-shapes.ts — so nothing downstream can tell the difference.
+        const snap = snapping.current ? snapStroke(live, aspectRef.current) : null;
+        snapping.current = false;
+        if (snap?.kind) {
+          setSnapped(SHAPE_LABEL[snap.kind]);
+          if (snapTimer.current) clearTimeout(snapTimer.current);
+          snapTimer.current = setTimeout(() => setSnapped(null), 1200);
+        }
+        setElements([...elementsRef.current, snap?.kind ? snap.stroke : simplifyStroke(live)]);
       }
       return;
     }
@@ -1360,35 +2332,272 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     const start = tapStart.current;
     tapStart.current = null;
     if (!start) return;
-    const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y);
-    if (moved > 12 || Date.now() - start.t > 600) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    const moved = Math.hypot(dx, dy);
     const [x, y] = norm(e);
+    // Zoomed in, that drag was a pan and the edges are somewhere off-screen, so
+    // neither gesture turns the page — the arrows and the page rail still do.
+    const flip = start.flip && isFit(viewRef.current);
+
+    // A sideways drag turns the page, the way you'd flick a paper one over.
+    if (flip && Math.abs(dx) >= SWIPE_FLIP_PX && Math.abs(dx) > Math.abs(dy)) {
+      go(dx < 0 ? page + 1 : page - 1);
+      return;
+    }
+    if (moved > 12 || Date.now() - start.t > 600) return;
     const hit = hotspots.find((h) => inside(h, x, y) && (!start.chromeOnly || h.kind === "chrome"));
-    if (hit) go(hit.page);
+    if (hit) { go(hit.page); return; }
+    // Nothing to jump to here. A tap on the outer edge turns the page — checked
+    // after the hotspots, because tab strips run down the edges too and a tab
+    // has to win.
+    if (flip) {
+      if (x >= 1 - EDGE_FLIP) go(page + 1);
+      else if (x <= EDGE_FLIP) go(page - 1);
+    }
   };
 
-  const undo = () => {
-    const prev = undoRef.current.pop();
-    if (!prev) return;
-    redoRef.current.push(elementsRef.current);
-    elementsRef.current = prev;
-    cacheRef.current.set(page, prev);
+  // Wheel and trackpad: pinch (which arrives as ctrl+wheel) and ⌘/ctrl+scroll
+  // zoom about the pointer; plain scrolling pans a zoomed page and turns a fitted
+  // one. Attached natively rather than through React's onWheel because React's is
+  // passive, and preventDefault is what stops the browser zooming the whole app
+  // instead — and the page behind from scrolling as you pan.
+  useEffect(() => {
+    const box = boxRef.current;
+    if (!box) return;
+    const onWheel = (e: WheelEvent) => {
+      if (drawingPointer.current !== null) return;
+      // Don't yank the page out from under someone scrolling a text box they're typing in.
+      if ((e.target as HTMLElement)?.closest?.("textarea, input, [contenteditable='true']")) return;
+
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const rect = box.getBoundingClientRect();
+        // Exponential so each notch is the same proportional change, and the same
+        // gesture zooms by the same amount from 1× as from 4×.
+        zoomTo(viewRef.current.z * Math.exp(-e.deltaY / 240), {
+          x: (e.clientX - rect.left) / rect.width,
+          y: (e.clientY - rect.top) / rect.height,
+        });
+        return;
+      }
+
+      // Zoomed in, scrolling moves about the page. Only once it can't move any
+      // further in that direction does the scroll go on to turn the page, so
+      // reaching the bottom and carrying on lands you on the next page.
+      if (!isFit(viewRef.current)) {
+        const next = panBy(viewRef.current, -e.deltaX, -e.deltaY, { w: box.offsetWidth, h: box.offsetHeight });
+        if (viewMoved(next, viewRef.current)) {
+          e.preventDefault();
+          wheelAccum.current = 0;
+          setView(next);
+          return;
+        }
+      }
+
+      if (Math.abs(e.deltaY) < Math.abs(e.deltaX)) return; // sideways scroll: not ours
+      if (wheelAccum.current !== 0 && Math.sign(e.deltaY) !== Math.sign(wheelAccum.current)) wheelAccum.current = 0;
+      wheelAccum.current += e.deltaY;
+      if (Math.abs(wheelAccum.current) < WHEEL_FLIP_PX) return;
+      const forward = wheelAccum.current > 0;
+      wheelAccum.current = 0;
+      go(forward ? pageRef.current + 1 : pageRef.current - 1);
+    };
+    box.addEventListener("wheel", onWheel, { passive: false });
+    return () => box.removeEventListener("wheel", onWheel);
+  }, [go, zoomTo]);
+
+  // ---- undo / redo ----
+  // One history for the whole notebook, holding operations rather than snapshots:
+  // strokes, erasing, text, and every page operation go through here.
+  const applyOp = useCallback((op: HistoryOp, direction: "undo" | "redo") => {
     setSelectedText(null);
-    scheduleSave(page);
-    redraw();
+    if (op.kind === "content") {
+      const next = direction === "undo" ? op.before : op.after;
+      cacheRef.current.set(op.slot, next);
+      scheduleSave(op.slot);
+      // Undoing an edit you made on another page takes you back to it, so what
+      // changes is always what you can see.
+      const pos = indexRef.current.pages.findIndex((p) => p.slot === op.slot) + 1;
+      if (pos >= 1 && pos !== pageRef.current) setPage(pos);
+      else {
+        elementsRef.current = next;
+        redraw();
+      }
+      rerender();
+      return;
+    }
+    const next = direction === "undo" ? op.before : op.after;
+    setIndex(next);
+    indexRef.current = next;
+    savePageIndex(next).catch(() => {});
+    setPage(Math.min(Math.max(1, direction === "undo" ? op.page : op.toPage), next.pages.length));
     rerender();
+  }, [redraw, rerender, scheduleSave]);
+
+  const undo = () => {
+    const op = undoRef.current.pop();
+    if (!op) return;
+    redoRef.current.push(op);
+    applyOp(op, "undo");
   };
   const redo = () => {
-    const next = redoRef.current.pop();
-    if (!next) return;
-    undoRef.current.push(elementsRef.current);
-    elementsRef.current = next;
-    cacheRef.current.set(page, next);
-    setSelectedText(null);
-    scheduleSave(page);
+    const op = redoRef.current.pop();
+    if (!op) return;
+    undoRef.current.push(op);
+    applyOp(op, "redo");
+  };
+
+  // ---- page operations ----
+  /**
+   * Commit a new arrangement: remember it for undo, land on the right page, and
+   * persist it. `clear` lists slots that were recycled from long-deleted pages and
+   * so have to be emptied before they're written in again.
+   */
+  /**
+   * Empty a slot everywhere: memory, the unsynced mirror, and the server. Seeding
+   * the cache with an empty page rather than dropping the entry matters — the page
+   * loader treats a missing entry as "go and fetch", and that fetch can land ahead
+   * of this clear and put a deleted page's handwriting onto a brand new one.
+   */
+  const blankSlot = useCallback(async (s: number) => {
+    cacheRef.current.set(s, []);
+    clearLocal(planner.id, s);
+    await clearSlot(planner.id, s);
+  }, [planner.id]);
+
+  const applyPageOp = useCallback(async (
+    label: string,
+    next: PageIndex,
+    { toPage, clear = [] }: { toPage?: number; clear?: number[] } = {},
+  ) => {
+    const before = indexRef.current;
+    if (next === before) return;
+    const land = Math.min(Math.max(1, toPage ?? pageRef.current), next.pages.length);
+    setIndex(next);
+    indexRef.current = next;
+    pushOp({ kind: "pages", label, before, after: next, page: pageRef.current, toPage: land });
+    setPage(land);
+    for (const s of clear) await blankSlot(s);
+    try {
+      await savePageIndex(next);
+    } catch {
+      toast.error("Couldn't save the page layout on this device.");
+    }
+  }, [blankSlot, pushOp]);
+
+  const addPages = useCallback((spec: NewPageSpec, at: number, count = 1) => {
+    const res = insertPages(indexRef.current, at, count, spec);
+    if (res.index.pages.length === indexRef.current.pages.length) {
+      toast.error(`This notebook is at the ${MAX_SLOT}-page limit.`);
+      return;
+    }
+    const added = res.index.pages.length - indexRef.current.pages.length;
+    applyPageOp(added > 1 ? `Added ${added} pages` : "Added a page", res.index, { toPage: res.at, clear: res.clear });
+    toast.success(added > 1 ? `${added} pages added` : `Page ${res.at} added`);
+  }, [applyPageOp]);
+
+  /** A new page like the one you're on, which is what "add page" should mean. */
+  const specLikeCurrentPage = useCallback((): NewPageSpec => {
+    const from = indexRef.current.pages[pageRef.current - 1];
+    const bg = from?.background;
+    return {
+      // A page of the source PDF can't be duplicated as a background, so a new
+      // page after one is blank paper of the same shape and colour.
+      background:
+        bg?.kind === "template"
+          ? { ...bg }
+          : { kind: "template", templateId: (planner as UserPlanner).paper ?? DEFAULT_TEMPLATE },
+      color: from?.color,
+      size: from?.size,
+      orientation: from?.orientation,
+      custom: from?.custom,
+    };
+  }, [planner]);
+
+  const duplicatePagesAt = useCallback(async (positions: number[]) => {
+    flushPending();
+    const res = duplicatePages(indexRef.current, positions);
+    if (!res.copies.length) return;
+    const targets = new Set(res.copies.map((c) => c.to));
+
+    // A recycled target can still hold a deleted page's handwriting. Blank it here,
+    // before anything is copied in, so an empty source doesn't leave the old ink
+    // sitting on the copy. applyPageOp is told to skip these for the same reason.
+    for (const s of res.clear) if (targets.has(s)) await blankSlot(s);
+
+    // The copy we're about to land on needs its content in the cache *before* the
+    // page changes: the loader would otherwise find the slot empty, show a blank
+    // page, and its fetch would land after the copy and wipe it again.
+    const landing = res.index.pages[res.at - 1]?.slot;
+    const seeded = new Map<number, PageElement[]>();
+    const landingCopy = res.copies.find((c) => c.to === landing);
+    if (landingCopy) {
+      const content = cacheRef.current.get(landingCopy.from) ?? (await fetchSlot(planner.id, landingCopy.from));
+      seeded.set(landingCopy.to, content);
+      cacheRef.current.set(landingCopy.to, content);
+    }
+
+    await applyPageOp(
+      res.copies.length > 1 ? `Duplicated ${res.copies.length} pages` : "Duplicated a page",
+      res.index,
+      { toPage: res.at, clear: res.clear.filter((s) => !targets.has(s)) },
+    );
+
+    // Content is copied slot by slot. What's already in memory is newer than the
+    // server (it may not have synced yet), so it wins when we have it; otherwise
+    // the server copies the row across without downloading the page.
+    for (const { from, to } of res.copies) {
+      const content = seeded.get(to) ?? cacheRef.current.get(from);
+      if (content) {
+        cacheRef.current.set(to, content);
+        if (content.length) await saveNow(to);
+      } else if (!(await copySlot(planner.id, from, to))) {
+        toast.error("The copy's handwriting didn't save — check your connection.");
+      }
+    }
     redraw();
     rerender();
-  };
+  }, [applyPageOp, blankSlot, flushPending, planner.id, saveNow, redraw, rerender]);
+
+  const deletePagesAt = useCallback((positions: number[]) => {
+    const next = deletePages(indexRef.current, positions);
+    if (next === indexRef.current) {
+      toast.error("A notebook needs at least one page.");
+      return;
+    }
+    const removed = indexRef.current.pages.length - next.pages.length;
+    applyPageOp(removed > 1 ? `Deleted ${removed} pages` : "Deleted a page", next, {
+      toPage: Math.min(...positions),
+    });
+    toast.success(removed > 1 ? `${removed} pages deleted` : "Page deleted", { description: "Undo brings it back with its handwriting." });
+  }, [applyPageOp]);
+
+  const movePagesTo = useCallback((positions: number[], before: number) => {
+    const next = movePages(indexRef.current, positions, before);
+    // Follow the page that was being dragged.
+    const followed = indexRef.current.pages[positions[0] - 1];
+    const land = next.pages.findIndex((p) => p === followed) + 1;
+    applyPageOp("Moved pages", next, { toPage: land || undefined });
+  }, [applyPageOp]);
+
+  const applyPageSetup = useCallback((positions: number[], patch: Partial<Omit<PageMeta, "slot">>) => {
+    const next = setPageProps(indexRef.current, positions, patch);
+    applyPageOp("Changed paper", next, { toPage: positions[0] });
+  }, [applyPageOp]);
+
+  /** Save the page you're on as a template you can start new pages from. */
+  const saveAsTemplate = useCallback(async (name: string) => {
+    const t = toast.loading("Saving this page as a template…");
+    try {
+      const blob = await capturePage(bgImgRef.current, canvasRef.current);
+      const def = await saveUserTemplate({ name, image: blob, hint: "Saved from a page" });
+      setCustomTemplates(await listUserTemplates());
+      toast.success(`“${def.name}” saved`, { id: t, description: "It's under Custom in the paper picker." });
+    } catch (e: any) {
+      toast.error("Couldn't save that as a template", { id: t, description: e?.message });
+    }
+  }, []);
 
   // Read-only escape hatch: take an editable copy, carrying any ink already in
   // it, and land on the page you were looking at.
@@ -1406,13 +2615,8 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     }
   };
 
-  const onAddPage = async () => {
-    const next = await addPages(planner.id, 1);
-    if (!next) return;
-    setPages(next);
-    toast.success(`Page ${next} added`);
-    setPage(next);
-  };
+  /** Add one page like the current one, straight after it. */
+  const onAddPage = () => addPages(specLikeCurrentPage(), page + 1);
 
   const ToolButton = ({ t, icon, title }: { t: Tool; icon: React.ReactNode; title: string }) => (
     <button
@@ -1425,14 +2629,39 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   );
 
   const textBoxes = elementsRef.current.filter(isText);
-  const showInkControls = tool === "pen" || tool === "highlighter";
+  const showInkControls = tool === "pen" || tool === "highlighter" || tool === "shape";
+  // The box round the selection, in page coordinates: where the handles and the
+  // action bar hang. Recomputed each render, so it follows a drag frame by frame.
+  const selBounds = tool === "select" && selection.size ? selectionBounds(elementsRef.current, selection, pageGeom()) : null;
+  /**
+   * Selection furniture counter-scales with the zoom, so a handle stays the size of
+   * a finger at 6× instead of covering a quarter of the page. `scale()` comes first
+   * in the transform so the offsets after it are scaled too — that's what keeps a
+   * handle centred on its corner and the bar a constant gap above the box.
+   */
+  const unzoom = (offset: string) => `scale(${1 / view.z}) ${offset}`;
 
   return (
-    <div className="min-h-screen -m-4 md:-m-8 flex flex-col relative z-20" style={{ background: "#F2E8DC" }}>
+    // The viewer owns the viewport: a definite height is what lets the page rail
+    // scroll inside itself instead of stretching this column and pushing the paper
+    // off the bottom of the screen. The negative margins cancel the app shell's
+    // padding, and the height allows for the mobile header and bottom nav it leaves
+    // room for (pt-16 + pb-20) — at md the shell's padding is even all round.
+    <div
+      className="-mx-4 md:-mx-8 md:-my-8 [--planner-vh:calc(100dvh-9rem)] md:[--planner-vh:100dvh] h-[var(--planner-vh)] flex flex-col overflow-hidden relative z-20"
+      style={{ background: "#F2E8DC" }}
+    >
       {/* Toolbar */}
-      <div className="flex items-center gap-1 px-3 py-2 flex-wrap bg-white/80 backdrop-blur border-b border-black/5 sticky top-0 z-30">
+      <div className="flex items-center gap-1 px-3 py-2 flex-wrap bg-white/80 backdrop-blur border-b border-black/5 shrink-0 z-30">
         <button onClick={onLibrary} className="p-2 rounded-xl text-black/50 hover:bg-black/5" title="All planners">
           <Library className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => setSidebar((s) => !s)}
+          className={`p-2 rounded-xl transition-colors ${sidebar ? "bg-black/[0.07] text-black/70" : "text-black/50 hover:bg-black/5"}`}
+          title={sidebar ? "Hide the page rail" : "Show every page"}
+        >
+          <PanelLeft className="w-4 h-4" />
         </button>
         <span className="text-sm font-bold mr-1 text-black" style={MARKER}>{planner.name}</span>
         <span className="text-xs text-black/45 mr-2 hidden sm:inline">{label}</span>
@@ -1460,7 +2689,9 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
             <ToolButton t="hand" icon={<Hand className="w-4 h-4" />} title="Navigate (tap tabs & days)" />
             <ToolButton t="pen" icon={<Pen className="w-4 h-4" />} title="Pen" />
             <ToolButton t="highlighter" icon={<Highlighter className="w-4 h-4" />} title="Highlighter" />
+            <ToolButton t="shape" icon={<Shapes className="w-4 h-4" />} title="Shapes — draw roughly and it snaps to a circle, box, triangle, line or arrow" />
             <ToolButton t="text" icon={<Type className="w-4 h-4" />} title="Text box (tap the paper to type)" />
+            <ToolButton t="select" icon={<Lasso className="w-4 h-4" />} title="Select — move, resize, recolour or copy what you've written" />
             <ToolButton t="eraser" icon={<Eraser className="w-4 h-4" />} title="Eraser (removes whole strokes)" />
           </div>
         )}
@@ -1491,6 +2722,45 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
               ))}
             </div>
           </>
+        )}
+
+        {tool === "shape" && (
+          <span
+            className={`ml-1 text-[11px] font-semibold px-2 py-1 rounded-full transition-opacity ${snapped ? "bg-[#8A6DE9]/12 text-[#6F55C7] opacity-100" : "text-black/35 opacity-100"}`}
+            style={MARKER}
+          >
+            {snapped ?? "draw roughly — it'll snap"}
+          </span>
+        )}
+
+        {tool === "select" && (
+          <div className="flex items-center gap-1 ml-1">
+            <div className="flex items-center gap-0.5 rounded-xl bg-black/[0.04] p-0.5">
+              {([["lasso", Lasso, "Lasso — draw a loop round what you want"], ["rect", SquareDashed, "Box — drag a rectangle over it"]] as const).map(
+                ([m, Icon, title]) => (
+                  <button
+                    key={m}
+                    onClick={() => setSelMode(m)}
+                    title={title}
+                    className={`p-1.5 rounded-lg transition-colors ${selMode === m ? "bg-white shadow-sm text-black/70" : "text-black/40 hover:bg-black/5"}`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                  </button>
+                ),
+              )}
+            </div>
+            <button
+              onClick={() => selAction("paste")}
+              disabled={clipboardSize() === 0}
+              className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30"
+              title="Paste (⌘V) — works across pages and notebooks"
+            >
+              <ClipboardPaste className="w-4 h-4" />
+            </button>
+            <span className="text-[11px] text-black/35 hidden lg:inline">
+              {selection.size ? `${selection.size} selected` : "draw round some writing to pick it up"}
+            </span>
+          </div>
         )}
 
         {tool === "text" && (
@@ -1530,6 +2800,29 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
         )}
 
         {!readOnly && (
+          <div className="relative flex items-center ml-1">
+            <button
+              data-sticker-toggle
+              onClick={() => { setTrayOpen((o) => !o); if (trayOpen) setArmedSticker(null); }}
+              className={`p-2 rounded-xl transition-colors ${armedSticker ? "bg-[#8A6DE9] text-white" : trayOpen ? "bg-black/[0.07] text-black/70" : "text-black/50 hover:bg-black/5"}`}
+              title={armedSticker ? "Tap the page to place your sticker" : "My stickers — reusable bits you've saved"}
+            >
+              <Stamp className="w-4 h-4" />
+            </button>
+            {trayOpen && (
+              <StickerTray
+                stickers={stickers}
+                armed={armedSticker?.id ?? null}
+                onArm={(s) => setArmedSticker(s)}
+                onRename={renameSticker}
+                onDelete={deleteSticker}
+                onClose={() => setTrayOpen(false)}
+              />
+            )}
+          </div>
+        )}
+
+        {!readOnly && (
           <div className="flex items-center ml-1">
             <button onClick={undo} disabled={undoRef.current.length === 0} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Undo">
               <Undo2 className="w-4 h-4" />
@@ -1550,6 +2843,28 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
             {saveState === "saved" ? "Saved" : saveState === "saving" ? "Saving…" : saveState === "offline" ? "Offline" : "Unsaved"}
           </span>
         )}
+        <div className="relative">
+          <button
+            data-export-toggle
+            onClick={() => setExportMenu((o) => !o)}
+            className={`p-2 rounded-xl transition-colors ${exportMenu ? "bg-black/[0.07] text-black/70" : "text-black/50 hover:bg-black/5"}`}
+            title="Export as PNG or PDF"
+          >
+            <Download className="w-4 h-4" />
+          </button>
+          {exportMenu && (
+            <ExportMenu
+              onClose={() => setExportMenu(false)}
+              hasSelection={tool === "select" && selection.size > 0}
+              pdfBacked={pdfBacked}
+              onPagePng={() => exportCurrentPage("png")}
+              onPagePdf={() => exportCurrentPage("pdf")}
+              onSelectionPng={exportSelection}
+              onNotebookPdf={exportNotebook}
+              onAnnotatedPdf={exportAnnotatedPdf}
+            />
+          )}
+        </div>
         <button onClick={() => go(1)} className="p-2 rounded-xl text-black/50 hover:bg-black/5" title="Cover">
           <Home className="w-4 h-4" />
         </button>
@@ -1563,94 +2878,406 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
             <CalendarDays className="w-3.5 h-3.5" /> Today
           </button>
         )}
-        <div className="flex items-center ml-1">
-          <button onClick={() => go(page - 1)} disabled={page <= 1} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Previous page">
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <span className="text-[11px] text-black/40 tabular-nums w-16 text-center">{page} / {pages}</span>
-          <button onClick={() => go(page + 1)} disabled={page >= pages} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Next page">
-            <ChevronRight className="w-4 h-4" />
-          </button>
-          {canAddPages && (
+      </div>
+
+      {/* Page rail + page */}
+      <div className="flex-1 min-h-0 flex overflow-hidden">
+        {sidebar && (
+          <PageSidebar
+            pages={index.pages}
+            current={page}
+            editable={canEditPages}
+            background={thumbBackground}
+            pdfThumb={pdfBacked ? pdfThumb : undefined}
+            aspect={(p) => pageAspect(p, planner)}
+            onJump={go}
+            onClose={() => setSidebar(false)}
+            onInsertAt={(at) => setSetupFor({ positions: [at], mode: "insert" })}
+            onDuplicate={duplicatePagesAt}
+            onDelete={deletePagesAt}
+            onMove={movePagesTo}
+            onSetup={(positions) => setSetupFor({ positions, mode: "apply" })}
+          />
+        )}
+
+        <div className="flex-1 flex items-center justify-center p-2 md:p-4 overflow-hidden">
+          <div
+            ref={boxRef}
+            className="group relative w-full max-h-full shadow-xl rounded-lg overflow-hidden select-none"
+            // The width cap is what keeps the shape: with `width: 100%` a max-height
+            // alone would squash the page rather than shrink it. It's measured off the
+            // viewer's own height, so it's right on a phone too.
+            style={{
+              aspectRatio: `${aspect}`,
+              maxWidth: `min(100%, calc((var(--planner-vh) - 150px) * ${aspect}))`,
+              touchAction: "none",
+              background: "#fff",
+              // Zoom and pan are one composited transform on the whole page, paper,
+              // ink and text boxes together — so panning is smooth, and normalised
+              // coordinates go on meaning the same thing at any zoom.
+              transform: `translate(${view.x}px, ${view.y}px) scale(${view.z})`,
+              transformOrigin: "center center",
+            }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={endStroke}
+            onPointerCancel={endStroke}
+          >
+            {bgSrc ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                ref={bgImgRef}
+                src={bgSrc}
+                alt={label}
+                className="absolute inset-0 w-full h-full pointer-events-none"
+                draggable={false}
+              />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-6 h-6 rounded-full border-2 border-black/10 border-t-[#8A6DE9] animate-spin" />
+              </div>
+            )}
+            <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ cursor: tool === "hand" ? "pointer" : tool === "text" ? "text" : "crosshair" }} />
+
+            {/* Typed text boxes sit above the ink so they can be edited and moved. */}
+            {textBoxes.map((t) => (
+              <TextBoxView
+                key={t.id}
+                box={t}
+                boxSize={boxSize}
+                scale={view.z}
+                selected={selectedText === t.id}
+                editable={tool === "text" && !readOnly}
+                outlined={selection.has(t.id)}
+                onMeasure={measureText}
+                onSelect={() => setSelectedText(t.id)}
+                onChange={(patch, history) => {
+                  // An empty patch with `history` is a gesture letting go: the burst
+                  // already recorded the whole drag, so just close it.
+                  if (history) endBurst();
+                  if (history && Object.keys(patch).length === 0) return;
+                  updateText(t.id, patch, history);
+                }}
+                onBeginEdit={beginBurst}
+                onRemove={() => removeText(t.id)}
+              />
+            ))}
+
+            {/* What's selected: a box, resize handles, a rotate knob, and the
+                actions for it. Every one of these edits the objects themselves —
+                the page is never flattened into a picture to move a word. */}
+            {selBounds && (
+              <>
+                <div
+                  className="absolute pointer-events-none border border-[#8A6DE9]/70 rounded-[3px]"
+                  style={{
+                    left: `${selBounds.x * 100}%`,
+                    top: `${selBounds.y * 100}%`,
+                    width: `${selBounds.w * 100}%`,
+                    height: `${selBounds.h * 100}%`,
+                  }}
+                />
+                {HANDLES.map((h) => {
+                  const at = handleAt(h);
+                  return (
+                    <div
+                      key={h}
+                      onPointerDown={(e) => startHandle(e, "scale", h)}
+                      className="absolute w-3.5 h-3.5 rounded-sm bg-white border border-[#8A6DE9] shadow-sm touch-none z-10"
+                      style={{
+                        left: `${(selBounds.x + selBounds.w * at.x) * 100}%`,
+                        top: `${(selBounds.y + selBounds.h * at.y) * 100}%`,
+                        transform: unzoom("translate(-50%, -50%)"),
+                        cursor: HANDLE_CURSOR[h],
+                      }}
+                      title="Drag to resize — corners keep the proportions"
+                    />
+                  );
+                })}
+                <div
+                  onPointerDown={(e) => startHandle(e, "rotate")}
+                  className="absolute w-7 h-7 flex items-center justify-center rounded-full bg-white border border-[#8A6DE9] text-[#8A6DE9] shadow-sm touch-none cursor-grab z-10"
+                  style={{
+                    left: `${(selBounds.x + selBounds.w / 2) * 100}%`,
+                    top: `${(selBounds.y + selBounds.h) * 100}%`,
+                    transform: unzoom("translate(-50%, 60%)"),
+                  }}
+                  title="Drag to rotate — hold shift to snap to 15°"
+                >
+                  <RotateCw className="w-3.5 h-3.5" />
+                </div>
+
+                <div
+                  className="absolute flex items-center gap-0.5 px-1 py-1 rounded-xl bg-white border border-black/10 shadow-lg z-20 whitespace-nowrap"
+                  style={{
+                    left: `${(selBounds.x + selBounds.w / 2) * 100}%`,
+                    top: `${selBounds.y * 100}%`,
+                    transform: unzoom("translate(-50%, -120%)"),
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  <button onClick={() => selAction("duplicate")} className="p-1.5 rounded-lg text-black/60 hover:bg-black/5" title="Duplicate">
+                    <CopyPlus className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => selAction("copy")} className="p-1.5 rounded-lg text-black/60 hover:bg-black/5" title="Copy (⌘C)">
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => selAction("cut")} className="p-1.5 rounded-lg text-black/60 hover:bg-black/5" title="Cut (⌘X)">
+                    <Scissors className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={saveSelectionAsSticker} className="p-1.5 rounded-lg text-black/60 hover:bg-black/5" title="Save as a sticker to reuse">
+                    <Stamp className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="w-px h-4 bg-black/10 mx-0.5" />
+                  {PEN_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => recolorSelection(c)}
+                      className="w-4 h-4 rounded-full hover:scale-110 transition-transform"
+                      style={{ background: c }}
+                      title="Recolour"
+                    />
+                  ))}
+                  <span className="w-px h-4 bg-black/10 mx-0.5" />
+                  <button onClick={() => selAction("front")} className="p-1.5 rounded-lg text-black/60 hover:bg-black/5" title="Bring to front">
+                    <BringToFront className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => selAction("back")} className="p-1.5 rounded-lg text-black/60 hover:bg-black/5" title="Send to back">
+                    <SendToBack className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="w-px h-4 bg-black/10 mx-0.5" />
+                  <button onClick={() => selAction("delete")} className="p-1.5 rounded-lg text-red-600 hover:bg-red-50" title="Delete (⌫)">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Which edges will turn the page. Purely a hint — the tap itself is
+                handled by endStroke, so these must never eat the pointer (a month
+                tab often sits right underneath). */}
+            {flipGestures && (
+              <>
+                {page > 1 && (
+                  <div className="absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-0 group-hover:opacity-70 transition-opacity">
+                    <div className="w-7 h-7 rounded-full bg-white/85 shadow ring-1 ring-black/10 flex items-center justify-center">
+                      <ChevronLeft className="w-4 h-4 text-black/60" />
+                    </div>
+                  </div>
+                )}
+                {page < pages && (
+                  <div className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-0 group-hover:opacity-70 transition-opacity">
+                    <div className="w-7 h-7 rounded-full bg-white/85 shadow ring-1 ring-black/10 flex items-center justify-center">
+                      <ChevronRight className="w-4 h-4 text-black/60" />
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {debug && (
+              <>
+                <div
+                  className="absolute border-2 border-blue-500/70 pointer-events-none"
+                  style={{ left: `${writeArea.x * 100}%`, top: `${writeArea.y * 100}%`, width: `${writeArea.w * 100}%`, height: `${writeArea.h * 100}%` }}
+                  title="Write area"
+                />
+                {hotspots.map((h, i) => (
+                  <div
+                    key={i}
+                    className={`absolute pointer-events-none ${h.kind === "chrome" ? "border border-amber-500/70 bg-amber-400/20" : "border border-red-500/60 bg-red-500/10"}`}
+                    style={{ left: `${h.x * 100}%`, top: `${h.y * 100}%`, width: `${h.w * 100}%`, height: `${h.h * 100}%` }}
+                    title={h.label}
+                  />
+                ))}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Page navigation and zoom, at the bottom where a thumb can reach them. */}
+      <div className="shrink-0 flex items-center gap-1 px-2 md:px-3 py-1 bg-white/80 backdrop-blur border-t border-black/5 relative z-30">
+        <button onClick={() => go(page - 1)} disabled={page <= 1} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Previous page">
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <span className="text-[11px] text-black/45 tabular-nums w-16 text-center">{page} / {pages}</span>
+        <button onClick={() => go(page + 1)} disabled={page >= pages} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Next page">
+          <ChevronRight className="w-4 h-4" />
+        </button>
+        {canEditPages && (
+          <>
+            <button
+              onClick={() => setSetupFor({ positions: [page], mode: "apply" })}
+              className="p-2 rounded-xl text-black/50 hover:bg-black/5"
+              title="Change this page's paper, colour or size"
+            >
+              <LayoutTemplate className="w-4 h-4" />
+            </button>
             <button
               onClick={onAddPage}
-              className="ml-0.5 p-2 rounded-xl text-black/50 hover:bg-black/5"
-              title="Add a page to the end of this notebook"
+              className="p-2 rounded-xl text-black/50 hover:bg-black/5"
+              title="Add a page like this one, straight after it"
             >
               <Plus className="w-4 h-4" />
             </button>
-          )}
+          </>
+        )}
+
+        <div className="flex-1" />
+
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => zoomTo(stepZoom(view.z, -1))}
+            disabled={isFit(view)}
+            className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30"
+            title="Zoom out (⌘−)"
+          >
+            <ZoomOut className="w-4 h-4" />
+          </button>
+          {/* One tap in and back out again — the two zooms people actually want. */}
+          <button
+            onClick={() => (isFit(view) ? zoomTo(2) : setView(FIT))}
+            className="text-[11px] text-black/45 tabular-nums w-12 text-center py-1.5 rounded-lg hover:bg-black/5"
+            title={isFit(view) ? "Zoom to 200%" : "Back to the whole page (⌘0)"}
+          >
+            {Math.round(view.z * 100)}%
+          </button>
+          <button
+            onClick={() => zoomTo(stepZoom(view.z, 1))}
+            disabled={view.z >= MAX_ZOOM - 1e-3}
+            className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30"
+            title="Zoom in (⌘+)"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setView(FIT)}
+            disabled={isFit(view)}
+            className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30"
+            title="Fit the whole page (⌘0)"
+          >
+            <Maximize2 className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
-      {/* Page */}
-      <div className="flex-1 flex items-center justify-center p-2 md:p-4 overflow-hidden">
-        <div
-          ref={boxRef}
-          className="relative w-full max-h-full shadow-xl rounded-lg overflow-hidden select-none"
-          style={{ aspectRatio: `${planner.aspect}`, maxWidth: `min(100%, calc((100vh - 120px) * ${planner.aspect}))`, touchAction: "none", background: "#fff" }}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={endStroke}
-          onPointerCancel={endStroke}
-        >
-          {(paperUrl ?? (pdfBacked ? pdfSrc : imageSrc(planner, page))) ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={(paperUrl ?? (pdfBacked ? pdfSrc : imageSrc(planner, page))) as string}
-              alt={label}
-              className="absolute inset-0 w-full h-full pointer-events-none"
-              draggable={false}
-            />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-6 h-6 rounded-full border-2 border-black/10 border-t-[#8A6DE9] animate-spin" />
-            </div>
-          )}
-          <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ cursor: tool === "hand" ? "pointer" : tool === "text" ? "text" : "crosshair" }} />
-
-          {/* Typed text boxes sit above the ink so they can be edited and moved. */}
-          {textBoxes.map((t) => (
-            <TextBoxView
-              key={t.id}
-              box={t}
-              boxSize={boxSize}
-              selected={selectedText === t.id}
-              editable={tool === "text" && !readOnly}
-              onSelect={() => setSelectedText(t.id)}
-              onChange={(patch, history) => updateText(t.id, patch, history)}
-              onBeginEdit={() => { undoRef.current.push(elementsRef.current); redoRef.current = []; }}
-              onRemove={() => removeText(t.id)}
-            />
-          ))}
-
-          {debug && (
-            <>
-              <div
-                className="absolute border-2 border-blue-500/70 pointer-events-none"
-                style={{ left: `${writeArea.x * 100}%`, top: `${writeArea.y * 100}%`, width: `${writeArea.w * 100}%`, height: `${writeArea.h * 100}%` }}
-                title="Write area"
-              />
-              {hotspots.map((h, i) => (
-                <div
-                  key={i}
-                  className={`absolute pointer-events-none ${h.kind === "chrome" ? "border border-amber-500/70 bg-amber-400/20" : "border border-red-500/60 bg-red-500/10"}`}
-                  style={{ left: `${h.x * 100}%`, top: `${h.y * 100}%`, width: `${h.w * 100}%`, height: `${h.h * 100}%` }}
-                  title={h.label}
-                />
-              ))}
-            </>
-          )}
-        </div>
-      </div>
-
-      <p className="text-center text-[11px] text-black/35 pb-2 px-4">
+      <p className="text-center text-[11px] text-black/35 pb-1.5 pt-1 px-4 line-clamp-2 md:line-clamp-none">
         {readOnly
-          ? "This is a built-in planner, so it stays as printed — tap the tabs or a day to look around, and make a copy when you want to write in it"
-          : paperBacked
-            ? "Write anywhere with your Apple Pencil · the Text tool drops a box you can type in · add pages with + when you run out"
-            : "Tap the tabs or a day to jump around · write with your Apple Pencil on the paper · the Text tool drops a box you can type in — tabs and margins stay clear"}
+          ? "This is a built-in planner, so it stays as printed — tap the tabs or a day to look around, and make a copy when you want to write in it · tap the side edges, swipe or scroll to turn one page · pinch to zoom in"
+          : tool === "shape"
+            ? "Draw a shape roughly and let go — a rough circle, box, triangle, line or one-stroke arrow snaps to a clean one · it stays ink, so the lasso can still move, resize and recolour it · anything that isn't a shape is kept exactly as you drew it"
+            : tool === "select"
+            ? "Draw a loop round some writing (or drag a box) to pick it up · drag it to move, the handles to resize, the knob to rotate · ⌘C, ⌘X and ⌘V move it between pages · ⌫ deletes it · Esc lets it go"
+            : paperBacked
+              ? "Write anywhere with your Apple Pencil · the Text tool drops a box you can type in · the lasso moves, resizes and recolours what you've written · the page rail adds, copies, reorders and re-papers pages · scroll to turn one page · pinch, or ⌘+scroll, to zoom in and write smaller"
+              : "Tap the tabs or a day to jump around · write with your Apple Pencil on the paper · the Text tool drops a box you can type in — tabs and margins stay clear · the lasso picks writing up to move or recolour · scroll, or pick the hand and tap the side edges, to turn one page · pinch to zoom in"}
       </p>
+
+      {setupFor && (
+        <PageSetupDialog
+          mode={setupFor.mode}
+          positions={setupFor.positions}
+          initial={index.pages[(setupFor.mode === "insert" ? Math.max(1, setupFor.positions[0] - 1) : setupFor.positions[0]) - 1]}
+          planner={planner}
+          customTemplates={customTemplates}
+          onClose={() => setSetupFor(null)}
+          onCreate={(spec, count) => addPages(spec, setupFor.positions[0], count)}
+          onApply={(patch) => applyPageSetup(setupFor.positions, patch)}
+          onTemplatesChanged={() => { listUserTemplates().then(setCustomTemplates); }}
+          onSaveCurrentAsTemplate={saveAsTemplate}
+        />
+      )}
+
+      {namingSticker && (
+        <StickerNameDialog
+          initial={namingSticker.name}
+          onCancel={() => setNamingSticker(null)}
+          onSave={confirmSaveSticker}
+        />
+      )}
+
+      {exportBusy && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/25 backdrop-blur-sm">
+          <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-white shadow-xl">
+            <Loader2 className="w-4 h-4 animate-spin text-[#8A6DE9]" />
+            <span className="text-[13px] font-semibold text-black/70" style={MARKER}>{exportBusy}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- export menu ---------------------------------------------------------------
+function ExportMenu({
+  onClose,
+  hasSelection,
+  pdfBacked,
+  onPagePng,
+  onPagePdf,
+  onSelectionPng,
+  onNotebookPdf,
+  onAnnotatedPdf,
+}: {
+  onClose: () => void;
+  hasSelection: boolean;
+  pdfBacked: boolean;
+  onPagePng: () => void;
+  onPagePdf: () => void;
+  onSelectionPng: () => void;
+  onNotebookPdf: () => void;
+  onAnnotatedPdf: () => void;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let armed = false;
+    const t = setTimeout(() => { armed = true; }, 0);
+    const away = (e: PointerEvent) => {
+      if (!armed) return;
+      const el = e.target as HTMLElement;
+      if (box.current?.contains(el) || el.closest?.("[data-export-toggle]")) return;
+      onClose();
+    };
+    document.addEventListener("pointerdown", away);
+    return () => { clearTimeout(t); document.removeEventListener("pointerdown", away); };
+  }, [onClose]);
+
+  const Item = ({ icon, label, hint, onClick }: { icon: React.ReactNode; label: string; hint?: string; onClick: () => void }) => (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left hover:bg-black/[0.05] transition-colors"
+    >
+      <span className="text-black/45">{icon}</span>
+      <span className="flex flex-col">
+        <span className="text-[12.5px] font-semibold text-black/75" style={MARKER}>{label}</span>
+        {hint && <span className="text-[10.5px] text-black/40">{hint}</span>}
+      </span>
+    </button>
+  );
+
+  return (
+    <div
+      ref={box}
+      className="absolute right-0 top-full mt-1 z-40 w-60 rounded-2xl bg-white border border-black/10 shadow-xl p-1.5"
+    >
+      <p className="px-2.5 pt-1 pb-1.5 text-[10.5px] font-bold uppercase tracking-wide text-black/35">This page</p>
+      <Item icon={<FileImage className="w-4 h-4" />} label="Image (PNG)" onClick={onPagePng} />
+      <Item icon={<FileText className="w-4 h-4" />} label="PDF" onClick={onPagePdf} />
+      {hasSelection && (
+        <Item icon={<FileImage className="w-4 h-4" />} label="Selection (PNG)" hint="Just what's selected" onClick={onSelectionPng} />
+      )}
+      <div className="my-1 h-px bg-black/[0.06]" />
+      <p className="px-2.5 pt-1 pb-1.5 text-[10.5px] font-bold uppercase tracking-wide text-black/35">Whole notebook</p>
+      <Item icon={<Files className="w-4 h-4" />} label="PDF" hint="Every page, background and notes" onClick={onNotebookPdf} />
+      {pdfBacked && (
+        <Item
+          icon={<FileText className="w-4 h-4" />}
+          label="Annotated PDF"
+          hint="Original PDF with your notes on top"
+          onClick={onAnnotatedPdf}
+        />
+      )}
     </div>
   );
 }
@@ -1660,24 +3287,43 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
 // text; the Text tool turns it into an editable textarea with a drag handle, a
 // width handle, and a small format bar. Font size is a fraction of page height so
 // it scales with the page.
-function TextBoxView({ box, boxSize, selected, editable, onSelect, onChange, onBeginEdit, onRemove }: {
+function TextBoxView({ box, boxSize, scale, selected, editable, outlined, onSelect, onChange, onBeginEdit, onRemove, onMeasure }: {
   box: TextBox;
   boxSize: { w: number; h: number };
+  /** The viewer's zoom. The box itself is scaled by it; its handles aren't. */
+  scale: number;
   selected: boolean;
   editable: boolean;
+  /** Picked out by the selection tool. */
+  outlined?: boolean;
   onSelect: () => void;
   onChange: (patch: Partial<TextBox>, history?: boolean) => void;
   onBeginEdit: () => void;
   onRemove: () => void;
+  /** Report the box's wrapped height (a fraction of page height) for selection. */
+  onMeasure?: (id: string, height: number) => void;
 }) {
   const areaRef = useRef<HTMLTextAreaElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ px: number; py: number; x: number; y: number } | null>(null);
   const widthDrag = useRef<{ px: number; w: number } | null>(null);
-  const edited = useRef(false);
 
   useEffect(() => {
     if (selected && editable) areaRef.current?.focus();
   }, [selected, editable]);
+
+  // How tall the text actually wraps to is something only the DOM knows, and the
+  // selection tool needs it to draw a box that fits. Layout height, so the viewer's
+  // zoom doesn't come into it.
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || !boxSize.h || !onMeasure) return;
+    const report = () => onMeasure(box.id, el.offsetHeight / boxSize.h);
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [box.id, boxSize.h, onMeasure]);
 
   const fontPx = box.size * boxSize.h;
   const common: React.CSSProperties = {
@@ -1692,16 +3338,27 @@ function TextBoxView({ box, boxSize, selected, editable, onSelect, onChange, onB
   const left = `${box.x * 100}%`;
   const top = `${box.y * 100}%`;
   const width = `${box.w * 100}%`;
+  // Rotated by the selection tool: still live text, turned about its own middle.
+  const spin: React.CSSProperties = box.rot
+    ? { transform: `rotate(${box.rot}rad)`, transformOrigin: "center center" }
+    : {};
 
   const startDrag = (e: React.PointerEvent) => {
     e.stopPropagation();
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    // The whole drag is one undo step, so the box goes back where it came from.
+    onBeginEdit();
     drag.current = { px: e.clientX, py: e.clientY, x: box.x, y: box.y };
   };
+  // Screen pixels per page unit: the box's layout size times the viewer's zoom, so
+  // dragging tracks the pointer whether the page is fitted or zoomed into.
+  const perX = boxSize.w * scale;
+  const perY = boxSize.h * scale;
+
   const onDragMove = (e: React.PointerEvent) => {
-    if (!drag.current || !boxSize.w) return;
-    const nx = drag.current.x + (e.clientX - drag.current.px) / boxSize.w;
-    const ny = drag.current.y + (e.clientY - drag.current.py) / boxSize.h;
+    if (!drag.current || !perX) return;
+    const nx = drag.current.x + (e.clientX - drag.current.px) / perX;
+    const ny = drag.current.y + (e.clientY - drag.current.py) / perY;
     onChange({ x: Math.max(0, Math.min(1 - box.w, nx)), y: Math.max(0, Math.min(0.98, ny)) }, false);
   };
   const endDrag = (e: React.PointerEvent) => {
@@ -1712,11 +3369,12 @@ function TextBoxView({ box, boxSize, selected, editable, onSelect, onChange, onB
   const startWidth = (e: React.PointerEvent) => {
     e.stopPropagation();
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    onBeginEdit();
     widthDrag.current = { px: e.clientX, w: box.w };
   };
   const onWidthMove = (e: React.PointerEvent) => {
-    if (!widthDrag.current || !boxSize.w) return;
-    const nw = widthDrag.current.w + (e.clientX - widthDrag.current.px) / boxSize.w;
+    if (!widthDrag.current || !perX) return;
+    const nw = widthDrag.current.w + (e.clientX - widthDrag.current.px) / perX;
     onChange({ w: Math.max(0.08, Math.min(1 - box.x, nw)) }, false);
   };
 
@@ -1724,8 +3382,9 @@ function TextBoxView({ box, boxSize, selected, editable, onSelect, onChange, onB
     // Static text. Clickable to select when the Text tool is active.
     return (
       <div
-        className="absolute whitespace-pre-wrap break-words"
-        style={{ left, top, width, ...common, pointerEvents: editable ? "auto" : "none" }}
+        ref={rootRef}
+        className={`absolute whitespace-pre-wrap break-words ${outlined ? "outline-dashed outline-1 outline-[#8A6DE9]/70" : ""}`}
+        style={{ left, top, width, ...common, ...spin, pointerEvents: editable ? "auto" : "none" }}
         onPointerDown={editable ? (e) => { e.stopPropagation(); onSelect(); } : undefined}
       >
         {box.text || (editable ? "" : "")}
@@ -1734,9 +3393,14 @@ function TextBoxView({ box, boxSize, selected, editable, onSelect, onChange, onB
   }
 
   return (
-    <div className="absolute" style={{ left, top, width }} onPointerDown={(e) => e.stopPropagation()}>
-      {/* Format bar */}
-      <div className="absolute -top-10 left-0 flex items-center gap-0.5 px-1 py-1 rounded-xl bg-white border border-black/10 shadow-lg z-10 whitespace-nowrap">
+    <div ref={rootRef} className="absolute" style={{ left, top, width, ...spin }} onPointerDown={(e) => e.stopPropagation()}>
+      {/* Format bar. Counter-scaled, along with the handles below: the text should
+          grow with the zoom, but the furniture for editing it stays the size your
+          finger is. */}
+      <div
+        className="absolute -top-10 left-0 flex items-center gap-0.5 px-1 py-1 rounded-xl bg-white border border-black/10 shadow-lg z-10 whitespace-nowrap"
+        style={{ transform: `scale(${1 / scale})`, transformOrigin: "left bottom" }}
+      >
         <button onMouseDown={(e) => e.preventDefault()} onClick={() => onChange({ bold: !box.bold }, true)} className={`p-1.5 rounded-lg ${box.bold ? "bg-black/10" : "hover:bg-black/5"}`} title="Bold"><Bold className="w-3.5 h-3.5" /></button>
         <button onMouseDown={(e) => e.preventDefault()} onClick={() => onChange({ italic: !box.italic }, true)} className={`p-1.5 rounded-lg ${box.italic ? "bg-black/10" : "hover:bg-black/5"}`} title="Italic"><Italic className="w-3.5 h-3.5" /></button>
         <span className="w-px h-4 bg-black/10 mx-0.5" />
@@ -1751,6 +3415,7 @@ function TextBoxView({ box, boxSize, selected, editable, onSelect, onChange, onB
       {/* Move handle */}
       <div
         className="absolute -left-3 top-0 w-6 h-6 -mt-1 flex items-center justify-center rounded-full bg-[#8A6DE9] text-white shadow cursor-move touch-none z-10"
+        style={{ transform: `scale(${1 / scale})`, transformOrigin: "top right" }}
         onPointerDown={startDrag}
         onPointerMove={onDragMove}
         onPointerUp={endDrag}
@@ -1763,9 +3428,10 @@ function TextBoxView({ box, boxSize, selected, editable, onSelect, onChange, onB
       <textarea
         ref={areaRef}
         value={box.text}
-        onChange={(e) => { edited.current = true; onChange({ text: e.target.value }, false); }}
-        onFocus={() => { if (!edited.current) onBeginEdit(); }}
-        onBlur={() => { if (!box.text.trim()) onRemove(); }}
+        onChange={(e) => onChange({ text: e.target.value }, false)}
+        // Each visit to the box is its own undo step: focus opens one, leaving ends it.
+        onFocus={onBeginEdit}
+        onBlur={() => { if (!box.text.trim()) onRemove(); else onChange({}, true); }}
         rows={1}
         placeholder="Type…"
         className="w-full bg-[#8A6DE9]/[0.06] outline outline-1 outline-[#8A6DE9]/60 rounded-md resize-none overflow-hidden px-1 py-0.5"
@@ -1776,6 +3442,7 @@ function TextBoxView({ box, boxSize, selected, editable, onSelect, onChange, onB
       {/* Width handle */}
       <div
         className="absolute top-1/2 -right-2 w-4 h-8 -mt-4 flex items-center justify-center rounded bg-white border border-black/10 shadow cursor-ew-resize touch-none z-10"
+        style={{ transform: `scale(${1 / scale})`, transformOrigin: "left center" }}
         onPointerDown={startWidth}
         onPointerMove={onWidthMove}
         onPointerUp={endDrag}

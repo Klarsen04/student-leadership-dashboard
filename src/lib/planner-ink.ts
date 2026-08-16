@@ -29,6 +29,8 @@ export interface TextBox {
   align: "left" | "center" | "right";
   bold?: boolean;
   italic?: boolean;
+  /** Rotation in radians, from the selection tool. Absent means upright. */
+  rot?: number;
 }
 
 /** Anything that can sit on a page. Strokes predate text boxes and have no `kind`. */
@@ -95,8 +97,22 @@ export function serializeElements(elements: PageElement[]): string {
   return JSON.stringify(
     elements.map((e) =>
       isText(e)
-        ? { ...e, x: round(e.x, 4), y: round(e.y, 4), w: round(e.w, 4), size: round(e.size, 4) }
-        : e,
+        ? {
+            ...e,
+            x: round(e.x, 4),
+            y: round(e.y, 4),
+            w: round(e.w, 4),
+            size: round(e.size, 4),
+            ...(e.rot ? { rot: round(e.rot, 4) } : {}),
+          }
+        : // Rounded here as well as in `simplifyStroke`, because a stroke that's been
+          // moved or resized has been through arithmetic since: without this, one
+          // drag would put a page's points back to full doubles and triple its size.
+          {
+            ...e,
+            size: round(e.size, 6),
+            points: e.points.map(([x, y, p]) => [round(x, 4), round(y, 4), round(p, 2)]),
+          },
     ),
   );
 }
