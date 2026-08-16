@@ -209,6 +209,7 @@ import {
 } from "@/lib/planner-elements";
 import { ColorPickerButton } from "@/components/planner/ColorPicker";
 import { PageSidebar, THUMB_H } from "@/components/planner/PageSidebar";
+import { cachedThumb, paintThumb, thumbKey } from "@/lib/planner-thumbs";
 import { PageSetupDialog } from "@/components/planner/PageSetupDialog";
 import { TOOL_ALPHA, drawStroke, isFlattened, paintStrokes, strokeAlpha } from "@/lib/planner-render";
 import { type EraserMode, ERASER_SIZES, eraseAt as eraseElements } from "@/lib/planner-erase";
@@ -1438,6 +1439,32 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     return thumbRendererRef.current.page(sourcePage);
   }, [planner.pdfKey]);
 
+  /**
+   * A content stamp per slot, so the rail can tell which page's thumbnail is stale.
+   * Bumped wherever a page's elements are replaced — writing, erasing, undo, redo,
+   * pasting, duplicating, clearing — and the tick that follows is debounced, because a
+   * single eraser drag replaces the page's elements many times over.
+   */
+  const inkVersions = useRef(new Map<number, number>());
+  const [thumbTick, setThumbTick] = useState(0);
+  const thumbTimer = useRef<number | null>(null);
+  const bumpThumb = useCallback((s: number) => {
+    inkVersions.current.set(s, (inkVersions.current.get(s) ?? 0) + 1);
+    if (thumbTimer.current !== null) return;
+    thumbTimer.current = window.setTimeout(() => {
+      thumbTimer.current = null;
+      setThumbTick((t) => t + 1);
+    }, 180);
+  }, []);
+  useEffect(() => () => { if (thumbTimer.current !== null) window.clearTimeout(thumbTimer.current); }, []);
+
+  /** Put a slot's content in the cache. The one place that happens, so the rail can't
+   *  be left showing a thumbnail of what a page used to hold. */
+  const putSlot = useCallback((s: number, els: PageElement[]) => {
+    cacheRef.current.set(s, els);
+    bumpThumb(s);
+  }, [bumpThumb]);
+
   // The user's own templates, so a page can reference one by id. Pulled from the
   // account, so a template made on one device is there on the next.
   useEffect(() => {
@@ -1853,11 +1880,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       }
     }
     elementsRef.current = next;
-    cacheRef.current.set(forSlot, next);
+    putSlot(forSlot, next);
     scheduleSave(forSlot);
     redraw();
     rerender();
-  }, [readOnly, redraw, rerender, scheduleSave, pushOp]);
+  }, [readOnly, redraw, rerender, scheduleSave, pushOp, putSlot]);
 
   // Recover any pages a previous session couldn't sync.
   useEffect(() => {
@@ -1898,7 +1925,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (local) {
       const parsed = parseElements(local.json);
       elementsRef.current = parsed;
-      cacheRef.current.set(slot, parsed);
+      putSlot(slot, parsed);
       redraw();
       rerender();
       setSaveState("unsaved");
@@ -1915,14 +1942,14 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
         const data = await res.json();
         if (cancelled) return;
         const parsed = parseElements(data.strokes);
-        cacheRef.current.set(slot, parsed);
+        putSlot(slot, parsed);
         elementsRef.current = parsed;
         redraw();
         rerender();
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [slot, planner.id, redraw, rerender, saveNow]);
+  }, [slot, planner.id, redraw, rerender, saveNow, putSlot]);
 
   // Render the current page's PDF page on demand. A page of this notebook that
   // isn't from the PDF (an inserted template page) resolves to an image instead,
@@ -2190,6 +2217,31 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (local) return parseElements(local.json);
     return fetchSlot(planner.id, s);
   }, [planner.id]);
+
+  /**
+   * Thumbnails for the page rail: the handwriting on a page, painted small over the
+   * paper the rail already draws.
+   *
+   * `key` is the page's content identity, so the rail paints a version once and holds
+   * it — writing on one page never repaints the notebook. Only rows the rail can see
+   * ask for one, and the ink comes from the same cache/mirror/server ladder an export
+   * uses, so the page being written on costs nothing to keep current.
+   */
+  const pageInk = useMemo(() => ({
+    tick: thumbTick,
+    key: (pm: PageMeta, position: number) => {
+      const s = pm.slot ?? position;
+      return thumbKey(planner.id, s, inkVersions.current.get(s) ?? 0);
+    },
+    render: async (pm: PageMeta, position: number) => {
+      const s = pm.slot ?? position;
+      const key = thumbKey(planner.id, s, inkVersions.current.get(s) ?? 0);
+      const hit = cachedThumb(key);
+      if (hit !== undefined) return hit;
+      const els = await fetchInkFor(s);
+      return paintThumb(key, els, pageAspect(pm, planner), THUMB_H);
+    },
+  }), [thumbTick, planner, fetchInkFor]);
 
   /** The background image for a page, resolved at export resolution. */
   const exportBackground = useCallback(async (pm: PageMeta): Promise<HTMLImageElement | null> => {
@@ -2807,7 +2859,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     setSelectedText(null);
     if (op.kind === "content") {
       const next = direction === "undo" ? op.before : op.after;
-      cacheRef.current.set(op.slot, next);
+      putSlot(op.slot, next);
       scheduleSave(op.slot);
       // Undoing an edit you made on another page takes you back to it, so what
       // changes is always what you can see.
@@ -2826,7 +2878,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     savePageIndex(next).catch(() => {});
     setPage(Math.min(Math.max(1, direction === "undo" ? op.page : op.toPage), next.pages.length));
     rerender();
-  }, [redraw, rerender, scheduleSave]);
+  }, [redraw, rerender, scheduleSave, putSlot]);
 
   const undo = () => {
     const op = undoRef.current.pop();
@@ -2854,10 +2906,10 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
    * of this clear and put a deleted page's handwriting onto a brand new one.
    */
   const blankSlot = useCallback(async (s: number) => {
-    cacheRef.current.set(s, []);
+    putSlot(s, []);
     clearLocal(planner.id, s);
     await clearSlot(planner.id, s);
-  }, [planner.id]);
+  }, [planner.id, putSlot]);
 
   const applyPageOp = useCallback(async (
     label: string,
@@ -2928,7 +2980,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (landingCopy) {
       const content = cacheRef.current.get(landingCopy.from) ?? (await fetchSlot(planner.id, landingCopy.from));
       seeded.set(landingCopy.to, content);
-      cacheRef.current.set(landingCopy.to, content);
+      putSlot(landingCopy.to, content);
     }
 
     await applyPageOp(
@@ -2943,7 +2995,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     for (const { from, to } of res.copies) {
       const content = seeded.get(to) ?? cacheRef.current.get(from);
       if (content) {
-        cacheRef.current.set(to, content);
+        putSlot(to, content);
         if (content.length) await saveNow(to);
       } else if (!(await copySlot(planner.id, from, to))) {
         toast.error("The copy's handwriting didn't save — check your connection.");
@@ -2951,7 +3003,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     }
     redraw();
     rerender();
-  }, [applyPageOp, blankSlot, flushPending, planner.id, saveNow, redraw, rerender]);
+  }, [applyPageOp, blankSlot, flushPending, planner.id, saveNow, redraw, rerender, putSlot]);
 
   const deletePagesAt = useCallback((positions: number[]) => {
     const next = deletePages(indexRef.current, positions);
@@ -3381,6 +3433,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
             editable={canEditPages}
             background={thumbBackground}
             pdfThumb={pdfBacked ? pdfThumb : undefined}
+            pageInk={pageInk}
             aspect={(p) => pageAspect(p, planner)}
             onJump={go}
             onClose={() => setSidebar(false)}

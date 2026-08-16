@@ -44,6 +44,18 @@ export interface PageSidebarProps {
   background: (page: PageMeta, position: number) => ResolvedBackground;
   /** Render one page of the imported PDF to an image URL. */
   pdfThumb?: (sourcePage: number) => Promise<string>;
+  /**
+   * What's written on a page, painted at thumbnail size and laid over its paper.
+   *
+   * `key` is that page's content identity: the rail paints a key once and never again,
+   * so writing on one page can't repaint the whole notebook. `tick` changes when some
+   * key has changed, which is the rail's cue to look again.
+   */
+  pageInk?: {
+    tick: number;
+    key: (page: PageMeta, position: number) => string;
+    render: (page: PageMeta, position: number) => Promise<string>;
+  };
   /** Page shape, so thumbnails aren't all the same proportions. */
   aspect: (page: PageMeta) => number;
   onJump: (page: number) => void;
@@ -63,6 +75,7 @@ export function PageSidebar({
   editable,
   background,
   pdfThumb,
+  pageInk,
   aspect,
   onJump,
   onClose,
@@ -125,6 +138,49 @@ export function PageSidebar({
         .catch(() => asked.current.delete(n));
     }
   }, [visible, background, pdfThumb]);
+
+  // ---- handwriting on the visible rows ----
+  // Held per *row*, with the content key alongside it as the staleness test: a row is
+  // repainted only when its page's key has moved on, so writing on page 4 leaves pages
+  // 1-3 exactly as they were.
+  //
+  // Keying the store itself by content key looked tidier and was wrong. Painting a page
+  // reads its ink, which the viewer then caches — and caching is a content change, so the
+  // key ticked over between asking and storing, and the row spent forever looking up a key
+  // nothing was ever filed under. By position, a late key just means one more repaint.
+  const [inkByPos, setInkByPos] = useState<Map<number, { key: string; src: string }>>(new Map());
+  const inkAsked = useRef<Set<string>>(new Set());
+  // Guarded on being mounted, not on this effect run: the run is torn down whenever the
+  // rail scrolls or a page changes, and a key is only ever asked for once, so dropping
+  // in-flight results with the run would lose that page's thumbnail for good.
+  // Set on mount as well as cleared on unmount: React remounts every component once in
+  // development, and a flag that was only ever cleared stayed cleared.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const tick = pageInk?.tick;
+  useEffect(() => {
+    if (!pageInk) return;
+    for (const { page, position } of visible) {
+      const key = pageInk.key(page, position);
+      if (inkAsked.current.has(key)) continue;
+      // A page being written on turns over a key every couple of hundred ms, so this set
+      // can't grow for the life of the session. Dropping it wholesale is cheap: every key
+      // still in use is a hit in the thumbnail cache, so re-asking costs nothing.
+      if (inkAsked.current.size > 400) inkAsked.current.clear();
+      inkAsked.current.add(key);
+      pageInk
+        .render(page, position)
+        .then((src) => {
+          if (!mounted.current) return;
+          setInkByPos((m) => new Map(m).set(position, { key, src }));
+        })
+        .catch(() => inkAsked.current.delete(key));
+    }
+    // `tick` is the signal that some key changed; `pageInk` itself is stable per tick.
+  }, [visible, pageInk, tick]);
 
   // ---- selection ----
   const isSelected = (p: number) => selected.includes(p);
@@ -230,6 +286,7 @@ export function PageSidebar({
           {visible.map(({ page, position }) => {
             const bg = background(page, position);
             const src = bg.kind === "image" ? bg.src : bg.kind === "pdf" ? thumbs.get(bg.page) : undefined;
+            const ink = inkByPos.get(position)?.src;
             const a = aspect(page) || 0.7;
             const chosen = selecting && isSelected(position);
             const here = position === current;
@@ -238,6 +295,7 @@ export function PageSidebar({
                 key={`${page.slot}-${position}`}
                 className="absolute left-0 right-0"
                 style={{ top: (position - 1) * ROW_H, height: ROW_H }}
+                data-page-row={position}
               >
                 {/* Insert between pages: a hairline that grows a + on hover. */}
                 {editable && (
@@ -267,6 +325,7 @@ export function PageSidebar({
                     onClick={() => rowClick(position)}
                     className="flex flex-col items-center gap-1 flex-1 min-w-0"
                     title={page.label ?? `Page ${position}`}
+                    data-page-open={position}
                   >
                     <span
                       className={`relative rounded-md overflow-hidden bg-white transition-all ${
@@ -283,6 +342,18 @@ export function PageSidebar({
                         <img src={src} alt="" className="w-full h-full" draggable={false} loading="lazy" />
                       ) : (
                         <span className="absolute inset-0 bg-black/[0.03]" />
+                      )}
+                      {/* The handwriting, over the paper — the same vectors the page and
+                          an export are drawn from. */}
+                      {ink && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={ink}
+                          alt=""
+                          className="absolute inset-0 w-full h-full"
+                          draggable={false}
+                          data-page-ink={position}
+                        />
                       )}
                     </span>
                     <span className={`text-[10.5px] tabular-nums truncate max-w-full ${here ? "text-black font-bold" : "text-black/40"}`}>

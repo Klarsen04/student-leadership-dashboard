@@ -233,7 +233,33 @@ toolbar or footer must not change size with the armed tool.** The options row al
 Toolbar controls carry stable hooks for tests — `data-tool` on each tool button,
 `data-swatch` on each colour, `data-picker`/`data-picker-panel` on a colour picker,
 `data-recolor` on the selection swatches, `data-zoom` on the zoom readout, `aria-pressed`
-for what's armed. Tooltips describe the tool and get reworded; select on these instead.
+for what's armed. The page rail adds `data-page-row`, `data-page-open` (the jump button —
+*not* the first button in the row, which is the insert-a-page hairline) and `data-page-ink`.
+Tooltips describe the tool and get reworded; select on these instead.
+
+### Page-rail thumbnails (`src/lib/planner-thumbs.ts`)
+The rail already draws each page's real paper, so a thumbnail is just that page's
+handwriting as a transparent PNG laid over it — composited by `paintElements` from the same
+vectors as the page and the export (at 2×), never a screenshot, so it can't drift from what
+the page holds.
+
+Repainting is governed by a **content version per slot**: `inkVersions` in the planner page,
+bumped by `putSlot()` — the single choke point through which a page's elements are ever
+replaced (writing, erasing, undo, redo, paste, duplicate, clear). The rail asks for one key
+(`plannerId:slot:version`) at most once, so writing on page 4 leaves pages 1-3's images
+byte-identical, and undo — which bumps the version *back* to a key already in the cache —
+updates the rail instantly instead of showing a stale bitmap. The tick that wakes the rail
+is debounced 180ms, because one eraser drag replaces a page's elements many times over.
+
+Two traps, both of which cost an afternoon:
+- The rail stores ink **by row position**, with the key kept beside it only as the staleness
+  test. Keying the store by content key deadlocks: painting a page reads its ink, the viewer
+  caches it, and caching bumps the version — so the key moved on between asking and storing
+  and the row looked up a key nothing was filed under. Nothing rendered after a reload.
+- Its in-flight guard is `mounted`, **not** an effect-run flag. The effect re-runs on every
+  scroll and page change, and since a key is only asked for once, cancelling with the run
+  loses that page's thumbnail permanently. Set the flag on mount too — React remounts every
+  component once in development.
 
 Content is stored per planner/page in the `PlannerInk` table via `/api/planner`
 (the `strokes` column holds the serialized `PageElement[]`, text boxes included).
