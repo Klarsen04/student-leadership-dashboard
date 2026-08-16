@@ -157,6 +157,38 @@ The cache is invalidated by **identity** (`inkCachePainted !== elementsRef.curre
 plus an explicit reset on a page turn — a flag was how undo used to leave a stroke on
 screen until the next edit.
 
+### State architecture (one cause behind the input bugs)
+Latency, missed strokes, the toolbar taking stylus input, undo that lagged the canvas,
+paste landing where it was copied from, and stale rail thumbnails were all one habit:
+the document lived in React state, so a render sat on the critical path of every
+pointer event and each decision was re-derived from whatever the last render saw.
+Five invariants replace it — anything new on the page must keep them, or the symptoms
+come back one at a time:
+1. **One document, one writer.** `elementsRef.current` is the page; `setElements` is
+   the only thing that changes it (history → ref → slot cache → save → repaint →
+   `rerender`). Ink, text, shapes, stickers, paste and every selection transform go
+   through it. `beginBurst`/`endBurst` + `{history:false}` make a whole gesture one
+   undo step.
+2. **One gesture latch.** `routePointer` decides the mode at pointerdown and
+   `gestureRef` holds it until that pointer lifts (see Pointer input above).
+3. **One paint path.** Three painters only: `redraw` (committed ink from the cached
+   bitmap, plus the marquee), `paintLive` (the stroke in flight), `paintGhost` (an
+   armed paste). Pixels are only ever made by `planner-render.ts`, so screen and
+   export can't disagree.
+4. **Refs mirrored at render time** (`toolRef.current = tool` in the body, not in an
+   effect), so a handler can never read a value from the render before last.
+5. **One slot writer.** `putSlot` is the only place a slot's content changes, which is
+   also the only thumbnail invalidation — a rail thumbnail can't go stale without the
+   page's content having bypassed the cache.
+
+Measured on a 600-stroke page (`/tmp/arch.mjs`): 150 pen samples commit as one stroke
+with no sample dropped and no long task; a hand on the toolbar mid-stroke presses
+nothing while Undo still works a moment later; undo reaches the canvas in ~34 ms and
+refreshes only that page's thumbnail; dragging all 601 strokes costs ~23 ms per move
+with no task blocking longer than two frames. The only React render left on a per-move
+path is the one `setElements` schedules during a burst, and at that size it stays
+inside the frame budget.
+
 ### Writing tools (pen, pencil, marker, highlighter)
 All four are the same `Stroke` on the same pipeline above — the tool is a field, not
 a separate renderer, so none of them can be the slow one. What differs is how
