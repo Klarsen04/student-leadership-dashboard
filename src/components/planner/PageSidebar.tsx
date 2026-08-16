@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Copy,
   CornerDownRight,
+  FilePlus2,
   GripVertical,
   MoreVertical,
   Plus,
@@ -63,6 +64,8 @@ export interface PageSidebarProps {
   /** Open the paper picker to insert new pages at this 1-based position. */
   onInsertAt: (at: number) => void;
   onDuplicate: (positions: number[]) => void;
+  /** Same paper, nothing written on it — a fresh copy of a page you use as a form. */
+  onDuplicateBlank: (positions: number[]) => void;
   onDelete: (positions: number[]) => void;
   onMove: (positions: number[], before: number) => void;
   /** Open the paper picker to re-paper these pages. */
@@ -81,6 +84,7 @@ export function PageSidebar({
   onClose,
   onInsertAt,
   onDuplicate,
+  onDuplicateBlank,
   onDelete,
   onMove,
   onSetup,
@@ -92,6 +96,12 @@ export function PageSidebar({
   const [selected, setSelected] = useState<number[]>([]);
   const [menuFor, setMenuFor] = useState<number | null>(null);
   const [drag, setDrag] = useState<{ positions: number[]; gap: number } | null>(null);
+  // The live drag, mirrored where an event handler can both read and end it. `drag` alone
+  // isn't enough: one pointerup reaches `endDrag` twice — once on the grip, once on the
+  // list it bubbles to — and both see the same pre-render `drag`, so the page was moved
+  // twice. The second move dragged whatever page had shifted into the vacated position,
+  // which looked exactly like handwriting being left behind by a reorder.
+  const dragRef = useRef<{ positions: number[]; gap: number } | null>(null);
 
   const count = pages.length;
 
@@ -165,22 +175,28 @@ export function PageSidebar({
     if (!pageInk) return;
     for (const { page, position } of visible) {
       const key = pageInk.key(page, position);
-      if (inkAsked.current.has(key)) continue;
-      // A page being written on turns over a key every couple of hundred ms, so this set
-      // can't grow for the life of the session. Dropping it wholesale is cheap: every key
-      // still in use is a hit in the thumbnail cache, so re-asking costs nothing.
-      if (inkAsked.current.size > 400) inkAsked.current.clear();
-      inkAsked.current.add(key);
+      // Up to date already? This is what stops the rail repainting, and it's per *row*:
+      // reordering hands a key that has already been painted to a different row, and that
+      // row still has to be told about it.
+      if (inkByPos.get(position)?.key === key) continue;
+      // ...whereas this only stops the same work being started twice while it's in flight,
+      // so it's cleared either way when the work finishes. A guard that outlived the
+      // request would freeze a row: after a reorder or an undo, the row that inherits an
+      // already-painted key would be skipped and keep showing the wrong page's writing.
+      const pending = `${position}:${key}`;
+      if (inkAsked.current.has(pending)) continue;
+      inkAsked.current.add(pending);
       pageInk
         .render(page, position)
         .then((src) => {
+          inkAsked.current.delete(pending);
           if (!mounted.current) return;
           setInkByPos((m) => new Map(m).set(position, { key, src }));
         })
-        .catch(() => inkAsked.current.delete(key));
+        .catch(() => inkAsked.current.delete(pending));
     }
     // `tick` is the signal that some key changed; `pageInk` itself is stable per tick.
-  }, [visible, pageInk, tick]);
+  }, [visible, pageInk, tick, inkByPos]);
 
   // ---- selection ----
   const isSelected = (p: number) => selected.includes(p);
@@ -224,12 +240,13 @@ export function PageSidebar({
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     const positions = selecting && selected.includes(position) ? selected : [position];
-    setDrag({ positions, gap: position });
+    dragRef.current = { positions, gap: position };
+    setDrag(dragRef.current);
     setMenuFor(null);
   };
 
   const moveDrag = (e: React.PointerEvent) => {
-    if (!drag) return;
+    if (!dragRef.current) return;
     const el = listRef.current;
     if (el) {
       // Nudge the list when the pointer reaches either end, so a long notebook can
@@ -238,13 +255,17 @@ export function PageSidebar({
       if (e.clientY < rect.top + 44) el.scrollTop -= 14;
       else if (e.clientY > rect.bottom - 44) el.scrollTop += 14;
     }
-    setDrag((d) => (d ? { ...d, gap: gapAt(e.clientY) } : d));
+    const gap = gapAt(e.clientY);
+    dragRef.current = { ...dragRef.current, gap };
+    setDrag((d) => (d ? { ...d, gap } : d));
   };
 
   const endDrag = (e: React.PointerEvent) => {
     (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
-    if (!drag) return;
-    const { positions, gap } = drag;
+    const live = dragRef.current;
+    dragRef.current = null;
+    if (!live) return;
+    const { positions, gap } = live;
     setDrag(null);
     // Dropping a page back where it already is isn't a move.
     const noop = positions.length === 1 && (gap === positions[0] || gap === positions[0] + 1);
@@ -384,19 +405,41 @@ export function PageSidebar({
                   )}
 
                   {menuFor === position && (
-                    <div className="absolute right-1 top-6 z-30 w-[150px] rounded-xl bg-white shadow-xl ring-1 ring-black/10 py-1 text-[12px]">
+                    <div className="absolute right-1 top-6 z-30 w-[168px] rounded-xl bg-white shadow-xl ring-1 ring-black/10 py-1 text-[12px]">
                       {[
-                        { label: "Insert before", icon: Plus, run: () => onInsertAt(position) },
-                        { label: "Insert after", icon: CornerDownRight, run: () => onInsertAt(position + 1) },
-                        { label: "Duplicate", icon: Copy, run: () => onDuplicate(activeSelection(position)) },
-                        { label: "Change paper", icon: SquareDashed, run: () => onSetup(activeSelection(position)) },
-                      ].map(({ label, icon: Icon, run }) => (
+                        { label: "Insert before", icon: Plus, hint: "", run: () => onInsertAt(position) },
+                        { label: "Insert after", icon: CornerDownRight, hint: "", run: () => onInsertAt(position + 1) },
+                        {
+                          label: "Duplicate",
+                          icon: Copy,
+                          hint: "with the handwriting",
+                          run: () => onDuplicate(activeSelection(position)),
+                        },
+                        {
+                          label: "Blank copy",
+                          icon: FilePlus2,
+                          hint: "same paper, nothing on it",
+                          run: () => onDuplicateBlank(activeSelection(position)),
+                        },
+                        {
+                          label: "Change paper",
+                          icon: SquareDashed,
+                          hint: "template, size or colour",
+                          run: () => onSetup(activeSelection(position)),
+                        },
+                      ].map(({ label, icon: Icon, hint, run }) => (
                         <button
                           key={label}
                           onClick={() => { setMenuFor(null); run(); }}
+                          title={hint ? `${label} — ${hint}` : label}
+                          data-page-menu={label.toLowerCase().replace(/\s+/g, "-")}
                           className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-black/70 hover:bg-black/[0.04]"
                         >
-                          <Icon className="w-3.5 h-3.5 text-black/40" /> {label}
+                          <Icon className="w-3.5 h-3.5 text-black/40 shrink-0" />
+                          <span className="min-w-0">
+                            {label}
+                            {hint && <span className="block text-[10px] leading-tight text-black/35">{hint}</span>}
+                          </span>
                         </button>
                       ))}
                       <span className="block h-px my-1 bg-black/5" />
@@ -422,8 +465,13 @@ export function PageSidebar({
           <p className="text-[11px] text-black/45 mb-1.5 px-0.5">
             {selected.length} page{selected.length > 1 ? "s" : ""} selected
           </p>
-          <div className="grid grid-cols-3 gap-1">
+          <div className="grid grid-cols-4 gap-1">
             <BulkButton icon={Copy} label="Copy" onClick={() => { onDuplicate(selected); clearSelection(); }} />
+            <BulkButton
+              icon={FilePlus2}
+              label="Blank"
+              onClick={() => { onDuplicateBlank(selected); clearSelection(); }}
+            />
             <BulkButton icon={SquareDashed} label="Paper" onClick={() => { onSetup(selected); clearSelection(); }} />
             <BulkButton
               icon={Trash2}

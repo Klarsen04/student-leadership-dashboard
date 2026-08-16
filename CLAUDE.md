@@ -261,6 +261,30 @@ Two traps, both of which cost an afternoon:
   loses that page's thumbnail permanently. Set the flag on mount too — React remounts every
   component once in development.
 
+Two guards, doing different jobs: `inkByPos.get(position)?.key === key` is what stops
+repainting, and `inkAsked` only stops the same request being started twice — so it's cleared
+when the request *finishes*. Left in place, it freezes rows: after a reorder or an undo, the
+row inheriting an already-painted key is skipped and keeps the wrong page's writing.
+
+### Reordering and duplicating pages
+A page's handwriting is keyed by slot and a page carries its slot, so reordering the index
+moves the content with it — there's nothing to copy. Reordering starts from the **grip**
+only, so a flick still scrolls the rail and can't draw; the drop gap is derived from pointer
+Y over `ROW_H`, and `onMove` treats a page dropped back where it was as a no-op.
+
+The live drag lives in `dragRef`, not just state: one pointerup reaches `endDrag` **twice**
+(the grip, then the list it bubbles to), both closures see the same pre-render `drag`, and
+the page gets moved twice — the second move dragging whatever page had shifted into the
+vacated position. That read exactly like "reordering leaves the handwriting behind".
+
+The rail offers two separate duplicate actions, because they're different intentions:
+**Duplicate** copies the handwriting too, and **Blank copy** gives a new page of the same
+paper — same template, colour, size, orientation — with nothing on it, for a page you've
+laid out as a form and fill in again. Both go through `duplicatePages(index, positions,
+{content})` and one `duplicatePagesAt(positions, withContent)`; a blank copy blanks every
+target slot (not just recycled ones) so "blank" is true on the server as well, and doesn't
+inherit the source's label.
+
 Content is stored per planner/page in the `PlannerInk` table via `/api/planner`
 (the `strokes` column holds the serialized `PageElement[]`, text boxes included).
 Saving is **durable**: every edit is mirrored to `localStorage` before the POST

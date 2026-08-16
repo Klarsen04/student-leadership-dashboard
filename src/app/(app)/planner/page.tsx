@@ -2960,16 +2960,26 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     };
   }, [planner]);
 
-  const duplicatePagesAt = useCallback(async (positions: number[]) => {
+  /**
+   * Duplicate pages, with or without what's written on them.
+   *
+   * Both are real operations on the same page metadata — same paper, colour, size and
+   * orientation — and they differ only in whether the handwriting comes too. A blank
+   * duplicate is how you use a page you've laid out as a form: a fresh copy to fill in,
+   * not a copy of last week's answers.
+   */
+  const duplicatePagesAt = useCallback(async (positions: number[], withContent = true) => {
     flushPending();
-    const res = duplicatePages(indexRef.current, positions);
-    if (!res.copies.length) return;
-    const targets = new Set(res.copies.map((c) => c.to));
+    const res = duplicatePages(indexRef.current, positions, { content: withContent });
+    if (!res.slots.length) return;
+    const targets = new Set(res.slots);
 
     // A recycled target can still hold a deleted page's handwriting. Blank it here,
     // before anything is copied in, so an empty source doesn't leave the old ink
     // sitting on the copy. applyPageOp is told to skip these for the same reason.
-    for (const s of res.clear) if (targets.has(s)) await blankSlot(s);
+    // For a blank duplicate every target is blanked, recycled or not, because "blank"
+    // has to be true of the page on the server as well as in this tab.
+    for (const s of res.slots) if (!withContent || res.clear.includes(s)) await blankSlot(s);
 
     // The copy we're about to land on needs its content in the cache *before* the
     // page changes: the loader would otherwise find the slot empty, show a blank
@@ -2984,7 +2994,9 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     }
 
     await applyPageOp(
-      res.copies.length > 1 ? `Duplicated ${res.copies.length} pages` : "Duplicated a page",
+      withContent
+        ? res.slots.length > 1 ? `Duplicated ${res.slots.length} pages` : "Duplicated a page"
+        : res.slots.length > 1 ? `Added ${res.slots.length} blank pages` : "Added a blank page",
       res.index,
       { toPage: res.at, clear: res.clear.filter((s) => !targets.has(s)) },
     );
@@ -3438,7 +3450,8 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
             onJump={go}
             onClose={() => setSidebar(false)}
             onInsertAt={(at) => setSetupFor({ positions: [at], mode: "insert" })}
-            onDuplicate={duplicatePagesAt}
+            onDuplicate={(positions) => duplicatePagesAt(positions, true)}
+            onDuplicateBlank={(positions) => duplicatePagesAt(positions, false)}
             onDelete={deletePagesAt}
             onMove={movePagesTo}
             onSetup={(positions) => setSetupFor({ positions, mode: "apply" })}

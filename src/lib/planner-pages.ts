@@ -317,8 +317,19 @@ export function insertPages(index: PageIndex, at: number, count: number, spec: N
 }
 
 export interface DuplicateResult extends InsertResult {
-  /** Source slot → new slot, for the caller to copy content across. */
+  /** Source slot → new slot, for the caller to copy content across. Empty for a blank copy. */
   copies: Array<{ from: number; to: number }>;
+  /** The new pages' slots, in order — whether or not content is being copied. */
+  slots: number[];
+}
+
+export interface DuplicateOptions {
+  /**
+   * Copy the handwriting across as well. `false` gives new pages of the same paper —
+   * same template, colour, size and orientation — with nothing written on them, which is
+   * what you want when a page is a form you fill in again rather than one you're revising.
+   */
+  content?: boolean;
 }
 
 /**
@@ -326,9 +337,13 @@ export interface DuplicateResult extends InsertResult {
  * immediately after the block. Content is not copied here — the caller does that
  * with `copySlot`, because it is a server round trip.
  */
-export function duplicatePages(index: PageIndex, positions: number[]): DuplicateResult {
+export function duplicatePages(
+  index: PageIndex,
+  positions: number[],
+  { content = true }: DuplicateOptions = {},
+): DuplicateResult {
   const picked = normalise(positions, index.pages.length);
-  if (!picked.length) return { index, clear: [], at: 1, copies: [] };
+  if (!picked.length) return { index, clear: [], at: 1, copies: [], slots: [] };
   let work = index;
   const added: PageMeta[] = [];
   const copies: Array<{ from: number; to: number }> = [];
@@ -340,13 +355,15 @@ export function duplicatePages(index: PageIndex, positions: number[]): Duplicate
     if (!got) break;
     work = got.index;
     if (got.recycled) clear.push(got.slot);
-    added.push({ ...src, slot: got.slot, label: src.label ? `${src.label} (copy)` : undefined });
-    copies.push({ from: src.slot, to: got.slot });
+    // A blank page isn't a copy of anything written, so it doesn't inherit the label
+    // either — two rows reading "March 3" would be worse than one reading nothing.
+    added.push({ ...src, slot: got.slot, label: content && src.label ? `${src.label} (copy)` : undefined });
+    if (content) copies.push({ from: src.slot, to: got.slot });
   }
   const after = picked[picked.length - 1];
   const pages = [...work.pages];
   pages.splice(after, 0, ...added);
-  return { index: { ...work, pages }, clear, at: after + 1, copies };
+  return { index: { ...work, pages }, clear, at: after + 1, copies, slots: added.map((p) => p.slot) };
 }
 
 /**
