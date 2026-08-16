@@ -158,6 +158,49 @@ pdf.js. The public copies are gitignored and regenerated on each build. Note tha
 pdf.js 6 removed `PDFDocumentProxy.destroy()`: only the loading task can end the
 worker, which is why `openPdf()` returns `{ doc, close }`.
 
+### Editing tools (shapes, selection, stickers)
+A **selection** (`src/lib/planner-select.ts`) acts on object *identity*, never
+pixels — ids live in a module `WeakMap` so they cost nothing in the payload.
+Every action (move/resize/rotate/recolour/reorder/duplicate) rewrites the picked
+elements; nothing is ever flattened to an image. Anything that must be round on
+screen is computed in **"square space"** (x·aspect), since normalised coords
+squash one axis. A whole gesture is one undo step (`beginBurst`/`endBurst` +
+`setElements(next, {history:false})`).
+
+The **Shapes tool** (`src/lib/planner-shapes.ts`) snaps a rough drawing to a
+circle/ellipse/rectangle/square/triangle/polygon/line/arrow — but a recognised
+shape stays an ordinary `Stroke` with ideal points and constant pressure, so
+selection/undo/save/export all treat it like handwriting. Recognition is
+propose-and-score: reduce the path to corners, propose candidates in preference
+order, take the first that fits the gate, otherwise **decline** and keep the
+drawing. Corners are found by the turn the *drawn* path makes over a short window
+(the only way to tell a sharp elbow from a sweeping bend), fitted through the
+window's samples so a shaky hand doesn't invent corners.
+
+**Stickers** (`src/lib/planner-elements.ts`, `StickerTray.tsx`) save a selection
+for reuse. A sticker is kept as its own vector strokes/text in its own square
+space (x 0..aspect, y 0..1); stamping scales it by a target height, so it keeps
+its shape on any page size. Stamped ink is ordinary page content. Stickers persist
+per-device in IndexedDB `ELEMENT_STORE`; thumbnails are SVG drawn from the vectors.
+
+### Rendering and export
+`src/lib/planner-render.ts` is the one place strokes/text become pixels
+(`drawStroke`, `drawTextBox`, `paintElements`) — shared by the live viewer and
+export so they can't drift. The viewer lays text out as DOM (editable) and paints
+only strokes to canvas; `paintElements` paints strokes then text to match the
+on-screen z-order. Committed strokes are cached to an **offscreen canvas** and
+blitted each frame (`inkCacheRef`/`inkCacheDirty` in the planner page); only the
+live stroke repaints, so a page with thousands of strokes stays smooth. The cache
+is invalidated on a committed-set / size / zoom change, not on selection changes.
+
+`src/lib/planner-export.ts` exports a page/selection/notebook as PNG or PDF, and
+an **annotated PDF** for imports (ink drawn onto the original PDF's real pages via
+`pdf-lib`, so its own text stays selectable underneath). Every export is
+composited fresh from the background image + vector ink at print resolution —
+never a screenshot. `pdf-lib` is `import()`ed on demand, kept out of the initial
+bundle. Notebook PDF export is capped (`EXPORT_PAGE_CAP`) and says when it exported
+fewer pages than the notebook holds.
+
 ## Key Patterns
 
 ### Light-themed pages (Tasks, Calendar)
