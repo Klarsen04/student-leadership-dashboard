@@ -130,6 +130,33 @@ right behind the page a month tab lands on) doesn't need the toolbar arrows:
   `WHEEL_FLIP_PX`; ignored mid-stroke and over a text box being edited.
 Hover shows a chevron chip on whichever edges have a page to go to.
 
+### Pointer input (`src/lib/planner-input.ts`)
+One mode per pointer, latched for the whole gesture. `routePointer({tool,
+pointerType, readOnly})` returns the `InputMode` at pointerdown — `draw`, `erase`,
+`select`, `text` or `navigate` — and `gestureRef` (`{id, mode, rect}`) holds it
+until that pointer lifts. Every later event checks the id, so a second pointer
+can't steer a gesture it doesn't own. Rules that follow from it:
+- **a finger always navigates**, whatever the tool. That's what keeps a planner
+  tappable with a pen armed, and what makes a resting palm harmless.
+- **the hand and select tools never draw**, from any pointer type.
+- a `touch` landing while a stroke is in progress (`drawingRef`) is swallowed with
+  `preventDefault()`, killing the synthesised tap that used to press whatever was
+  under the hand. A capture-phase listener does the same for touches on the
+  toolbar and rail *only while a stroke is in flight* — the UI is otherwise normal.
+- `rect` is measured once at pointerdown (nothing moves mid-gesture), keeping a
+  layout read out of the per-move path.
+
+**Latency.** While the pen is down, no React state is touched. Points go into the
+mutable `liveRef` stroke and are painted onto a dedicated live canvas above the ink
+canvas, drawing *only the newest segments* (`drawStroke(..., from)`), so per-move
+cost is flat in stroke length instead of growing with it (measured: 0.12 ms → 0.13 ms
+first-to-last 50 moves, against 0.19 → 0.42 ms before). `getCoalescedEvents()` keeps
+every digitiser sample and its pressure. On pointerup the stroke is committed to
+state once, which repaints the committed-ink cache; the live layer is then wiped.
+The cache is invalidated by **identity** (`inkCachePainted !== elementsRef.current`),
+plus an explicit reset on a page turn — a flag was how undo used to leave a stroke on
+screen until the next edit.
+
 Pages hold **strokes and text boxes** (`PageElement` in `src/lib/planner-ink.ts`).
 The Text tool drops an editable, draggable, resizable text box; fonts come from
 `PLANNER_FONTS` (Inter/Instrument Serif/Fredoka/Caveat/Patrick Hand/mono, wired

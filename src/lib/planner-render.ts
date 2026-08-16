@@ -12,9 +12,18 @@ import { PLANNER_FONTS, fontStack, isText, type PageElement, type Stroke, type T
 
 export const HIGHLIGHT_ALPHA = 0.35;
 
-/** A variable-width stroke, drawn segment by segment with midpoint smoothing. */
-export function drawStroke(ctx: CanvasRenderingContext2D, s: Stroke, W: number, H: number) {
-  if (s.points.length === 0) return;
+/**
+ * A variable-width stroke, drawn segment by segment with midpoint smoothing.
+ *
+ * `from` resumes: with `from = n`, the first n points are taken as already painted and
+ * only the segments after them are drawn. That's what lets the viewer paint a stroke as
+ * it's being written without repainting the part already on the canvas. Because every
+ * segment is an independent path with its own width and alpha, resuming lands exactly
+ * the same pixels as one pass over the whole stroke — the live layer can't drift from
+ * what a full repaint (or an export) would produce.
+ */
+export function drawStroke(ctx: CanvasRenderingContext2D, s: Stroke, W: number, H: number, from = 0) {
+  if (s.points.length === 0 || s.points.length <= from) return;
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -32,7 +41,7 @@ export function drawStroke(ctx: CanvasRenderingContext2D, s: Stroke, W: number, 
     return;
   }
 
-  for (let i = 1; i < s.points.length; i++) {
+  for (let i = Math.max(1, from); i < s.points.length; i++) {
     const [x0, y0, p0] = s.points[i - 1];
     const [x1, y1, p1] = s.points[i];
     ctx.beginPath();

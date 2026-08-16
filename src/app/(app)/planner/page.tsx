@@ -95,6 +95,7 @@ import {
   simplifyStroke,
   writeLocal,
 } from "@/lib/planner-ink";
+import { marksPaper, routePointer, type InputMode, type Tool } from "@/lib/planner-input";
 import { SHAPE_LABEL, snapStroke } from "@/lib/planner-shapes";
 import {
   type UserPlanner,
@@ -227,7 +228,7 @@ const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-s
 // ---- page content ------------------------------------------------------------
 // Strokes and text boxes are normalised to the page (0..1 in both axes) so
 // content stays put at any screen size. See src/lib/planner-ink.ts.
-type Tool = "hand" | "pen" | "highlighter" | "eraser" | "text" | "select" | "shape";
+// What each pointer is allowed to do lives in src/lib/planner-input.ts.
 
 /**
  * One undoable step.
@@ -1197,13 +1198,28 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   /**
    * Committed strokes are painted once to this offscreen canvas and blitted each frame;
-   * only the live stroke is repainted on top. Without it, drawing on a page that already
-   * holds thousands of strokes repaints every one of them on every pointer move. It's
-   * rebuilt (flagged by `inkCacheDirty`) only when the committed set, the page size or
-   * the zoom actually changes.
+   * the stroke being written goes on its own layer above. Without it, drawing on a page
+   * that already holds thousands of strokes repaints every one of them on every pointer
+   * move. It's rebuilt only when the committed set, the page size or the zoom changes.
    */
   const inkCacheRef = useRef<HTMLCanvasElement | null>(null);
-  const inkCacheDirty = useRef(true);
+  /**
+   * The element list the cache was painted from. Invalidation is by *identity*, not a
+   * flag someone has to remember to set: every path that changes a page swaps in a
+   * fresh array, so anything that repaints is compared against this and rebuilt when
+   * it differs. The flag version silently missed undo — the cache still held the
+   * stroke you'd just taken back, and it stayed on screen until the next edit.
+   */
+  const inkCachePainted = useRef<PageElement[] | null>(null);
+  /**
+   * The stroke being drawn right now lives on its own canvas above the committed ink,
+   * and only the newest segments are painted to it. Nothing is cleared and nothing is
+   * blitted while the pen is down, so the cost of a frame is the length of the last
+   * flick rather than the length of the whole stroke.
+   */
+  const liveCanvasRef = useRef<HTMLCanvasElement>(null);
+  /** How many of the live stroke's points have already been painted. */
+  const livePainted = useRef(0);
   /** The background <img>, so a page can be captured as a template. */
   const bgImgRef = useRef<HTMLImageElement>(null);
   const pageRef = useRef(page);
@@ -1217,7 +1233,19 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryAttempt = useRef(0);
   const lastToastAt = useRef(0);
-  const drawingPointer = useRef<number | null>(null);
+  /**
+   * The gesture in progress: which pointer owns the page, and what it's doing. One at
+   * a time (a pinch is the exception, handled on its own). Every pointer event checks
+   * this before acting, which is what stops a second pointer — a palm, a stray finger
+   * — being handled as if it were the one writing.
+   *
+   * `rect` is the page box as it was when the gesture began: it can't change mid-
+   * gesture (nothing pans or zooms while a pointer owns the page), so measuring it
+   * once keeps a layout read out of the per-move path.
+   */
+  const gestureRef = useRef<{ id: number; mode: InputMode; rect: DOMRect } | null>(null);
+  /** True while a pointer is marking the paper, so chrome can ignore a resting hand. */
+  const drawingRef = useRef(false);
   const rendererRef = useRef<PdfRenderer | null>(null);
   /** A high-resolution PDF renderer used only while exporting. */
   const exportRendererRef = useRef<PdfRenderer | null>(null);
@@ -1401,6 +1429,29 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     };
   }, []);
 
+  // While the pen is marking the paper, a touch landing anywhere else is the hand
+  // holding the tablet steady — not a button press. It's swallowed in the capture phase,
+  // before it reaches whatever it came down on, along with the click the browser would
+  // synthesise from it. That's what stops the toolbar and the page rail being pressed at
+  // random while writing near them.
+  //
+  // Deliberately narrow: only touch, only while a stroke is actually in progress, and
+  // never for the page box, which sorts its own pointers out. Nothing about the UI
+  // changes the rest of the time — it stays as clickable as it ever was.
+  useEffect(() => {
+    const swallow = (e: Event) => {
+      if (!drawingRef.current) return;
+      const pt = (e as PointerEvent).pointerType;
+      if (pt && pt !== "touch") return; // a real stylus or mouse elsewhere is meant
+      if (boxRef.current?.contains(e.target as Node)) return;
+      e.stopPropagation();
+      e.preventDefault();
+    };
+    const types = ["pointerdown", "mousedown", "click"];
+    for (const t of types) document.addEventListener(t, swallow, true);
+    return () => { for (const t of types) document.removeEventListener(t, swallow, true); };
+  }, []);
+
   // Opening a different notebook starts fitted. Turning a page deliberately does
   // *not*: staying zoomed is what lets you write the same corner of one page after
   // another without setting the zoom up again each time.
@@ -1436,7 +1487,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (canvas.width !== pw || canvas.height !== ph) {
       canvas.width = pw;
       canvas.height = ph;
-      inkCacheDirty.current = true; // a resize invalidates the cached bitmap
+      inkCachePainted.current = null; // a resize invalidates the cached bitmap
     }
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -1450,8 +1501,9 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       c.clip();
     };
 
-    // Rebuild the committed-stroke cache only when something it depends on changed.
-    if (inkCacheDirty.current) {
+    // Rebuild the committed-stroke cache only when the set it was painted from is no
+    // longer the set on the page — see `inkCachePainted`.
+    if (inkCachePainted.current !== elementsRef.current) {
       let cache = inkCacheRef.current;
       if (!cache) { cache = document.createElement("canvas"); inkCacheRef.current = cache; }
       if (cache.width !== pw || cache.height !== ph) { cache.width = pw; cache.height = ph; }
@@ -1464,7 +1516,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
         for (const el of elementsRef.current) if (isStroke(el)) drawStroke(cc, el, rect.width, rect.height);
         cc.restore();
       }
-      inkCacheDirty.current = false;
+      inkCachePainted.current = elementsRef.current;
     }
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1477,12 +1529,8 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       ctx.drawImage(inkCacheRef.current, 0, 0);
       ctx.restore();
     }
-    if (liveRef.current) {
-      ctx.save();
-      clipPaper(ctx);
-      drawStroke(ctx, liveRef.current, rect.width, rect.height);
-      ctx.restore();
-    }
+    // The stroke in progress isn't painted here at all — it has its own canvas above
+    // this one (see `paintLive`), so a pointer move never touches the committed ink.
 
     // Selection furniture, drawn outside the clip: a lasso often strays over a
     // margin on its way round a word, and cutting it off there looks broken.
@@ -1522,6 +1570,77 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       ctx.restore();
     }
   }, [pageGeom]);
+
+  /**
+   * Paint the stroke being written, on its own canvas above the committed ink.
+   *
+   * Only the points added since the last call are drawn: nothing is cleared, nothing is
+   * blitted, and no React state is touched — so the cost of a frame is the last flick of
+   * the pen rather than the length of the stroke or the contents of the page. Called
+   * straight from the pointer handler rather than on a frame callback, because the move
+   * events are already delivered a frame at a time and waiting for another one only adds
+   * latency. Called with no live stroke, it wipes the layer.
+   */
+  const paintLive = useCallback(() => {
+    const canvas = liveCanvasRef.current;
+    const box = boxRef.current;
+    if (!canvas || !box) return;
+    // The box can't move or resize mid-gesture, so the rect measured at pointerdown is
+    // still good — that keeps a layout read out of the hot path.
+    const rect = gestureRef.current?.rect ?? box.getBoundingClientRect();
+    const dpr = inkPixelRatio(rect.width, rect.height, window.devicePixelRatio || 1);
+    const pw = Math.round(rect.width * dpr);
+    const ph = Math.round(rect.height * dpr);
+    if (canvas.width !== pw || canvas.height !== ph) {
+      canvas.width = pw;
+      canvas.height = ph;
+      livePainted.current = 0; // a resized backing store is a blank one
+    }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const live = liveRef.current;
+    if (!live) {
+      ctx.clearRect(0, 0, rect.width, rect.height);
+      livePainted.current = 0;
+      return;
+    }
+    if (livePainted.current === 0) ctx.clearRect(0, 0, rect.width, rect.height);
+    if (live.points.length <= livePainted.current) return;
+    const wa = writeAreaRef.current;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(wa.x * rect.width, wa.y * rect.height, wa.w * rect.width, wa.h * rect.height);
+    ctx.clip();
+    drawStroke(ctx, live, rect.width, rect.height, livePainted.current);
+    ctx.restore();
+    livePainted.current = live.points.length;
+  }, []);
+
+  /**
+   * A repaint at most once a frame. The pointer handlers that redraw whole-canvas
+   * furniture — a lasso being swept, an eraser rubbing strokes out — go through this, so
+   * a fast pointer can't queue up more full repaints than the display can show.
+   */
+  const redrawFrame = useRef(0);
+  const scheduleRedraw = useCallback(() => {
+    if (redrawFrame.current) return;
+    redrawFrame.current = requestAnimationFrame(() => {
+      redrawFrame.current = 0;
+      redraw();
+    });
+  }, [redraw]);
+  useEffect(() => () => { if (redrawFrame.current) cancelAnimationFrame(redrawFrame.current); }, []);
+
+  /** The style a new stroke starts out with, from the armed tool and the chosen colour. */
+  const strokeStyle = useCallback(
+    (t: Tool): Omit<Stroke, "points"> => ({
+      tool: t === "highlighter" ? "highlighter" : "pen",
+      color,
+      size,
+    }),
+    [color, size],
+  );
 
   // The page box's *layout* size — its size at zoom 1, which is what normalised
   // coordinates are a fraction of. Deliberately not the bounding rect: that one
@@ -1643,7 +1762,6 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     }
     elementsRef.current = next;
     cacheRef.current.set(forSlot, next);
-    inkCacheDirty.current = true; // committed set changed — the cached bitmap is stale
     scheduleSave(forSlot);
     redraw();
     rerender();
@@ -1672,7 +1790,10 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     setSelection(selectionRef.current);
     textHeights.current.clear();
     burstRef.current = null; // a typing session doesn't span pages
-    inkCacheDirty.current = true; // a new page's strokes need a fresh cache
+    // A page turn is the one case identity can't catch: flipping back to a page reuses
+    // the very array the cache was last painted from, while the bitmap now holds the
+    // page in between. Say so outright.
+    inkCachePainted.current = null;
 
     const cached = cacheRef.current.get(slot);
     if (cached) {
@@ -1704,7 +1825,6 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
         const parsed = parseElements(data.strokes);
         cacheRef.current.set(slot, parsed);
         elementsRef.current = parsed;
-        inkCacheDirty.current = true; // the fetched strokes replace the empty page
         redraw();
         rerender();
       } catch {}
@@ -2141,8 +2261,28 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   };
 
 
-  const shouldDraw = (e: React.PointerEvent) =>
-    !readOnly && (e.pointerType === "pen" || (e.pointerType === "mouse" && toolRef.current !== "hand"));
+  /** Take ownership of the page for this pointer, and keep the events coming. */
+  const beginGesture = (e: React.PointerEvent, mode: InputMode) => {
+    const rect = boxRef.current?.getBoundingClientRect() ?? new DOMRect(0, 0, 1, 1);
+    gestureRef.current = { id: e.pointerId, mode, rect };
+    drawingRef.current = marksPaper(mode);
+    // Capture on the box, not the event target: a text box or a handle under the
+    // pointer can be re-rendered mid-gesture, and capture on it would be lost.
+    boxRef.current?.setPointerCapture(e.pointerId);
+  };
+
+  /**
+   * The page coordinate of an event, measured against the gesture's own page rect — the
+   * box as it was when the gesture began, since it can't move while a pointer owns it.
+   * `rect` is passed explicitly where the gesture has already been handed back.
+   */
+  const gestureNorm = (
+    e: { clientX: number; clientY: number },
+    rect = gestureRef.current?.rect,
+  ): [number, number] => {
+    const r = rect ?? boxRef.current!.getBoundingClientRect();
+    return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
+  };
 
   const eraseAt = useCallback((x: number, y: number) => {
     const R = 0.012; // eraser radius as a fraction of page width
@@ -2161,10 +2301,8 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
 
   /** A pending tap from this pointer, recorded so a drag can pan and a tap can navigate. */
   const beginTap = (e: React.PointerEvent, opts: { chromeOnly: boolean; flip: boolean }) => {
+    beginGesture(e, "navigate");
     tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), lx: e.clientX, ly: e.clientY, ...opts };
-    // Zoomed in this pointer is going to pan, and a pan mustn't stop the moment it
-    // leaves the page box.
-    if (!isFit(viewRef.current)) boxRef.current?.setPointerCapture(e.pointerId);
   };
 
   /** Recompute a transform in progress from the snapshot it started with. */
@@ -2197,9 +2335,10 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (!b) return;
     e.stopPropagation();
     e.preventDefault();
-    const [x, y] = norm(e);
-    boxRef.current?.setPointerCapture(e.pointerId);
-    drawingPointer.current = e.pointerId;
+    // A handle is grabbed by whatever is nearest to hand — a finger as readily as the
+    // stylus — so this deliberately doesn't ask which kind of pointer it was.
+    beginGesture(e, "select");
+    const [x, y] = gestureNorm(e);
     beginBurst(); // the whole gesture is one undo step
     dragSel.current = { kind, handle, from: elementsRef.current, bounds: b, x, y };
   };
@@ -2207,28 +2346,42 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const onPointerDown = (e: React.PointerEvent) => {
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
 
+    // A palm or finger landing while the pen is marking the paper is the hand resting
+    // on it. It's swallowed here — and `preventDefault` matters as much as the early
+    // return, because without it the browser goes on to synthesise a tap, which is
+    // how a resting hand used to press whatever was under it.
+    if (drawingRef.current && e.pointerType === "touch") {
+      e.preventDefault();
+      return;
+    }
+
     // A second finger is a pinch, not a tap: two fingers zoom and pan the page.
     const touches = [...pointers.current.values()].filter((p) => p.type === "touch");
     if (touches.length >= 2) {
       tapStart.current = null;
+      gestureRef.current = null;
       const [a, b] = touches;
       pinch.current = { dist: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       return;
     }
 
-    // A finger or palm landing while the pen is writing is the hand resting on the
-    // page. Ignoring it outright is what stops a stroke turning into a page flip.
-    if (drawingPointer.current !== null && e.pointerType === "touch") return;
+    // A pointer already owns the page. A second one doesn't get to interfere.
+    if (gestureRef.current) return;
 
     const [x, y] = norm(e);
+    const mode = routePointer({ tool: toolRef.current, pointerType: e.pointerType, readOnly });
 
-    // Read-only planner: every input is navigation, whatever the tool says.
-    if (readOnly) {
-      beginTap(e, { chromeOnly: false, flip: true });
+    // Anything that isn't marking the paper navigates: taps on tabs and day cells,
+    // page turns, and panning a zoomed page.
+    if (mode === "navigate") {
+      // A stylus in navigate mode is still a stylus: it may only work the printed
+      // furniture, never a writable day cell — unless the whole planner is read-only,
+      // where there's nothing to write on anyway.
+      beginTap(e, { chromeOnly: !readOnly && e.pointerType === "pen", flip: true });
       return;
     }
 
-    // A sticker armed for placement: the next tap on the paper stamps it. Off the
+    // A sticker armed for placement: the next contact on the paper stamps it. Off the
     // paper (a tab or the margin) it's ignored, so it can't land where ink is clipped.
     if (armedStickerRef.current && inkAllowed(x, y)) {
       e.preventDefault();
@@ -2236,13 +2389,9 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       return;
     }
 
-    // Selection tool: grab what's already picked to move it, or sweep a new region.
-    // Fingers are left out deliberately — they go on panning and tapping tabs, so
-    // the page never feels locked while the tool is armed.
-    if (toolRef.current === "select" && shouldDraw(e)) {
+    if (mode === "select") {
       e.preventDefault();
-      boxRef.current?.setPointerCapture(e.pointerId);
-      drawingPointer.current = e.pointerId; // also makes a resting hand a no-op
+      beginGesture(e, "select");
       const b = selBoundsNow();
       if (b && boundsContain(b, x, y, 0.008)) {
         beginBurst();
@@ -2258,41 +2407,31 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     // Tapping the paper while a text box is selected just deselects it.
     if (selectedText) { setSelectedText(null); return; }
 
-    // Text tool: a tap on the paper drops a new box; taps elsewhere navigate.
-    if (toolRef.current === "text") {
+    if (mode === "text") {
       if (inkAllowed(x, y)) { e.preventDefault(); addTextAt(x, y); }
       else beginTap(e, { chromeOnly: e.pointerType === "pen", flip: false });
       return;
     }
 
-    if (e.pointerType === "touch" || !shouldDraw(e)) {
-      // Fingers and the hand tool navigate anywhere on the page — and pan it when
-      // there's more page than frame.
-      beginTap(e, { chromeOnly: false, flip: true });
-      return;
-    }
     if (!inkAllowed(x, y)) {
       // Landed on a tab or the outer margin: no ink here, but a tab tap counts.
       beginTap(e, { chromeOnly: true, flip: false });
       return;
     }
+
     e.preventDefault();
-    const activeTool = e.pointerType === "pen" && toolRef.current === "hand" ? "pen" : toolRef.current;
-    if (activeTool === "eraser") {
-      drawingPointer.current = e.pointerId;
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    beginGesture(e, mode);
+    if (mode === "erase") {
       eraseAt(x, y);
       return;
     }
-    drawingPointer.current = e.pointerId;
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    snapping.current = activeTool === "shape";
+    snapping.current = toolRef.current === "shape";
     liveRef.current = {
-      tool: activeTool === "highlighter" ? "highlighter" : "pen",
-      color, size,
+      ...strokeStyle(toolRef.current),
       points: [[x, y, e.pressure || 0.5]],
     };
-    redraw();
+    livePainted.current = 0;
+    paintLive();
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -2320,15 +2459,52 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       return;
     }
 
-    // A selection gesture: sweeping a region, or transforming what's picked.
-    if (drawingPointer.current === e.pointerId && (marquee.current || dragSel.current)) {
+    // From here on, only the pointer that owns the page is listened to, and only in the
+    // mode it claimed at pointerdown. This is what stops one gesture being handled as
+    // another: before, a palm's pan was checked ahead of the pen's own moves, so while
+    // zoomed in a resting hand quietly ate the stroke being written.
+    const g = gestureRef.current;
+    if (!g || g.id !== e.pointerId) return;
+
+    if (g.mode === "draw") {
       e.preventDefault();
-      const [x, y] = norm(e);
+      const live = liveRef.current;
+      if (!live) return;
+      // Coalesced events give the full high-frequency pen path — every sample the
+      // digitiser took between frames, pressure included. Some inputs and browsers hand
+      // back an empty list, so fall back to the event itself.
+      const coalesced = (e.nativeEvent as PointerEvent).getCoalescedEvents?.();
+      const events = coalesced?.length ? coalesced : [e.nativeEvent as PointerEvent];
+      const { rect } = g;
+      for (const ev of events) {
+        live.points.push([
+          (ev.clientX - rect.left) / rect.width,
+          (ev.clientY - rect.top) / rect.height,
+          ev.pressure || 0.5,
+        ]);
+      }
+      // Straight to the canvas: no React state is touched while the pen is down, so
+      // nothing here re-renders the page.
+      paintLive();
+      return;
+    }
+
+    if (g.mode === "erase") {
+      e.preventDefault();
+      const [x, y] = gestureNorm(e);
+      eraseAt(x, y);
+      return;
+    }
+
+    // A selection gesture: sweeping a region, or transforming what's picked.
+    if (g.mode === "select") {
+      e.preventDefault();
+      const [x, y] = gestureNorm(e);
       const m = marquee.current;
       if (m) {
         if (m.mode === "rect") marquee.current = { mode: "rect", a: m.a, b: [x, y] };
         else m.points.push([x, y]);
-        redraw();
+        scheduleRedraw();
         return;
       }
       applyDrag(x, y, e.shiftKey);
@@ -2337,33 +2513,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
 
     // Zoomed in, a navigating pointer drags the page about.
     const tap = tapStart.current;
-    if (tap && !isFit(viewRef.current)) {
+    if (g.mode === "navigate" && tap && !isFit(viewRef.current)) {
       const dx = e.clientX - tap.lx, dy = e.clientY - tap.ly;
       tap.lx = e.clientX;
       tap.ly = e.clientY;
       if (dx || dy) setView((v) => panBy(v, dx, dy, layout()));
-      return;
-    }
-
-    if (drawingPointer.current !== e.pointerId) return;
-    e.preventDefault();
-    // Coalesced events give the full high-frequency pen path; some inputs and
-    // browsers hand back an empty list, so fall back to the event itself.
-    const coalesced = (e.nativeEvent as PointerEvent).getCoalescedEvents?.();
-    const events = coalesced?.length ? coalesced : [e.nativeEvent as PointerEvent];
-    const rect = boxRef.current!.getBoundingClientRect();
-    if (liveRef.current) {
-      for (const ev of events) {
-        liveRef.current.points.push([
-          (ev.clientX - rect.left) / rect.width,
-          (ev.clientY - rect.top) / rect.height,
-          ev.pressure || 0.5,
-        ]);
-      }
-      redraw();
-    } else {
-      const [x, y] = norm(e); // eraser drag
-      eraseAt(x, y);
     }
   };
 
@@ -2376,20 +2530,28 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       return;
     }
 
+    // Only the pointer holding the page finishes anything, and the page is handed back
+    // here — before any of the work below — so no mode can outlive the pointer that
+    // claimed it. Everything else (a palm that was swallowed, a stray finger) lifts
+    // without effect.
+    const g = gestureRef.current;
+    if (!g || g.id !== e.pointerId) return;
+    gestureRef.current = null;
+    drawingRef.current = false;
+
     // A selection gesture finishing.
-    if (marquee.current || dragSel.current) {
+    if (g.mode === "select") {
       const m = marquee.current;
       const transform = dragSel.current;
       marquee.current = null;
       dragSel.current = null;
-      if (drawingPointer.current === e.pointerId) drawingPointer.current = null;
       if (transform) {
         endBurst(); // the next gesture is a new undo step
         redraw();
         return;
       }
       if (!m) return;
-      const [x, y] = norm(e);
+      const [x, y] = gestureNorm(e, g.rect);
       const travel =
         m.mode === "rect"
           ? Math.hypot(m.b[0] - m.a[0], m.b[1] - m.a[1])
@@ -2405,11 +2567,10 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       return;
     }
 
-    if (drawingPointer.current === e.pointerId) {
-      drawingPointer.current = null;
-      if (liveRef.current) {
-        const live = liveRef.current;
-        liveRef.current = null;
+    if (g.mode === "draw") {
+      const live = liveRef.current;
+      liveRef.current = null;
+      if (live) {
         // The Shapes tool: if the path was meant to be a circle, a box, a line or an
         // arrow, commit the ideal one instead. It's still a stroke either way — see
         // src/lib/planner-shapes.ts — so nothing downstream can tell the difference.
@@ -2420,10 +2581,16 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
           if (snapTimer.current) clearTimeout(snapTimer.current);
           snapTimer.current = setTimeout(() => setSnapped(null), 1200);
         }
+        // Commit first — that repaints the committed ink with this stroke in it — and
+        // only then wipe the live layer, so the stroke is never off both canvases at once.
         setElements([...elementsRef.current, snap?.kind ? snap.stroke : simplifyStroke(live)]);
       }
+      paintLive();
       return;
     }
+
+    if (g.mode === "erase" || g.mode === "text") return;
+
     // Tap navigation (finger, hand tool, or a stylus tap on a tab).
     const start = tapStart.current;
     tapStart.current = null;
@@ -2431,7 +2598,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     const dx = e.clientX - start.x;
     const dy = e.clientY - start.y;
     const moved = Math.hypot(dx, dy);
-    const [x, y] = norm(e);
+    const [x, y] = gestureNorm(e, g.rect);
     // Zoomed in, that drag was a pan and the edges are somewhere off-screen, so
     // neither gesture turns the page — the arrows and the page rail still do.
     const flip = start.flip && isFit(viewRef.current);
@@ -2462,7 +2629,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     const box = boxRef.current;
     if (!box) return;
     const onWheel = (e: WheelEvent) => {
-      if (drawingPointer.current !== null) return;
+      if (gestureRef.current) return; // a gesture owns the page; don't move it under them
       // Don't yank the page out from under someone scrolling a text box they're typing in.
       if ((e.target as HTMLElement)?.closest?.("textarea, input, [contenteditable='true']")) return;
 
@@ -3034,6 +3201,10 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
               </div>
             )}
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ cursor: tool === "hand" ? "pointer" : tool === "text" ? "text" : "crosshair" }} />
+            {/* The stroke being written, on its own layer directly above the committed
+                ink: while the pen is down only this canvas is touched, and only its
+                newest segments. Nothing below it is cleared, blitted or re-rendered. */}
+            <canvas ref={liveCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
 
             {/* Typed text boxes sit above the ink so they can be edited and moved. */}
             {textBoxes.map((t) => (
