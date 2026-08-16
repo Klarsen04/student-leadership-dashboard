@@ -92,6 +92,37 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ page, strokes: ink?.strokes ?? "[]", updatedAt: ink?.updatedAt ?? null });
 }
 
+// DELETE /api/planner?planner=<id> — drop every page of ink for one notebook.
+//
+// Used when the user deletes a notebook they made. An imported PDF deliberately
+// does *not* come through here: its ink is kept so re-importing the same file
+// finds the handwriting again. A copy or blank notebook has no such anchor — its
+// id goes with it — so leaving the rows behind would only orphan them.
+export async function DELETE(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(req.url);
+  const plannerId = searchParams.get("planner");
+  // No default here, unlike GET/POST: deleting must name its target explicitly.
+  if (!plannerId || !PLANNER_ID_RE.test(plannerId)) {
+    return NextResponse.json({ error: "Invalid planner id" }, { status: 400 });
+  }
+
+  try {
+    const { count } = await withRepair(() =>
+      prisma.plannerInk.deleteMany({ where: { userId: session.user.id, plannerId } }),
+    );
+    return NextResponse.json({ deleted: count });
+  } catch (e: any) {
+    const message = String(e?.message || "Unknown database error");
+    console.error("PlannerInk delete failed:", message);
+    return NextResponse.json({ error: message.split("\n").pop() || message }, { status: 500 });
+  }
+}
+
 // POST { planner, page, strokes } — full replace of the page's ink (client is
 // source of truth; strokes are the page's entire vector state per edit burst).
 export async function POST(req: NextRequest) {

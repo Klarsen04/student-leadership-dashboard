@@ -165,6 +165,14 @@ export function pendingLocalPages(plannerId: string): number[] {
   return pages.sort((a, b) => a - b);
 }
 
+/**
+ * Drop every mirrored page of one planner — for a deleted notebook, whose unsaved
+ * pages would otherwise sit in localStorage waiting to sync to something gone.
+ */
+export function clearLocalPlanner(plannerId: string) {
+  for (const page of pendingLocalPages(plannerId)) clearLocal(plannerId, page);
+}
+
 // ---- network ---------------------------------------------------------------------
 
 export interface PushResult {

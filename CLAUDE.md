@@ -117,20 +117,35 @@ and the mirror is cleared only on a 200, so a failed save degrades to "Offline"
 self-heals a drifted `PlannerInk` table on a "no such table/column" error.
 
 ### User notebooks (`src/lib/planner-library.ts`)
-Beyond the shipped planners, users can **import a PDF** or **duplicate** any
-notebook — both stored per-device in IndexedDB, listed under "My Notebooks".
+The shipped planners are **read-only** — everyone shares them, so the viewer
+refuses ink and offers "Make a copy to write" instead (`isOwned()` is the test;
+existing ink still renders, frozen). Everything a user makes lives per-device in
+IndexedDB under "My Notebooks", and only those can be renamed, edited or deleted:
 - An **import** keeps the original PDF in IndexedDB and renders pages on demand
-  with pdf.js (`PdfRenderer`); its links become tappable hotspots. `pdfKey` marks
-  a PDF-backed planner.
+  with pdf.js (`PdfRenderer`); its own hyperlinks are extracted at import time
+  into tappable hotspots, so a PDF planner's month tabs work. `pdfKey` marks a
+  PDF-backed planner.
 - A **copy** stores no file — it points at its source via `sourceId` (reusing the
-  source's page images) and only claims a fresh id, giving it a blank ink layer.
+  source's page images) and only claims a fresh id, giving it its own ink layer.
+  Duplicating asks for a name and whether to carry the handwriting across;
+  `POST /api/planner/duplicate` clones the source's `PlannerInk` rows server-side.
+- A **blank notebook** has no source at all: `paper` names a template in
+  `src/lib/planner-paper.ts` (blank/lined/narrow/grid/dotted/Cornell/checklist),
+  drawn as one SVG data URL shared by every page, plus a page shape and tint.
+  Paper-backed notebooks are the only ones that can **add pages**, append-only —
+  inserting mid-notebook would shuffle ink onto the wrong page numbers.
+
 Ink still syncs to the account (keyed by planner id), so it isn't lost with the
-device.
+device. Deleting an import keeps its ink — re-importing the same PDF picks it back
+up — while deleting a copy or blank notebook clears it (`DELETE /api/planner`),
+since its id goes with it.
 
 pdf.js is loaded at runtime as a native module from `/public` (`pdf.min.mjs` +
 `pdf.worker.min.mjs`, copied by `scripts/copy-pdf-worker.mjs` from
 predev/prebuild) with a `webpackIgnore` import — webpack's ESM interop mangles
-pdf.js. The public copies are gitignored and regenerated on each build.
+pdf.js. The public copies are gitignored and regenerated on each build. Note that
+pdf.js 6 removed `PDFDocumentProxy.destroy()`: only the loading task can end the
+worker, which is why `openPdf()` returns `{ doc, close }`.
 
 ## Key Patterns
 
