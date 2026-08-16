@@ -371,6 +371,19 @@ screen is computed in **"square space"** (x·aspect), since normalised coords
 squash one axis. A whole gesture is one undo step (`beginBurst`/`endBurst` +
 `setElements(next, {history:false})`).
 
+The selection's **furniture** — eight resize handles, the rotate knob below the box, the
+action bar above it — is counter-scaled by `unzoom()` so it stays finger-sized at 6×. The knob
+and the bar hang *outside* the box, and the paper clips what leaves it, so their anchors are
+**clamped onto the page** (`knobAnchor`/`barAnchor`, via `asFraction(px, axis)`, which converts
+a screen size to a page fraction and accounts for the counter-scale). Without that, writing
+along the bottom edge put its own rotate knob past the paper and the ink simply couldn't be
+turned; a selection at the left or right edge lost half the action bar the same way. At an edge
+the control now overlaps the selection instead of vanishing. The bar's size is measured
+(`selBarRef`) rather than assumed, since its width depends on how many buttons the build shows.
+Rotation itself is `rotate()` in square space, applied to the elements on every pointermove
+from the snapshot the gesture started with — 400 selected strokes repaint on every move
+(median 18ms), so no live-layer fast path is needed here.
+
 The **Shapes tool** (`src/lib/planner-shapes.ts`) has two modes, and the reliable one is
 the default: pick a shape (`shapeKind`, one of `DRAG_SHAPES` — line/arrow/rectangle/
 ellipse/triangle) and **drag it out**. `dragShape()` rebuilds the whole stroke from the two

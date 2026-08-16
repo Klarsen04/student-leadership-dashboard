@@ -331,6 +331,8 @@ const EDGE_FLIP = 0.07;
 const SWIPE_FLIP_PX = 55;
 /** Accumulated wheel/trackpad travel (px) that turns one page. */
 const WHEEL_FLIP_PX = 90;
+/** The rotate knob's size on screen (`w-7 h-7`), which its clamp onto the paper needs. */
+const KNOB_PX = 28;
 
 const inside = (h: Hotspot | Rect, x: number, y: number) =>
   x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h;
@@ -1287,6 +1289,13 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const [saveState, setSaveState] = useState<"saved" | "saving" | "unsaved" | "offline">("saved");
   const [boxSize, setBoxSize] = useState({ w: 0, h: 0 });
   /**
+   * The selection's action bar, measured: it has to be kept on the paper, and how far in it
+   * has to sit depends on how wide it is (which the colour picker and the sticker button make
+   * a matter of the build, not a number worth hardcoding).
+   */
+  const selBarRef = useRef<HTMLDivElement>(null);
+  const [selBarSize, setSelBarSize] = useState({ w: 240, h: 36 });
+  /**
    * How much of the page is in view. A pure view transform — see
    * src/lib/planner-viewport.ts — so nothing here is ever written to a page.
    */
@@ -1890,6 +1899,19 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     ro.observe(frame);
     return () => ro.disconnect();
   }, []);
+
+  // The action bar's own size, so the clamp that keeps it on the paper knows how far in it
+  // has to sit. Measured while it's up: it only exists when something is selected.
+  useEffect(() => {
+    const el = selBarRef.current;
+    if (!el) return;
+    const measure = () => setSelBarSize((s) =>
+      s.w === el.offsetWidth && s.h === el.offsetHeight ? s : { w: el.offsetWidth, h: el.offsetHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [selection]);
 
   // Zoom changes the canvas's displayed size without touching its layout size, so
   // the observer above can't see it: resize the backing store here instead.
@@ -3333,6 +3355,29 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
    */
   const unzoom = (offset: string) => `scale(${1 / view.z}) ${offset}`;
 
+  /**
+   * A screen size, as a fraction of the page. Selection furniture is counter-scaled, so its
+   * footprint on the page shrinks as you zoom in — which is why the zoom is in here.
+   */
+  const asFraction = (px: number, axis: "w" | "h") =>
+    boxSize[axis] ? px / (view.z * boxSize[axis]) : 0;
+
+  /**
+   * Where the knob and the action bar are anchored. Both hang *outside* the selection's box,
+   * and the paper clips what leaves it (`overflow-hidden`), so writing along an edge used to
+   * put its own controls off the page: a stroke at the foot of a page had its rotate knob cut
+   * off and simply couldn't be turned. The anchors are pulled back inside instead — at the
+   * page's edge the control overlaps the selection rather than disappearing off it.
+   */
+  const knobAnchor = selBounds && {
+    x: Math.min(Math.max(selBounds.x + selBounds.w / 2, asFraction(KNOB_PX / 2, "w")), 1 - asFraction(KNOB_PX / 2, "w")),
+    y: Math.min(selBounds.y + selBounds.h, 1 - asFraction(KNOB_PX * 1.6, "h")),
+  };
+  const barAnchor = selBounds && {
+    x: Math.min(Math.max(selBounds.x + selBounds.w / 2, asFraction(selBarSize.w / 2, "w")), 1 - asFraction(selBarSize.w / 2, "w")),
+    y: Math.max(selBounds.y, asFraction(selBarSize.h * 1.2, "h")),
+  };
+
   return (
     // The viewer owns the viewport: a definite height is what lets the page rail
     // scroll inside itself instead of stretching this column and pushing the paper
@@ -3839,8 +3884,8 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
                   onPointerDown={(e) => startHandle(e, "rotate")}
                   className="absolute w-7 h-7 flex items-center justify-center rounded-full bg-white border border-[#8A6DE9] text-[#8A6DE9] shadow-sm touch-none cursor-grab z-10"
                   style={{
-                    left: `${(selBounds.x + selBounds.w / 2) * 100}%`,
-                    top: `${(selBounds.y + selBounds.h) * 100}%`,
+                    left: `${knobAnchor!.x * 100}%`,
+                    top: `${knobAnchor!.y * 100}%`,
                     transform: unzoom("translate(-50%, 60%)"),
                   }}
                   title="Drag to rotate — hold shift to snap to 15°"
@@ -3849,10 +3894,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
                 </div>
 
                 <div
+                  ref={selBarRef}
                   className="absolute flex items-center gap-0.5 px-1 py-1 rounded-xl bg-white border border-black/10 shadow-lg z-20 whitespace-nowrap"
                   style={{
-                    left: `${(selBounds.x + selBounds.w / 2) * 100}%`,
-                    top: `${selBounds.y * 100}%`,
+                    left: `${barAnchor!.x * 100}%`,
+                    top: `${barAnchor!.y * 100}%`,
                     transform: unzoom("translate(-50%, -120%)"),
                   }}
                   onPointerDown={(e) => e.stopPropagation()}
