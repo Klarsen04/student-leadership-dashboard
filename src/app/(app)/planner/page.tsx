@@ -51,6 +51,11 @@ import {
   RotateCw,
   Shapes,
   Stamp,
+  Download,
+  FileText,
+  FileImage,
+  Files,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Hotspot, Rect } from "@/lib/planner";
@@ -196,6 +201,19 @@ import {
 } from "@/lib/planner-elements";
 import { PageSidebar, THUMB_H } from "@/components/planner/PageSidebar";
 import { PageSetupDialog } from "@/components/planner/PageSetupDialog";
+import { drawStroke } from "@/lib/planner-render";
+import {
+  EXPORT_LONG_EDGE,
+  annotatePdf,
+  canvasToBlob,
+  canvasesToPdf,
+  downloadBlob,
+  loadImage,
+  renderPageCanvas,
+  renderSelectionCanvas,
+  safeName,
+} from "@/lib/planner-export";
+import { getFile } from "@/lib/planner-library";
 import { StickerNameDialog, StickerTray } from "@/components/planner/StickerTray";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
@@ -220,7 +238,6 @@ type HistoryOp =
 
 const PEN_COLORS = ["#1a1a1a", "#e03131", "#1971c2", "#2f9e44", "#f08c00", "#9c36b5"];
 const PEN_SIZES = [0.0012, 0.0022, 0.004]; // fine / medium / bold (fraction of page width)
-const HIGHLIGHT_ALPHA = 0.35;
 
 // ---- turning pages -----------------------------------------------------------
 // A planner runs to hundreds of pages and the interesting ones (the weekly and
@@ -234,41 +251,6 @@ const EDGE_FLIP = 0.07;
 const SWIPE_FLIP_PX = 55;
 /** Accumulated wheel/trackpad travel (px) that turns one page. */
 const WHEEL_FLIP_PX = 90;
-
-function drawStroke(ctx: CanvasRenderingContext2D, s: Stroke, W: number, H: number) {
-  if (s.points.length === 0) return;
-  ctx.save();
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.strokeStyle = s.color;
-  ctx.globalAlpha = s.tool === "highlighter" ? HIGHLIGHT_ALPHA : 1;
-  const base = s.size * W * (s.tool === "highlighter" ? 6 : 1);
-
-  if (s.points.length === 1) {
-    const [x, y, p] = s.points[0];
-    ctx.beginPath();
-    ctx.arc(x * W, y * H, Math.max(0.5, (base * (0.4 + p)) / 2), 0, Math.PI * 2);
-    ctx.fillStyle = s.color;
-    ctx.fill();
-    ctx.restore();
-    return;
-  }
-
-  // Variable-width polyline: draw segment-by-segment with midpoint smoothing.
-  for (let i = 1; i < s.points.length; i++) {
-    const [x0, y0, p0] = s.points[i - 1];
-    const [x1, y1, p1] = s.points[i];
-    ctx.beginPath();
-    ctx.lineWidth = Math.max(0.6, base * (0.4 + (p0 + p1) / 2));
-    const mx = ((x0 + x1) / 2) * W;
-    const my = ((y0 + y1) / 2) * H;
-    ctx.moveTo(x0 * W, y0 * H);
-    ctx.quadraticCurveTo(x0 * W, y0 * H, mx, my);
-    ctx.lineTo(x1 * W, y1 * H);
-    ctx.stroke();
-  }
-  ctx.restore();
-}
 
 const inside = (h: Hotspot | Rect, x: number, y: number) =>
   x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h;
@@ -1083,6 +1065,9 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const [armedSticker, setArmedSticker] = useState<SavedElement | null>(null);
   /** A selection on its way into the tray, waiting for a name. */
   const [namingSticker, setNamingSticker] = useState<Omit<SavedElement, "id" | "createdAt"> | null>(null);
+  /** Export menu open, and a running-export message for the busy overlay. */
+  const [exportMenu, setExportMenu] = useState(false);
+  const [exportBusy, setExportBusy] = useState<string | null>(null);
   const [bgImageUrl, setBgImageUrl] = useState<string | null>(null);
   const pages = index.pages.length;
   const pageMeta = index.pages[page - 1];
@@ -1132,6 +1117,8 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const lastToastAt = useRef(0);
   const drawingPointer = useRef<number | null>(null);
   const rendererRef = useRef<PdfRenderer | null>(null);
+  /** A high-resolution PDF renderer used only while exporting. */
+  const exportRendererRef = useRef<PdfRenderer | null>(null);
   // A pending tap. `chromeOnly` taps came from a stylus landing on page
   // furniture, so they may only activate tabs — never a writable day cell.
   // `flip` marks the pointer as one that's navigating rather than writing, so an
@@ -1601,6 +1588,8 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     rendererRef.current = null;
     thumbRendererRef.current?.destroy();
     thumbRendererRef.current = null;
+    exportRendererRef.current?.destroy();
+    exportRendererRef.current = null;
   }, []);
 
   // Flush any pending save if the tab is closed or backgrounded.
@@ -1825,6 +1814,129 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     setArmedSticker((a) => (a?.id === id ? null : a));
     deleteSavedElement(id).catch(() => {});
   }, []);
+
+  // ---- export ----
+  // Every export is composited fresh from the page's background image and its vector
+  // ink — never a screenshot — so it's as crisp as the paper allows. See
+  // src/lib/planner-export.ts. A whole-notebook export is capped so a 400-page built-in
+  // planner can't try to build a half-gigabyte PDF; what's left out is reported.
+
+  const EXPORT_PAGE_CAP = 120;
+
+  /** Ink for a slot: the cache and the offline mirror first, then the server. */
+  const fetchInkFor = useCallback(async (s: number): Promise<PageElement[]> => {
+    const cached = cacheRef.current.get(s);
+    if (cached) return cached;
+    const local = readLocal(planner.id, s);
+    if (local) return parseElements(local.json);
+    return fetchSlot(planner.id, s);
+  }, [planner.id]);
+
+  /** The background image for a page, resolved at export resolution. */
+  const exportBackground = useCallback(async (pm: PageMeta): Promise<HTMLImageElement | null> => {
+    const bg = pm.background;
+    let imageUrl: string | undefined;
+    if (bg.kind === "template" && bg.templateId) {
+      const def = templateFor(bg.templateId, customTemplates);
+      if (def?.imageKey) imageUrl = (await templateImageUrl(def)) ?? undefined;
+    }
+    const resolved = resolveBackground(pm, planner, { customTemplates, imageUrl });
+    if (resolved.kind === "image") return loadImage(resolved.src).catch(() => null);
+    if (resolved.kind === "pdf" && planner.pdfKey) {
+      exportRendererRef.current ??= new PdfRenderer(planner.pdfKey, EXPORT_LONG_EDGE);
+      const url = await exportRendererRef.current.page(resolved.page).catch(() => "");
+      return url ? loadImage(url).catch(() => null) : null;
+    }
+    return null;
+  }, [customTemplates, planner]);
+
+  /** A finished canvas for one page of the notebook, background and ink composited. */
+  const exportPageCanvas = useCallback(async (idx: number) => {
+    const pm = indexRef.current.pages[idx];
+    const [bg, elements] = await Promise.all([exportBackground(pm), fetchInkFor(pm.slot ?? idx + 1)]);
+    return renderPageCanvas({ background: bg, elements, aspect: pageAspect(pm, planner) });
+  }, [exportBackground, fetchInkFor, planner]);
+
+  const runExport = useCallback(async (message: string, job: () => Promise<void>) => {
+    setExportMenu(false);
+    setExportBusy(message);
+    try {
+      await job();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "That export didn't work.");
+    } finally {
+      setExportBusy(null);
+    }
+  }, []);
+
+  const exportCurrentPage = useCallback((kind: "png" | "pdf") => {
+    runExport(kind === "png" ? "Saving this page as an image…" : "Saving this page as a PDF…", async () => {
+      // The on-screen background is already decoded; fall back to a fresh render only if
+      // it isn't (a page that hasn't finished loading its picture).
+      const bg = bgImgRef.current?.complete ? bgImgRef.current : await exportBackground(pageMeta);
+      const canvas = renderPageCanvas({
+        background: bg,
+        elements: elementsRef.current,
+        aspect,
+        textHeight: (t) => textHeights.current.get(t.id),
+      });
+      const stem = `${safeName(planner.name)}-p${page}`;
+      if (kind === "png") downloadBlob(await canvasToBlob(canvas), `${stem}.png`);
+      else downloadBlob(await canvasesToPdf([{ canvas, hasPhoto: pdfBacked }]), `${stem}.pdf`);
+    });
+  }, [runExport, exportBackground, pageMeta, aspect, planner.name, page, pdfBacked]);
+
+  const exportSelection = useCallback(() => {
+    const ids = selectionRef.current;
+    if (!ids.size) return;
+    runExport("Saving your selection as an image…", async () => {
+      const picked = selectedElements(elementsRef.current, ids);
+      const b = selectionBounds(elementsRef.current, ids, pageGeom());
+      if (!b) throw new Error("Nothing to export.");
+      const canvas = renderSelectionCanvas(picked, b, aspect, (t) => textHeights.current.get(t.id));
+      downloadBlob(await canvasToBlob(canvas), `${safeName(planner.name)}-selection.png`);
+    });
+  }, [runExport, aspect, planner.name, pageGeom]);
+
+  const exportNotebook = useCallback(() => {
+    const total = indexRef.current.pages.length;
+    const count = Math.min(total, EXPORT_PAGE_CAP);
+    runExport(`Building a PDF of ${count} page${count === 1 ? "" : "s"}…`, async () => {
+      const canvases: { canvas: HTMLCanvasElement; hasPhoto?: boolean }[] = [];
+      for (let i = 0; i < count; i++) canvases.push({ canvas: await exportPageCanvas(i), hasPhoto: pdfBacked });
+      downloadBlob(await canvasesToPdf(canvases), `${safeName(planner.name)}.pdf`);
+      if (count < total) {
+        toast.message(`Exported the first ${count} pages of ${total}.`, {
+          description: "That's the per-file limit — export a shorter range if you need the rest.",
+        });
+      }
+    });
+  }, [runExport, exportPageCanvas, planner.name, pdfBacked]);
+
+  /** Ink drawn back onto the original PDF, keeping its own text selectable underneath. */
+  const exportAnnotatedPdf = useCallback(() => {
+    if (!planner.pdfKey) return;
+    runExport("Adding your notes to the original PDF…", async () => {
+      const blob = await getFile(planner.pdfKey!);
+      if (!blob) throw new Error("This notebook's PDF isn't on this device to annotate.");
+      const pages = indexRef.current.pages;
+      const inkByPage = new Map<number, HTMLCanvasElement>();
+      for (const pm of pages) {
+        // Only pages that map to a real page of the original PDF can be annotated onto
+        // it — inserted template pages have no home in the source document, so they're
+        // left out (the whole-notebook PDF export carries those).
+        if (pm.background.kind !== "source") continue;
+        const sourcePage = pm.background.sourcePage ?? 1;
+        const elements = await fetchInkFor(pm.slot ?? sourcePage);
+        if (!elements.length) continue;
+        // Ink on transparency at the PDF page's own aspect, so it drops on 1:1.
+        const canvas = renderPageCanvas({ background: null, elements, aspect: pageAspect(pm, planner), fill: "rgba(0,0,0,0)" });
+        inkByPage.set(sourcePage, canvas);
+      }
+      if (!inkByPage.size) throw new Error("There are no notes on this PDF yet.");
+      downloadBlob(await annotatePdf(await blob.arrayBuffer(), inkByPage), `${safeName(planner.name)}-annotated.pdf`);
+    });
+  }, [runExport, planner, fetchInkFor]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -2686,6 +2798,28 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
             {saveState === "saved" ? "Saved" : saveState === "saving" ? "Saving…" : saveState === "offline" ? "Offline" : "Unsaved"}
           </span>
         )}
+        <div className="relative">
+          <button
+            data-export-toggle
+            onClick={() => setExportMenu((o) => !o)}
+            className={`p-2 rounded-xl transition-colors ${exportMenu ? "bg-black/[0.07] text-black/70" : "text-black/50 hover:bg-black/5"}`}
+            title="Export as PNG or PDF"
+          >
+            <Download className="w-4 h-4" />
+          </button>
+          {exportMenu && (
+            <ExportMenu
+              onClose={() => setExportMenu(false)}
+              hasSelection={tool === "select" && selection.size > 0}
+              pdfBacked={pdfBacked}
+              onPagePng={() => exportCurrentPage("png")}
+              onPagePdf={() => exportCurrentPage("pdf")}
+              onSelectionPng={exportSelection}
+              onNotebookPdf={exportNotebook}
+              onAnnotatedPdf={exportAnnotatedPdf}
+            />
+          )}
+        </div>
         <button onClick={() => go(1)} className="p-2 rounded-xl text-black/50 hover:bg-black/5" title="Cover">
           <Home className="w-4 h-4" />
         </button>
@@ -3015,6 +3149,88 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
           initial={namingSticker.name}
           onCancel={() => setNamingSticker(null)}
           onSave={confirmSaveSticker}
+        />
+      )}
+
+      {exportBusy && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/25 backdrop-blur-sm">
+          <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-white shadow-xl">
+            <Loader2 className="w-4 h-4 animate-spin text-[#8A6DE9]" />
+            <span className="text-[13px] font-semibold text-black/70" style={MARKER}>{exportBusy}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- export menu ---------------------------------------------------------------
+function ExportMenu({
+  onClose,
+  hasSelection,
+  pdfBacked,
+  onPagePng,
+  onPagePdf,
+  onSelectionPng,
+  onNotebookPdf,
+  onAnnotatedPdf,
+}: {
+  onClose: () => void;
+  hasSelection: boolean;
+  pdfBacked: boolean;
+  onPagePng: () => void;
+  onPagePdf: () => void;
+  onSelectionPng: () => void;
+  onNotebookPdf: () => void;
+  onAnnotatedPdf: () => void;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let armed = false;
+    const t = setTimeout(() => { armed = true; }, 0);
+    const away = (e: PointerEvent) => {
+      if (!armed) return;
+      const el = e.target as HTMLElement;
+      if (box.current?.contains(el) || el.closest?.("[data-export-toggle]")) return;
+      onClose();
+    };
+    document.addEventListener("pointerdown", away);
+    return () => { clearTimeout(t); document.removeEventListener("pointerdown", away); };
+  }, [onClose]);
+
+  const Item = ({ icon, label, hint, onClick }: { icon: React.ReactNode; label: string; hint?: string; onClick: () => void }) => (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left hover:bg-black/[0.05] transition-colors"
+    >
+      <span className="text-black/45">{icon}</span>
+      <span className="flex flex-col">
+        <span className="text-[12.5px] font-semibold text-black/75" style={MARKER}>{label}</span>
+        {hint && <span className="text-[10.5px] text-black/40">{hint}</span>}
+      </span>
+    </button>
+  );
+
+  return (
+    <div
+      ref={box}
+      className="absolute right-0 top-full mt-1 z-40 w-60 rounded-2xl bg-white border border-black/10 shadow-xl p-1.5"
+    >
+      <p className="px-2.5 pt-1 pb-1.5 text-[10.5px] font-bold uppercase tracking-wide text-black/35">This page</p>
+      <Item icon={<FileImage className="w-4 h-4" />} label="Image (PNG)" onClick={onPagePng} />
+      <Item icon={<FileText className="w-4 h-4" />} label="PDF" onClick={onPagePdf} />
+      {hasSelection && (
+        <Item icon={<FileImage className="w-4 h-4" />} label="Selection (PNG)" hint="Just what's selected" onClick={onSelectionPng} />
+      )}
+      <div className="my-1 h-px bg-black/[0.06]" />
+      <p className="px-2.5 pt-1 pb-1.5 text-[10.5px] font-bold uppercase tracking-wide text-black/35">Whole notebook</p>
+      <Item icon={<Files className="w-4 h-4" />} label="PDF" hint="Every page, background and notes" onClick={onNotebookPdf} />
+      {pdfBacked && (
+        <Item
+          icon={<FileText className="w-4 h-4" />}
+          label="Annotated PDF"
+          hint="Original PDF with your notes on top"
+          onClick={onAnnotatedPdf}
         />
       )}
     </div>
