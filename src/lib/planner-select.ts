@@ -20,6 +20,7 @@
 //    drag it, recolour it and send it to the back.
 
 import { type PageElement, type Stroke, type TextBox, isText } from "./planner-ink";
+import { TOOL_WIDTH } from "./planner-render";
 
 export interface Bounds {
   x: number;
@@ -84,7 +85,7 @@ export const selectedElements = (els: PageElement[], ids: ReadonlySet<string>) =
 // ---- bounds ---------------------------------------------------------------------
 
 /** Half the width of a stroke's nib, as a fraction of page width. */
-const nib = (s: Stroke) => (s.size * (s.tool === "highlighter" ? 6 : 1)) / 2;
+const nib = (s: Stroke) => (s.size * (TOOL_WIDTH[s.tool] ?? 1)) / 2;
 
 /**
  * Rough height for an unmeasured text box: how many lines its text wraps to at
@@ -358,6 +359,27 @@ export function addCopies(
     return moved;
   });
   return { elements: [...els, ...copies], ids };
+}
+
+/**
+ * The offset that puts `source`'s middle under `(x, y)`, pulled back so it stays on the
+ * writable paper.
+ *
+ * Paste uses this to land where you point rather than where the copy came from: pasting
+ * onto another page used to drop the content at its old coordinates, which on a page you'd
+ * scrolled away from meant "somewhere off the top". The ghost that follows the pointer is
+ * drawn from the same offset, so what you see under the pointer is exactly where it lands.
+ */
+export function placementOffset(
+  source: PageElement[],
+  x: number,
+  y: number,
+  geom: PageGeom,
+  area: Bounds,
+): { dx: number; dy: number } {
+  const b = unionBounds(source.map((el) => elementBounds(el, geom)));
+  if (!b) return { dx: 0, dy: 0 };
+  return clampMove(b, x - (b.x + b.w / 2), y - (b.y + b.h / 2), area);
 }
 
 // One clipboard for the session, so a lasso on one page pastes onto another — or

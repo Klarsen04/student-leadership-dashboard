@@ -1,33 +1,22 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback } from "react";
+import { readSetting, useSyncedSetting, type SettingSpec } from "@/lib/synced-setting";
 
 const DEFAULT_CATEGORIES = ["Personal"];
 const STORAGE_KEY = "leadership-os-goal-categories";
 
-function getStored(): string[] {
-  if (typeof window === "undefined") return DEFAULT_CATEGORIES;
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch {}
-  return DEFAULT_CATEGORIES;
-}
+// Goal categories follow the account (src/lib/synced-setting.ts).
+const CATEGORIES: SettingSpec<string[]> = {
+  key: STORAGE_KEY,
+  fallback: DEFAULT_CATEGORIES,
+  revive: (raw) => (Array.isArray(raw) && raw.length > 0 ? (raw as string[]) : null),
+};
+
+const getStored = (): string[] => readSetting(CATEGORIES);
 
 export function useGoalCategories() {
-  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
-
-  useEffect(() => {
-    setCategories(getStored());
-  }, []);
-
-  const save = useCallback((updated: string[]) => {
-    setCategories(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-  }, []);
+  const { value: categories, setValue: save } = useSyncedSetting(CATEGORIES);
 
   const addCategory = useCallback((name: string) => {
     const current = getStored();

@@ -57,11 +57,26 @@ prisma/
 ### Auth Flow
 Middleware (`src/middleware.ts`) checks for `next-auth.session-token` cookie on protected paths (`/dashboard`, `/calendar`, `/analytics`, `/reflections`). Missing token → redirect to `/login`. CSP nonce is generated per-request and injected via `x-nonce` header.
 
-### Client-Side Storage
-Some features use localStorage instead of the database:
-- **Classes** (`leadership-os-classes`): Recurring class schedule blocks
-- **Sub-calendars** (`leadership-os-calendars`): Calendar groupings and tags
-- Hooks in `src/lib/use*.ts` manage these
+### Client-Side Storage (account-synced)
+Some features keep their state as a JSON document rather than rows — classes
+(`leadership-os-classes`), sub-calendars (`leadership-os-calendars`), roles, goal
+categories, semester dates and the time budget. They are written to
+`localStorage` first and mirrored to the **account** in the `UserData` table via
+`/api/sync`, so signing in on a second device shows the same data.
+
+`src/lib/synced-setting.ts` is the primitive: `useSyncedSetting(spec)` reads
+localStorage synchronously (so there's no flash of defaults and SSR is safe),
+pulls the account copy once on mount, and pushes local edits after a 600 ms
+debounce. Rules that matter when adding one:
+- **Local first.** A failed push means "not on the other devices yet", never lost
+  data — the local copy stands and syncs on the next load.
+- **Last write wins** by `updatedAt`; the server never merges a document.
+- A local edit made *before* the pull returns outranks the pull (`dirty`), so
+  typing during a slow network isn't overwritten.
+- If the account has no copy, the local one is pushed up — that's how state
+  created before sync existed migrates itself.
+
+Hooks in `src/lib/use*.ts` wrap this; their public API is unchanged.
 
 ### Calendar Architecture
 The calendar page (`src/app/(app)/calendar/page.tsx`) is a large client component (~1300 lines) containing:
@@ -115,10 +130,215 @@ right behind the page a month tab lands on) doesn't need the toolbar arrows:
   `WHEEL_FLIP_PX`; ignored mid-stroke and over a text box being edited.
 Hover shows a chevron chip on whichever edges have a page to go to.
 
+### Pointer input (`src/lib/planner-input.ts`)
+One mode per pointer, latched for the whole gesture. `routePointer({tool,
+pointerType, readOnly})` returns the `InputMode` at pointerdown — `draw`, `erase`,
+`select`, `text` or `navigate` — and `gestureRef` (`{id, mode, rect}`) holds it
+until that pointer lifts. Every later event checks the id, so a second pointer
+can't steer a gesture it doesn't own. Rules that follow from it:
+- **a finger always navigates**, whatever the tool. That's what keeps a planner
+  tappable with a pen armed, and what makes a resting palm harmless.
+- **the hand and select tools never draw**, from any pointer type.
+- a `touch` landing while a stroke is in progress (`drawingRef`) is swallowed with
+  `preventDefault()`, killing the synthesised tap that used to press whatever was
+  under the hand. A capture-phase listener does the same for touches on the
+  toolbar and rail *only while a stroke is in flight* — the UI is otherwise normal.
+- `rect` is measured once at pointerdown (nothing moves mid-gesture), keeping a
+  layout read out of the per-move path.
+
+**Latency.** While the pen is down, no React state is touched. Points go into the
+mutable `liveRef` stroke and are painted onto a dedicated live canvas above the ink
+canvas, drawing *only the newest segments* (`drawStroke(..., from)`), so per-move
+cost is flat in stroke length instead of growing with it (measured: 0.12 ms → 0.13 ms
+first-to-last 50 moves, against 0.19 → 0.42 ms before). `getCoalescedEvents()` keeps
+every digitiser sample and its pressure. On pointerup the stroke is committed to
+state once, which repaints the committed-ink cache; the live layer is then wiped.
+The cache is invalidated by **identity** (`inkCachePainted !== elementsRef.current`),
+plus an explicit reset on a page turn — a flag was how undo used to leave a stroke on
+screen until the next edit.
+
+### State architecture (one cause behind the input bugs)
+Latency, missed strokes, the toolbar taking stylus input, undo that lagged the canvas,
+paste landing where it was copied from, and stale rail thumbnails were all one habit:
+the document lived in React state, so a render sat on the critical path of every
+pointer event and each decision was re-derived from whatever the last render saw.
+Five invariants replace it — anything new on the page must keep them, or the symptoms
+come back one at a time:
+1. **One document, one writer.** `elementsRef.current` is the page; `setElements` is
+   the only thing that changes it (history → ref → slot cache → save → repaint →
+   `rerender`). Ink, text, shapes, stickers, paste and every selection transform go
+   through it. `beginBurst`/`endBurst` + `{history:false}` make a whole gesture one
+   undo step.
+2. **One gesture latch.** `routePointer` decides the mode at pointerdown and
+   `gestureRef` holds it until that pointer lifts (see Pointer input above).
+3. **One paint path.** Three painters only: `redraw` (committed ink from the cached
+   bitmap, plus the marquee), `paintLive` (the stroke in flight), `paintGhost` (an
+   armed paste). Pixels are only ever made by `planner-render.ts`, so screen and
+   export can't disagree.
+4. **Refs mirrored at render time** (`toolRef.current = tool` in the body, not in an
+   effect), so a handler can never read a value from the render before last.
+5. **One slot writer.** `putSlot` is the only place a slot's content changes, which is
+   also the only thumbnail invalidation — a rail thumbnail can't go stale without the
+   page's content having bypassed the cache.
+
+Measured on a 600-stroke page (`/tmp/arch.mjs`): 150 pen samples commit as one stroke
+with no sample dropped and no long task; a hand on the toolbar mid-stroke presses
+nothing while Undo still works a moment later; undo reaches the canvas in ~34 ms and
+refreshes only that page's thumbnail; dragging all 601 strokes costs ~23 ms per move
+with no task blocking longer than two frames. The only React render left on a per-move
+path is the one `setElements` schedules during a burst, and at that size it stays
+inside the frame budget.
+
+### Writing tools (pen, pencil, marker, highlighter)
+All four are the same `Stroke` on the same pipeline above — the tool is a field, not
+a separate renderer, so none of them can be the slow one. What differs is how
+`planner-render.ts` paints it:
+- `TOOL_WIDTH` / `TOOL_ALPHA` give each tool its nib and its default opacity;
+  `strokeAlpha(s) = s.opacity ?? TOOL_ALPHA[s.tool]` (a stroke stores `opacity`
+  only when the user overrode it, so the defaults stay tunable).
+- marker and highlighter are **flat** — width ignores pressure, because a felt tip
+  and a chisel highlighter don't taper. Pen and pencil scale with it.
+- pencil adds a second, lighter, laterally-offset pass per segment with grain from
+  a deterministic `sin`-hash of index+position, so the same stroke grains
+  identically in the viewer, a thumbnail and an export.
+
+A see-through stroke is **flattened** (`isFlattened`): painted at full strength into
+a scratch canvas and composited once at its own alpha (`paintStrokes`). Compositing
+per *stroke* rather than per segment is what stops overlapping segment joins beading
+into dark blobs. The highlighter composites with `globalCompositeOperation =
+"multiply"`, so it darkens the paper but can never cover handwriting — and repeated
+passes deepen without turning into a solid block (measured: 681 → 682 dark ink px
+after four passes over the same words). Mid-stroke the live canvas reproduces this
+with CSS `opacity` + `mixBlendMode`, so nothing changes appearance when the pen lifts.
+
+Each tool remembers **its own colour, thickness and opacity** (`inkPrefs`, keyed by
+`InkPrefKey` = the ink tools plus `shape` and `text`) — reaching for the highlighter
+shouldn't hand you a black one, so it has its own bright `HIGHLIGHTER_COLORS`.
+
+**Erasing** (`src/lib/planner-erase.ts`) has two modes. `stroke` takes the whole
+stroke the tip touched; `precise` **splits** its polyline and keeps the surviving runs
+as ordinary strokes with their original pressures — nothing is rasterised. Hit-testing
+is against segments, not samples, so a fast pen's long gaps still get cut, and
+distances put y in width units so the tip stays round on a non-square page. Untouched
+strokes are returned **by identity**, which is what keeps a missed erase from
+invalidating element ids, the selection or the render cache. One drag is one undo step
+(`beginBurst`/`endBurst`). The tip ring follows the pointer through a ref, never state.
+
 Pages hold **strokes and text boxes** (`PageElement` in `src/lib/planner-ink.ts`).
 The Text tool drops an editable, draggable, resizable text box; fonts come from
 `PLANNER_FONTS` (Inter/Instrument Serif/Fredoka/Caveat/Patrick Hand/mono, wired
 up as CSS variables in `src/app/layout.tsx`).
+
+### Colour (`src/lib/planner-color.ts`, `components/planner/ColorPicker.tsx`)
+Presets are a shortcut, never the whole set: every colour in the planner also opens a
+`ColorPickerButton` — saturation/brightness pad, hue slider, optional opacity, hex box,
+that thing's presets, and one **shared recents list** (`leadership-os-recent-colours`),
+because a colour mixed for the pen is the one you'll want for a heading a moment later.
+It's wired to the pen/pencil/marker/highlighter/shape nib, text boxes, the lasso's
+recolour, a page's paper and ruling, and a new notebook's tint.
+
+Three things it gets right and shouldn't be undone:
+- **hex is the only stored form.** Opacity lives beside it as its own field, never folded
+  into `#rrggbbaa` — the renderer already multiplies by `strokeAlpha`, so a packed alpha
+  would be applied twice.
+- **the panel keeps its own HSV.** Hex can't carry the hue of black or of a grey, so
+  deriving HSV from the prop each render would snap a hue back to red the moment value
+  hit the bottom. It re-reads the prop only when the value isn't the one it just emitted.
+- **it renders in a portal on `document.body`.** The toolbars use `backdrop-filter`, and
+  a filtered ancestor becomes the containing block for `position: fixed` — inside the
+  toolbar the panel was clipped off the right of the viewport.
+
+Recolouring a selection from the picker is **one** undo step: `onChange` edits inside a
+burst, and the picker's `onCommit` (drag end, preset tap, hex entered) closes it.
+
+### Toolbar geometry
+The toolbar is two rows: identity + tools + global actions, then a **tool options row of
+constant height** that never wraps (it scrolls sideways). This isn't cosmetic. When the
+options shared one wrapping row, switching pen → eraser dropped the toolbar from two
+lines to one and the paper jumped 36px up the screen, so a stylus resting on a word was
+suddenly over a different one — and a precise erase aimed at a stroke missed it entirely.
+The footer hint is height-reserved for the same reason (its text changes per tool, and a
+one-line hint left the paper more room than a two-line one). **Anything added to the
+toolbar or footer must not change size with the armed tool.** The options row also ranks
+`z-20` under the top row's `z-30`, or it covers the menus hanging down from it.
+
+Toolbar controls carry stable hooks for tests — `data-tool` on each tool button,
+`data-swatch` on each colour, `data-picker`/`data-picker-panel` on a colour picker,
+`data-recolor` on the selection swatches, `data-zoom` on the zoom readout, `aria-pressed`
+for what's armed. The page rail adds `data-page-row`, `data-page-open` (the jump button —
+*not* the first button in the row, which is the insert-a-page hairline), `data-page-ink` and
+`data-page-menu`; the Shapes options row adds `data-shape` (each kind, plus `auto`).
+Tooltips describe the tool and get reworded; select on these instead.
+
+### Page shape (the fit invariant)
+**The rendered page must be exactly the shape of its paper.** Normalised ink coordinates are
+fractions of the page box, while everything that has to be round or square — circles, the
+eraser tip, rotation, stickers, the export — corrects with the *paper's* aspect
+(`pageGeometry`). If the box is a different shape from the paper, the two disagree and
+nothing is quite right: circles come out oval, and the export doesn't match the screen.
+
+The page is `aspect-ratio` + `width: 100%` under a max-width, and that **cap is what keeps
+its shape**: too generous a cap and `max-h-full` clamps the height while the width stays put,
+which stretches the page. The cap used to guess the chrome ("viewport minus 150px"), was 56px
+out, and every page rendered ~7% too wide. It now comes from `frameH` — the frame's own
+`contentRect` height via a `ResizeObserver` — so it's exact on any screen. Observe the
+*frame*, not the page: the frame is `flex-1` in a fixed-height column, so its size never
+depends on the page's and there's no feedback loop. `/tmp/fit-ui.mjs` asserts box aspect ==
+paper aspect == the paper image's own aspect, and that the page fits, across desktop / rail
+open / landscape paper / narrow window / phone.
+
+Orientation is stored **separately from size**, and a page with no `size` of its own still
+has one (the notebook's). `pageGeometry` turns that fallback via `turnPaper`, which the setup
+dialog's preview uses too — otherwise "make this page landscape" turned the preview and left
+the page portrait.
+
+### Page-rail thumbnails (`src/lib/planner-thumbs.ts`)
+The rail already draws each page's real paper, so a thumbnail is just that page's
+handwriting as a transparent PNG laid over it — composited by `paintElements` from the same
+vectors as the page and the export (at 2×), never a screenshot, so it can't drift from what
+the page holds.
+
+Repainting is governed by a **content version per slot**: `inkVersions` in the planner page,
+bumped by `putSlot()` — the single choke point through which a page's elements are ever
+replaced (writing, erasing, undo, redo, paste, duplicate, clear). The rail asks for one key
+(`plannerId:slot:version`) at most once, so writing on page 4 leaves pages 1-3's images
+byte-identical, and undo — which bumps the version *back* to a key already in the cache —
+updates the rail instantly instead of showing a stale bitmap. The tick that wakes the rail
+is debounced 180ms, because one eraser drag replaces a page's elements many times over.
+
+Two traps, both of which cost an afternoon:
+- The rail stores ink **by row position**, with the key kept beside it only as the staleness
+  test. Keying the store by content key deadlocks: painting a page reads its ink, the viewer
+  caches it, and caching bumps the version — so the key moved on between asking and storing
+  and the row looked up a key nothing was filed under. Nothing rendered after a reload.
+- Its in-flight guard is `mounted`, **not** an effect-run flag. The effect re-runs on every
+  scroll and page change, and since a key is only asked for once, cancelling with the run
+  loses that page's thumbnail permanently. Set the flag on mount too — React remounts every
+  component once in development.
+
+Two guards, doing different jobs: `inkByPos.get(position)?.key === key` is what stops
+repainting, and `inkAsked` only stops the same request being started twice — so it's cleared
+when the request *finishes*. Left in place, it freezes rows: after a reorder or an undo, the
+row inheriting an already-painted key is skipped and keeps the wrong page's writing.
+
+### Reordering and duplicating pages
+A page's handwriting is keyed by slot and a page carries its slot, so reordering the index
+moves the content with it — there's nothing to copy. Reordering starts from the **grip**
+only, so a flick still scrolls the rail and can't draw; the drop gap is derived from pointer
+Y over `ROW_H`, and `onMove` treats a page dropped back where it was as a no-op.
+
+The live drag lives in `dragRef`, not just state: one pointerup reaches `endDrag` **twice**
+(the grip, then the list it bubbles to), both closures see the same pre-render `drag`, and
+the page gets moved twice — the second move dragging whatever page had shifted into the
+vacated position. That read exactly like "reordering leaves the handwriting behind".
+
+The rail offers two separate duplicate actions, because they're different intentions:
+**Duplicate** copies the handwriting too, and **Blank copy** gives a new page of the same
+paper — same template, colour, size, orientation — with nothing on it, for a page you've
+laid out as a form and fill in again. Both go through `duplicatePages(index, positions,
+{content})` and one `duplicatePagesAt(positions, withContent)`; a blank copy blanks every
+target slot (not just recycled ones) so "blank" is true on the server as well, and doesn't
+inherit the source's label.
 
 Content is stored per planner/page in the `PlannerInk` table via `/api/planner`
 (the `strokes` column holds the serialized `PageElement[]`, text boxes included).
@@ -130,8 +350,8 @@ self-heals a drifted `PlannerInk` table on a "no such table/column" error.
 ### User notebooks (`src/lib/planner-library.ts`)
 The shipped planners are **read-only** — everyone shares them, so the viewer
 refuses ink and offers "Make a copy to write" instead (`isOwned()` is the test;
-existing ink still renders, frozen). Everything a user makes lives per-device in
-IndexedDB under "My Notebooks", and only those can be renamed, edited or deleted:
+existing ink still renders, frozen). Everything a user makes lives in IndexedDB
+under "My Notebooks", and only those can be renamed, edited or deleted:
 - An **import** keeps the original PDF in IndexedDB and renders pages on demand
   with pdf.js (`PdfRenderer`); its own hyperlinks are extracted at import time
   into tappable hotspots, so a PDF planner's month tabs work. `pdfKey` marks a
@@ -146,10 +366,26 @@ IndexedDB under "My Notebooks", and only those can be renamed, edited or deleted
   Paper-backed notebooks are the only ones that can **add pages**, append-only —
   inserting mid-notebook would shuffle ink onto the wrong page numbers.
 
-Ink still syncs to the account (keyed by planner id), so it isn't lost with the
-device. Deleting an import keeps its ink — re-importing the same PDF picks it back
-up — while deleting a copy or blank notebook clears it (`DELETE /api/planner`),
-since its id goes with it.
+Ink syncs to the account (keyed by planner id), so it isn't lost with the device.
+Deleting an import keeps its ink — re-importing the same PDF picks it back up —
+while deleting a copy or blank notebook clears it (`DELETE /api/planner`), since
+its id goes with it.
+
+**Notebooks follow the account too.** A notebook's *record* (name, kind, paper,
+`sourceId`, page count), its page index, its stickers and its custom templates
+sync through `/api/sync` (`syncUserPlanners`, `syncRecords`, `syncSavedElements`,
+`syncUserTemplates`) — so a copy made on a laptop is on the iPad, with its
+handwriting. Same rules as settings above: newest `updatedAt` wins, and a delete
+leaves a **tombstone** so an offline device doesn't push the notebook back up.
+
+What can't travel is the **file**. An import's PDF (up to 100 MB) stays on the
+device that imported it, and `pdfKey` names a blob in *this* device's IndexedDB —
+so a merge keeps the local `pdfKey` rather than the remote one. Elsewhere the
+notebook still appears, its card says "Add the PDF · Your handwriting is safe",
+and `attachPdf()` re-links the same file to the same id (refusing a PDF with a
+different page count, which would land ink on the wrong pages). Opening such a
+notebook by URL bounces to the library instead of showing blank pages. A custom
+template's picture *does* travel, inlined as a base64 data URL when ≤ 1.2 MB.
 
 pdf.js is loaded at runtime as a native module from `/public` (`pdf.min.mjs` +
 `pdf.worker.min.mjs`, copied by `scripts/copy-pdf-worker.mjs` from
@@ -167,10 +403,36 @@ screen is computed in **"square space"** (x·aspect), since normalised coords
 squash one axis. A whole gesture is one undo step (`beginBurst`/`endBurst` +
 `setElements(next, {history:false})`).
 
-The **Shapes tool** (`src/lib/planner-shapes.ts`) snaps a rough drawing to a
+The selection's **furniture** — eight resize handles, the rotate knob below the box, the
+action bar above it — is counter-scaled by `unzoom()` so it stays finger-sized at 6×. The knob
+and the bar hang *outside* the box, and the paper clips what leaves it, so their anchors are
+**clamped onto the page** (`knobAnchor`/`barAnchor`, via `asFraction(px, axis)`, which converts
+a screen size to a page fraction and accounts for the counter-scale). Without that, writing
+along the bottom edge put its own rotate knob past the paper and the ink simply couldn't be
+turned; a selection at the left or right edge lost half the action bar the same way. At an edge
+the control now overlaps the selection instead of vanishing. The bar's size is measured
+(`selBarRef`) rather than assumed, since its width depends on how many buttons the build shows.
+Rotation itself is `rotate()` in square space, applied to the elements on every pointermove
+from the snapshot the gesture started with — 400 selected strokes repaint on every move
+(median 18ms), so no live-layer fast path is needed here.
+
+The **Shapes tool** (`src/lib/planner-shapes.ts`) has two modes, and the reliable one is
+the default: pick a shape (`shapeKind`, one of `DRAG_SHAPES` — line/arrow/rectangle/
+ellipse/triangle) and **drag it out**. `dragShape()` rebuilds the whole stroke from the two
+ends of the drag on every move, so what's on the live layer while dragging is exactly what
+`endStroke` commits — no recognition, nothing that can decline. Shift constrains (45° for
+line and arrow, equal extents otherwise, towards the corner being dragged to), and a drag
+under `MIN_DRAG` commits nothing rather than leaving a dot. **Sketch** (`shapeKind: "auto"`)
+is the older path: draw roughly and `snapStroke` decides. Recognition is secondary because
+it can always decline, and a tool that sometimes refuses is a poor way to draw a box you
+definitely want. The picker is keyed off `DRAG_SHAPES` through `SHAPE_PICKER`, a `Record`,
+so a new shape in the library won't compile until it has an icon in the toolbar.
+
+Sketch mode snaps a rough drawing to a
 circle/ellipse/rectangle/square/triangle/polygon/line/arrow — but a recognised
 shape stays an ordinary `Stroke` with ideal points and constant pressure, so
-selection/undo/save/export all treat it like handwriting. Recognition is
+selection/undo/save/export all treat it like handwriting (this is equally true of a
+dragged-out shape). Recognition is
 propose-and-score: reduce the path to corners, propose candidates in preference
 order, take the first that fits the gate, otherwise **decline** and keep the
 drawing. Corners are found by the turn the *drawn* path makes over a short window
@@ -181,7 +443,24 @@ window's samples so a shaky hand doesn't invent corners.
 for reuse. A sticker is kept as its own vector strokes/text in its own square
 space (x 0..aspect, y 0..1); stamping scales it by a target height, so it keeps
 its shape on any page size. Stamped ink is ordinary page content. Stickers persist
-per-device in IndexedDB `ELEMENT_STORE`; thumbnails are SVG drawn from the vectors.
+in IndexedDB `ELEMENT_STORE` and sync to the account (a sticker is pure vectors, so
+it travels in full); thumbnails are SVG drawn from the vectors.
+
+**Armed placement** is how anything gets *put* on a page — a sticker from the tray, and a
+paste. Arming doesn't add anything: it says "tell me where", and the next contact inside the
+write area drops the content centred on that point, hands it to the selection so it can be
+nudged straight away, and counts as one undo step. `placementOffset()` (planner-select)
+computes the offset from the content's own bounds, clamped to the paper, and `paintGhost()`
+draws a 45%-opacity preview from that same offset on the live layer — so the ghost under the
+pointer is a picture of where it lands, not an approximation. The armed branch is checked
+**first** in `onPointerDown`, ahead of even the navigate branch: while something is armed the
+next contact means "here" whatever it's made with, so a stylus mustn't start a lasso and a
+finger mustn't turn the page instead. Off the paper the arm declines and the tap means what it
+usually means (a month tab still works). Escape, a change of tool, a page turn or a change of
+notebook cancel it — `armedTool` remembers what it was armed under, because arming *is* a
+switch to Select and that first change doesn't count. Paste used to land the copy at the
+coordinates it was cut from and then have the first press meant to nudge it start a fresh
+lasso.
 
 ### Rendering and export
 `src/lib/planner-render.ts` is the one place strokes/text become pixels

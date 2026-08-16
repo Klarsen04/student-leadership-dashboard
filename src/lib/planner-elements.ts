@@ -11,9 +11,11 @@
 // Holding it in its own square space and scaling by a target height keeps it undistorted
 // wherever it lands.
 
-import { ELEMENT_STORE, idbAll, idbDelete, idbGet, idbPut } from "@/lib/planner-library";
+import { ELEMENT_STORE, idbAll, idbDelete, idbGet, idbPut, syncRecords } from "@/lib/planner-library";
+import { deleteDoc, pushDoc } from "@/lib/sync";
 import { isText, type PageElement, type Stroke, type TextBox } from "@/lib/planner-ink";
 import { elementBounds, unionBounds, type Bounds, type PageGeom } from "@/lib/planner-select";
+import { TOOL_WIDTH, strokeAlpha } from "@/lib/planner-render";
 
 /** A sticker with more pieces than this came from a whole page, not a doodle. */
 const MAX_PIECES = 400;
@@ -29,6 +31,8 @@ export interface SavedElement {
   id: string;
   name: string;
   createdAt: number;
+  /** Last change, so two devices can tell whose copy is newer. */
+  updatedAt?: number;
   /** Width / height as drawn on screen, so a stamp keeps its shape. */
   aspect: number;
   /** Content in the sticker's own space: x across 0..aspect, y down 0..1. */
@@ -159,11 +163,23 @@ const freshTextId = () => `t${Math.random().toString(36).slice(2, 9)}`;
 
 // ---- the library ------------------------------------------------------------------
 
+const usable = (e: SavedElement) =>
+  Boolean(e?.id) && Array.isArray(e.elements) && e.elements.length > 0 && e.aspect > 0;
+
 export async function listSavedElements(): Promise<SavedElement[]> {
   const all = await idbAll<SavedElement>(ELEMENT_STORE);
-  return all
-    .filter((e) => e?.id && Array.isArray(e.elements) && e.elements.length && e.aspect > 0)
-    .sort((a, b) => b.createdAt - a.createdAt);
+  return all.filter(usable).sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/**
+ * The account's stickers, reconciled with this device's.
+ *
+ * A sticker is vectors and text and nothing else, so unlike an imported PDF it
+ * travels in full — one saved on a laptop can be stamped on a tablet.
+ */
+export async function syncSavedElements(): Promise<SavedElement[]> {
+  const all = await syncRecords<SavedElement>(ELEMENT_STORE, "sticker");
+  return all.filter(usable).sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export async function saveElement(draft: Omit<SavedElement, "id" | "createdAt">): Promise<SavedElement> {
@@ -172,16 +188,22 @@ export async function saveElement(draft: Omit<SavedElement, "id" | "createdAt">)
   for (let i = 0; taken.has(id) && i < 50; i++) id = `e-${Math.random().toString(36).slice(2, 10)}`;
   const saved: SavedElement = { ...draft, name: cleanName(draft.name), id, createdAt: Date.now() };
   await idbPut(ELEMENT_STORE, saved);
+  void pushDoc("sticker", saved.id, saved);
   return saved;
 }
 
 export async function renameSavedElement(id: string, name: string): Promise<void> {
   const cur = await idbGet<SavedElement>(ELEMENT_STORE, id);
-  if (cur) await idbPut(ELEMENT_STORE, { ...cur, name: cleanName(name) || cur.name });
+  if (!cur) return;
+  // `updatedAt` is what tells another device this rename is newer than its copy.
+  const next: SavedElement = { ...cur, name: cleanName(name) || cur.name, updatedAt: Date.now() };
+  await idbPut(ELEMENT_STORE, next);
+  void pushDoc("sticker", id, next);
 }
 
 export async function deleteSavedElement(id: string): Promise<void> {
   await idbDelete(ELEMENT_STORE, id);
+  void deleteDoc("sticker", id);
 }
 
 const cleanName = (name: string) => name.trim().slice(0, 40) || "Saved element";
@@ -217,8 +239,8 @@ export function stickerPreview(saved: SavedElement): StickerPreview {
     strokes.push({
       d: s.points.length === 1 ? `${d} L${s.points[0][0].toFixed(4)} ${s.points[0][1].toFixed(4)}` : d,
       color: s.color,
-      width: s.size * (s.tool === "highlighter" ? 6 : 1),
-      opacity: s.tool === "highlighter" ? 0.35 : 1,
+      width: s.size * (TOOL_WIDTH[s.tool] ?? 1),
+      opacity: strokeAlpha(s),
     });
   }
   return { viewBox: `0 0 ${saved.aspect.toFixed(4)} 1`, strokes, texts };

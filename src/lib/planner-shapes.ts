@@ -438,6 +438,16 @@ function isAxisAligned(verts: Pt[]) {
   });
 }
 
+/** Tail-to-tip, with the head folded back over the shaft. One stroke, so it retraces. */
+function arrowFrom(tail: Pt, tip: Pt, barbLen: number): Pt[] {
+  const shaft = dist(tail, tip);
+  const dir: Pt = [(tip[0] - tail[0]) / shaft, (tip[1] - tail[1]) / shaft];
+  const back = Math.atan2(-dir[1], -dir[0]);
+  const spread = 0.4; // ~23° either side
+  const barb = (a: number): Pt => [tip[0] + barbLen * Math.cos(a), tip[1] + barbLen * Math.sin(a)];
+  return [tail, tip, barb(back - spread), tip, barb(back + spread)];
+}
+
 /**
  * An arrow: a long shaft with a head folded back over it. Deliberately strict — a
  * checkmark and a "V" are two segments too, and neither should sprout an arrowhead.
@@ -458,12 +468,7 @@ function arrowPath(verts: Pt[]): Pt[] | null {
     if (bx * dir[0] + by * dir[1] > -0.4) return null; // must fold back over the shaft
     barbLen += len;
   }
-  barbLen = Math.min(barbLen / (verts.length - 2), 0.32 * shaft);
-  const back = Math.atan2(-dir[1], -dir[0]);
-  const spread = 0.4; // ~23° either side
-  const barb = (a: number): Pt => [tip[0] + barbLen * Math.cos(a), tip[1] + barbLen * Math.sin(a)];
-  // Retracing the tip is how a single stroke draws two barbs.
-  return [tail, tip, barb(back - spread), tip, barb(back + spread)];
+  return arrowFrom(tail, tip, Math.min(barbLen / (verts.length - 2), 0.32 * shaft));
 }
 
 // ---- recognition -----------------------------------------------------------------
@@ -571,6 +576,99 @@ export function recognizeShape(
   }
   return null;
 }
+
+// ---- drawn on purpose ------------------------------------------------------------
+//
+// Recognition is for when you'd rather just sketch. When you've said which shape you
+// want, there's nothing to guess: the shape is rebuilt from the two ends of the drag on
+// every move, so what you see while dragging is exactly what gets committed. It's built
+// here rather than in the viewer for the same reason recognition is — one place that
+// knows how a shape is shaped, in square space, so a circle is round.
+
+/** The shapes you can drag out directly. */
+export type DragShape = "line" | "arrow" | "rectangle" | "ellipse" | "triangle";
+
+/** Below this diagonal (square space) a drag is a tap, and a tap shouldn't leave a dot. */
+export const MIN_DRAG = 0.015;
+
+export const DRAG_SHAPES: DragShape[] = ["line", "arrow", "rectangle", "ellipse", "triangle"];
+
+/** Snap a direction to the nearest 45°, keeping its length. */
+function toEighth(from: Pt, to: Pt): Pt {
+  const len = dist(from, to);
+  if (len < 1e-9) return to;
+  const step = Math.PI / 4;
+  const a = Math.round(Math.atan2(to[1] - from[1], to[0] - from[0]) / step) * step;
+  return [from[0] + len * Math.cos(a), from[1] + len * Math.sin(a)];
+}
+
+/**
+ * The shape a drag from `from` to `to` describes, as stroke points.
+ *
+ * `constrain` is the Shift key: a square instead of a rectangle, a circle instead of an
+ * ellipse, and lines and arrows locked to 45°. Returns `null` while the drag is still too
+ * short to mean anything.
+ */
+export function dragShape(
+  kind: DragShape,
+  from: readonly [number, number],
+  to: readonly [number, number],
+  aspect: number,
+  { constrain = false, pressure = 0.5 }: { constrain?: boolean; pressure?: number } = {},
+): [number, number, number][] | null {
+  const a: Pt = [from[0] * aspect, from[1]];
+  let b: Pt = [to[0] * aspect, to[1]];
+  if (dist(a, b) < MIN_DRAG) return null;
+
+  if (constrain) {
+    if (kind === "line" || kind === "arrow") b = toEighth(a, b);
+    else {
+      // Equal in both directions, but still drawn towards the corner you dragged to.
+      const s = Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]));
+      b = [a[0] + Math.sign(b[0] - a[0] || 1) * s, a[1] + Math.sign(b[1] - a[1] || 1) * s];
+    }
+  }
+
+  const box: Box = {
+    x: Math.min(a[0], b[0]),
+    y: Math.min(a[1], b[1]),
+    w: Math.abs(b[0] - a[0]),
+    h: Math.abs(b[1] - a[1]),
+  };
+
+  let path: Pt[];
+  switch (kind) {
+    case "line":
+      path = [a, b];
+      break;
+    case "arrow":
+      // A short arrow gets a proportionally smaller head, a long one a capped head, so a
+      // page-wide arrow doesn't end in a spearhead.
+      path = arrowFrom(a, b, Math.min(0.28 * dist(a, b), 0.06));
+      break;
+    case "rectangle":
+      path = rectPath(box);
+      break;
+    case "ellipse":
+      path = ellipsePath(box);
+      break;
+    default: {
+      // Apex at the middle of the edge you started from, so the triangle points the way
+      // you dragged rather than always sitting upright.
+      const apex: Pt = [box.x + box.w / 2, a[1]];
+      path = closePath([apex, [box.x + box.w, b[1]], [box.x, b[1]]]);
+    }
+  }
+  return path.map(([x, y]) => [x / aspect, y, pressure] as [number, number, number]);
+}
+
+export const DRAG_SHAPE_LABEL: Record<DragShape, string> = {
+  line: "Line",
+  arrow: "Arrow",
+  rectangle: "Rectangle",
+  ellipse: "Ellipse",
+  triangle: "Triangle",
+};
 
 /** The drawn stroke, snapped if it turned out to be a shape. */
 export function snapStroke(s: Stroke, aspect: number): { stroke: Stroke; kind: ShapeKind | null } {

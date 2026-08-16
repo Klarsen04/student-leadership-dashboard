@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useSyncedSetting, type SettingSpec } from "@/lib/synced-setting";
 
 interface SemesterInfo {
   name: string;
@@ -45,22 +45,22 @@ function getDefaultSemester(): SemesterConfig {
   }
 }
 
-function getInitialConfig(): SemesterConfig {
-  if (typeof window === "undefined") return getDefaultSemester();
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) return JSON.parse(stored);
-  } catch {}
-  return getDefaultSemester();
-}
+// Term dates follow the account (src/lib/synced-setting.ts). The fallback is
+// computed rather than constant — it guesses the current term from today's date —
+// so it's resolved once here instead of on every read.
+const SEMESTER: SettingSpec<SemesterConfig> = {
+  key: STORAGE_KEY,
+  fallback: getDefaultSemester(),
+  revive: (raw) => {
+    const c = raw as Partial<SemesterConfig> | null;
+    return c && typeof c.startDate === "string" && typeof c.endDate === "string"
+      ? { ...getDefaultSemester(), ...c }
+      : null;
+  },
+};
 
 export function useSemester() {
-  const [config, setConfig] = useState<SemesterConfig>(getInitialConfig);
-
-  const updateSemester = (newConfig: SemesterConfig) => {
-    setConfig(newConfig);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newConfig));
-  };
+  const { value: config, setValue: updateSemester } = useSyncedSetting(SEMESTER);
 
   const getInfo = (): SemesterInfo => {
     const now = new Date();

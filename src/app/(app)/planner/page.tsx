@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Hand,
   Pen,
+  Brush,
   Highlighter,
   Eraser,
   Undo2,
@@ -50,10 +51,17 @@ import {
   SendToBack,
   RotateCw,
   Shapes,
+  Slash,
+  ArrowUpRight,
+  Square,
+  Circle,
+  Triangle,
+  Wand2,
   Stamp,
   Download,
   FileText,
   FileImage,
+  FileUp,
   Files,
   Loader2,
 } from "lucide-react";
@@ -94,19 +102,30 @@ import {
   simplifyStroke,
   writeLocal,
 } from "@/lib/planner-ink";
-import { SHAPE_LABEL, snapStroke } from "@/lib/planner-shapes";
+import { isInkTool, marksPaper, routePointer, type InkTool, type InputMode, type Tool } from "@/lib/planner-input";
+import {
+  DRAG_SHAPE_LABEL,
+  DRAG_SHAPES,
+  dragShape,
+  SHAPE_LABEL,
+  snapStroke,
+  type DragShape,
+} from "@/lib/planner-shapes";
 import {
   type UserPlanner,
   PdfRenderer,
   USER_CATEGORY,
   createBlankNotebook,
   deleteUserPlanner,
+  attachPdf,
   duplicatePlanner,
   importPdf,
+  fileMissing,
   isOwned,
   listUserPlanners,
   renameUserPlanner,
   suggestedCopyName,
+  syncUserPlanners,
 } from "@/lib/planner-library";
 import {
   type TemplateDefinition,
@@ -142,6 +161,7 @@ import {
   capturePage,
   listUserTemplates,
   saveUserTemplate,
+  syncUserTemplates,
   templateImageUrl,
   templateImageUrlNow,
 } from "@/lib/planner-user-templates";
@@ -164,6 +184,7 @@ import {
   handleAt,
   pick,
   pickAt,
+  placementOffset,
   recolor,
   remove as removeSelected,
   reorder,
@@ -198,10 +219,14 @@ import {
   renameSavedElement,
   saveElement,
   stampElements,
+  syncSavedElements,
 } from "@/lib/planner-elements";
+import { ColorPickerButton } from "@/components/planner/ColorPicker";
 import { PageSidebar, THUMB_H } from "@/components/planner/PageSidebar";
+import { cachedThumb, paintThumb, thumbKey } from "@/lib/planner-thumbs";
 import { PageSetupDialog } from "@/components/planner/PageSetupDialog";
-import { drawStroke } from "@/lib/planner-render";
+import { TOOL_ALPHA, drawStroke, isFlattened, paintElements, paintStrokes, strokeAlpha } from "@/lib/planner-render";
+import { type EraserMode, ERASER_SIZES, eraseAt as eraseElements } from "@/lib/planner-erase";
 import {
   EXPORT_LONG_EDGE,
   annotatePdf,
@@ -221,7 +246,7 @@ const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-s
 // ---- page content ------------------------------------------------------------
 // Strokes and text boxes are normalised to the page (0..1 in both axes) so
 // content stays put at any screen size. See src/lib/planner-ink.ts.
-type Tool = "hand" | "pen" | "highlighter" | "eraser" | "text" | "select" | "shape";
+// What each pointer is allowed to do lives in src/lib/planner-input.ts.
 
 /**
  * One undoable step.
@@ -238,6 +263,61 @@ type HistoryOp =
 
 const PEN_COLORS = ["#1a1a1a", "#e03131", "#1971c2", "#2f9e44", "#f08c00", "#9c36b5"];
 const PEN_SIZES = [0.0012, 0.0022, 0.004]; // fine / medium / bold (fraction of page width)
+const HIGHLIGHTER_COLORS = ["#ffd43b", "#a9e34b", "#66d9e8", "#ffa8a8", "#d0bfff", "#ffc078"];
+
+/**
+ * Each drawing tool remembers its own colour, thickness and opacity.
+ *
+ * One shared colour was actively wrong once there was more than one pen: reaching for the
+ * highlighter gave you a black highlighter, and going back to the pen gave you a yellow
+ * pen. `text` is in here too, so a coloured heading doesn't change what your pen writes in.
+ */
+type InkPrefKey = InkTool | "shape" | "text";
+interface InkPref {
+  color: string;
+  size: number;
+  /** 0..1. Starts at the tool's own default — see TOOL_ALPHA. */
+  opacity: number;
+}
+
+const DEFAULT_INK_PREFS: Record<InkPrefKey, InkPref> = {
+  pen: { color: PEN_COLORS[0], size: PEN_SIZES[1], opacity: TOOL_ALPHA.pen },
+  pencil: { color: "#55504a", size: PEN_SIZES[1], opacity: TOOL_ALPHA.pencil },
+  marker: { color: PEN_COLORS[1], size: PEN_SIZES[1], opacity: TOOL_ALPHA.marker },
+  highlighter: { color: HIGHLIGHTER_COLORS[0], size: PEN_SIZES[1], opacity: TOOL_ALPHA.highlighter },
+  shape: { color: PEN_COLORS[0], size: PEN_SIZES[1], opacity: 1 },
+  text: { color: PEN_COLORS[0], size: TEXT_SIZES[1], opacity: 1 },
+};
+
+/** What to call each tool's ink in a tooltip. */
+const TOOL_NAME: Record<InkPrefKey, string> = {
+  pen: "Pen",
+  pencil: "Pencil",
+  marker: "Marker",
+  highlighter: "Highlighter",
+  shape: "Shape",
+  text: "Text",
+};
+
+/**
+ * The Shapes tool's palette. Keyed by shape rather than listed, so adding one to
+ * `DRAG_SHAPES` won't compile until it has an icon and a tooltip here — the picker can't
+ * quietly go one shape short of the library.
+ */
+const SHAPE_PICKER: Record<DragShape, { icon: typeof Slash; title: string }> = {
+  line: { icon: Slash, title: "Line — drag from end to end · hold Shift for 45°" },
+  arrow: { icon: ArrowUpRight, title: "Arrow — drag from tail to tip · hold Shift for 45°" },
+  rectangle: { icon: Square, title: "Rectangle — drag corner to corner · hold Shift for a square" },
+  ellipse: { icon: Circle, title: "Ellipse — drag corner to corner · hold Shift for a circle" },
+  triangle: { icon: Triangle, title: "Triangle — drag from the apex" },
+};
+
+/** Which tool's settings the ink controls are editing. Anything else falls back to the pen. */
+const prefKeyFor = (t: Tool): InkPrefKey =>
+  t === "shape" || t === "text" || isInkTool(t) ? (t as InkPrefKey) : "pen";
+
+/** What a stroke made by this tool is: the shape tool draws in ordinary pen ink. */
+const strokeToolFor = (t: Tool): Stroke["tool"] => (isInkTool(t) ? t : "pen");
 
 // ---- turning pages -----------------------------------------------------------
 // A planner runs to hundreds of pages and the interesting ones (the weekly and
@@ -251,6 +331,8 @@ const EDGE_FLIP = 0.07;
 const SWIPE_FLIP_PX = 55;
 /** Accumulated wheel/trackpad travel (px) that turns one page. */
 const WHEEL_FLIP_PX = 90;
+/** The rotate knob's size on screen (`w-7 h-7`), which its clamp onto the paper needs. */
+const KNOB_PX = 28;
 
 const inside = (h: Hotspot | Rect, x: number, y: number) =>
   x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h;
@@ -272,11 +354,17 @@ function PlannerRoot() {
   const [planners, setPlanners] = useState<PlannerInfo[] | null>(null);
   const [active, setActive] = useState<PlannerManifest | null>(null);
 
-  // The library is the shipped planners plus whatever this device has imported
-  // or duplicated. User notebooks come first so they're the first thing seen.
+  // The library is the shipped planners plus the user's own notebooks. Their
+  // notebooks come first so they're the first thing seen.
+  //
+  // This device's copy is shown as soon as it's read, then reconciled with the
+  // account: a notebook made on another device appears a moment later rather
+  // than the shelf sitting empty while the network answers.
   const reload = useCallback(async () => {
     const [builtIn, mine] = await Promise.all([fetchPlannerIndex(), listUserPlanners()]);
     setPlanners([...mine, ...builtIn]);
+    const synced = await syncUserPlanners();
+    setPlanners([...synced, ...builtIn]);
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
@@ -294,11 +382,19 @@ function PlannerRoot() {
       return;
     }
     let cancelled = false;
-    fetchPlannerManifest(info).then((m) => {
+    (async () => {
+      // An import synced from another device has no PDF here, so there's nothing
+      // to render. Send it to the library, which offers to add the file — better
+      // than opening a notebook that shows blank pages with no explanation.
+      if (await fileMissing(info)) {
+        if (!cancelled) router.replace("/planner?library=1");
+        return;
+      }
+      const m = await fetchPlannerManifest(info);
       if (!cancelled) setActive(m);
-    });
+    })();
     return () => { cancelled = true; };
-  }, [planners, urlPlanner, showLibrary]);
+  }, [planners, urlPlanner, showLibrary, router]);
 
   if (!planners) {
     return (
@@ -372,16 +468,56 @@ function PlannerLibrary({ planners, onOpen, onChanged }: {
     | null
   >(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  // Which import is waiting for a file, so the same picker serves both "import a
+  // new PDF" and "add the PDF for this one".
+  const attachTo = useRef<UserPlanner | null>(null);
 
   useEffect(() => setSelectedId(getSelectedPlannerId()), []);
 
   const sections = useMemo(() => groupByCategory(planners), [planners]);
   const shown = filter ? sections.filter((s) => s.category === filter) : sections;
 
+  // Imports that reached this device through the account without their PDF. The
+  // check reads IndexedDB, so it's done once per library load rather than per card.
+  const [missing, setMissing] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const ids: string[] = [];
+      for (const p of planners) if (await fileMissing(p)) ids.push(p.id);
+      if (alive) setMissing(new Set(ids));
+    })();
+    return () => { alive = false; };
+  }, [planners]);
+
+  /** Re-add the PDF for a notebook imported on another device. */
+  const onAttach = async (meta: UserPlanner, file: File) => {
+    const t = toast.loading(`Adding “${file.name}”…`);
+    try {
+      await attachPdf(meta, file);
+      await onChanged();
+      toast.success(`“${meta.name}” is ready on this device`, {
+        id: t,
+        description: "Your handwriting was waiting on your account.",
+      });
+      setSelectedPlannerId(meta.id);
+      onOpen(meta.id);
+    } catch (e: any) {
+      toast.error("Couldn't use that PDF", { id: t, description: e?.message?.slice(0, 180) });
+    }
+  };
+
   const onImport = async (file: File | undefined) => {
+    const attach = attachTo.current;
+    attachTo.current = null;
     if (!file) return;
     if (file.type && file.type !== "application/pdf") {
       toast.error("Please choose a PDF file.");
+      return;
+    }
+    if (attach) {
+      if (fileInput.current) fileInput.current.value = "";
+      await onAttach(attach, file);
       return;
     }
     setImporting(true);
@@ -529,10 +665,15 @@ function PlannerLibrary({ planners, onOpen, onChanged }: {
                       planner={p}
                       accent={accent}
                       current={p.id === selectedId}
+                      needsFile={missing.has(p.id)}
                       onOpen={() => onOpen(p.id)}
                       onDuplicate={() => askDuplicate(p)}
                       onDelete={isOwned(p) ? () => setDialog({ mode: "delete", planner: p }) : undefined}
                       onRename={isOwned(p) ? () => setDialog({ mode: "rename", planner: p }) : undefined}
+                      onAddFile={() => {
+                        attachTo.current = p as UserPlanner;
+                        fileInput.current?.click();
+                      }}
                     />
                   ))}
                 </div>
@@ -836,8 +977,19 @@ function NewNotebookDialog({ onClose, onCreate }: {
                   tint === t.value ? "ring-2 ring-offset-1 ring-[#c98a00] scale-110" : "border-black/15 hover:scale-105"
                 }`}
                 style={{ background: t.value }}
+                data-swatch={t.value}
+                aria-pressed={tint === t.value}
               />
             ))}
+            <ColorPickerButton
+              name="tint"
+              title="Any colour"
+              label="Paper colour"
+              color={tint}
+              onChange={setTint}
+              presets={PAPER_TINTS.map((t) => t.value)}
+              className="w-7 h-7 rounded-full ring-1 ring-black/15 flex items-center justify-center hover:scale-105 transition-transform"
+            />
           </div>
         </div>
 
@@ -885,14 +1037,15 @@ function SegmentButton({ active, onClick, icon, label, accent }: {
   );
 }
 
-function PlannerCard({ planner, accent, current, onOpen, onDuplicate, onDelete, onRename }: {
-  planner: PlannerInfo; accent: string; current: boolean; onOpen: () => void;
-  onDuplicate: () => void; onDelete?: () => void; onRename?: () => void;
+function PlannerCard({ planner, accent, current, needsFile, onOpen, onDuplicate, onDelete, onRename, onAddFile }: {
+  planner: PlannerInfo; accent: string; current: boolean; needsFile?: boolean; onOpen: () => void;
+  onDuplicate: () => void; onDelete?: () => void; onRename?: () => void; onAddFile?: () => void;
 }) {
   const [menu, setMenu] = useState(false);
   const owned = isOwned(planner); // an import, a copy, or a blank notebook
   const kind = (planner as UserPlanner).kind;
-  const pdfCover = Boolean(planner.pdfKey);
+  // No point asking pdf.js for a cover when the file isn't on this device.
+  const pdfCover = Boolean(planner.pdfKey) && !needsFile;
   const [cover, setCover] = useState<string | null>(null);
 
   // A duplicate reuses its source's WebP cover; a PDF has to render page 1.
@@ -906,9 +1059,11 @@ function PlannerCard({ planner, accent, current, onOpen, onDuplicate, onDelete, 
 
   const coverSrc = isPaperBacked(planner)
     ? paperSrc(planner.paper, planner.aspect, planner.tint)
-    : pdfCover
-      ? cover
-      : imageSrc(planner, 1);
+    : needsFile
+      ? null
+      : pdfCover
+        ? cover
+        : imageSrc(planner, 1);
   const badge = kind === "import" ? "Imported" : kind === "copy" ? "Copy" : kind === "blank" ? "Notebook" : null;
   const BadgeIcon = kind === "import" ? FilePlus2 : kind === "copy" ? Copy : NotebookPen;
 
@@ -916,7 +1071,15 @@ function PlannerCard({ planner, accent, current, onOpen, onDuplicate, onDelete, 
     <div
       className="group relative snap-start shrink-0 w-[230px] sm:w-[248px] rounded-3xl bg-white border border-black/5 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all p-3"
     >
-      <button onClick={onOpen} title={planner.credit ? `${planner.name} — ${planner.credit}` : planner.name} className="block w-full text-left">
+      <button
+        onClick={needsFile ? onAddFile : onOpen}
+        title={
+          needsFile
+            ? `“${planner.name}” was imported on another device — add the PDF here to open it`
+            : planner.credit ? `${planner.name} — ${planner.credit}` : planner.name
+        }
+        className="block w-full text-left"
+      >
         {/* Cover, contained so tall and wide planners both sit nicely */}
         <div className="relative h-[190px] flex items-center justify-center rounded-2xl bg-black/[0.02] overflow-hidden">
           {coverSrc ? (
@@ -927,6 +1090,14 @@ function PlannerCard({ planner, accent, current, onOpen, onDuplicate, onDelete, 
               className="max-h-full max-w-full object-contain rounded-lg shadow-[0_2px_10px_rgba(0,0,0,0.12)]"
               loading="lazy"
             />
+          ) : needsFile ? (
+            // Imported on another device: the notebook and its handwriting are on
+            // the account, but a PDF is too big to sync, so the file is re-added here.
+            <div className="px-4 text-center text-black/45">
+              <FileUp className="w-7 h-7 mx-auto mb-2 text-[#8A6DE9]" />
+              <p className="text-[12px] font-semibold text-black/60" style={MARKER}>Add the PDF</p>
+              <p className="text-[11px] mt-0.5 leading-snug">Imported on another device. Your handwriting is safe.</p>
+            </div>
           ) : (
             <div className="w-6 h-6 rounded-full border-2 border-black/10 border-t-[#8A6DE9] animate-spin" />
           )}
@@ -993,11 +1164,20 @@ function PlannerCard({ planner, accent, current, onOpen, onDuplicate, onDelete, 
       </button>
       {menu && (
         <div className="absolute top-12 right-4 z-10 w-48 rounded-xl bg-white border border-black/10 shadow-lg py-1 text-[13px]">
-          <MenuItem
-            icon={<Copy className="w-3.5 h-3.5" />}
-            label={owned ? "Duplicate" : "Make an editable copy"}
-            onClick={() => { setMenu(false); onDuplicate(); }}
-          />
+          {needsFile && onAddFile && (
+            <MenuItem
+              icon={<FileUp className="w-3.5 h-3.5" />}
+              label="Add the PDF"
+              onClick={() => { setMenu(false); onAddFile(); }}
+            />
+          )}
+          {!needsFile && (
+            <MenuItem
+              icon={<Copy className="w-3.5 h-3.5" />}
+              label={owned ? "Duplicate" : "Make an editable copy"}
+              onClick={() => { setMenu(false); onDuplicate(); }}
+            />
+          )}
           {onRename && <MenuItem icon={<Pencil className="w-3.5 h-3.5" />} label="Rename" onClick={() => { setMenu(false); onRename(); }} />}
           {onDelete && <MenuItem icon={<Trash2 className="w-3.5 h-3.5" />} label="Delete" danger onClick={() => { setMenu(false); onDelete(); }} />}
           {!owned && (
@@ -1063,6 +1243,14 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const [stickers, setStickers] = useState<SavedElement[]>([]);
   const [trayOpen, setTrayOpen] = useState(false);
   const [armedSticker, setArmedSticker] = useState<SavedElement | null>(null);
+  /**
+   * Content waiting to be put down: a paste, armed for placement. The next contact on the
+   * paper drops it there, and a ghost follows the pointer until then. Paste used to land the
+   * copy at the coordinates it was cut from — on another page, that's "somewhere near the
+   * top", nowhere near what you were looking at — and then the first press meant to nudge it
+   * into place started a fresh lasso instead.
+   */
+  const [armedPaste, setArmedPaste] = useState<PageElement[] | null>(null);
   /** A selection on its way into the tray, waiting for a name. */
   const [namingSticker, setNamingSticker] = useState<Omit<SavedElement, "id" | "createdAt"> | null>(null);
   /** Export menu open, and a running-export message for the busy overlay. */
@@ -1081,12 +1269,32 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   // in — except a blank notebook, which has nothing to navigate to.
   const [tool, setTool] = useState<Tool>(paperBacked ? "pen" : "hand");
   const [copying, setCopying] = useState(false);
-  const [color, setColor] = useState(PEN_COLORS[0]);
-  const [size, setSize] = useState(PEN_SIZES[1]);
+  /**
+   * Per-tool ink settings. The controls in the toolbar read and write the armed tool's
+   * entry, so `color`/`size`/`opacity` below are always "what this tool draws with".
+   */
+  const [inkPrefs, setInkPrefs] = useState<Record<InkPrefKey, InkPref>>(DEFAULT_INK_PREFS);
+  const prefKey = prefKeyFor(tool);
+  const { color, size, opacity } = inkPrefs[prefKey];
+  const setPref = (patch: Partial<InkPref>, key: InkPrefKey = prefKey) =>
+    setInkPrefs((p) => ({ ...p, [key]: { ...p[key], ...patch } }));
+  const setColor = (c: string) => setPref({ color: c });
+  const setSize = (s: number) => setPref({ size: s });
+  /** Which way the eraser works, and how big its tip is. */
+  const [eraserMode, setEraserMode] = useState<EraserMode>("precise");
+  const [eraserSize, setEraserSize] = useState(ERASER_SIZES[1]);
   const [font, setFont] = useState(PLANNER_FONTS[0].key);
-  const [textSize, setTextSize] = useState(TEXT_SIZES[1]);
+  const textSize = inkPrefs.text.size;
+  const setTextSize = (s: number) => setPref({ size: s }, "text");
   const [saveState, setSaveState] = useState<"saved" | "saving" | "unsaved" | "offline">("saved");
   const [boxSize, setBoxSize] = useState({ w: 0, h: 0 });
+  /**
+   * The selection's action bar, measured: it has to be kept on the paper, and how far in it
+   * has to sit depends on how wide it is (which the colour picker and the sticker button make
+   * a matter of the build, not a number worth hardcoding).
+   */
+  const selBarRef = useRef<HTMLDivElement>(null);
+  const [selBarSize, setSelBarSize] = useState({ w: 240, h: 36 });
   /**
    * How much of the page is in view. A pure view transform — see
    * src/lib/planner-viewport.ts — so nothing here is ever written to a page.
@@ -1101,16 +1309,46 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const rerender = useCallback(() => forceRender((n) => n + 1), []);
 
   const boxRef = useRef<HTMLDivElement>(null);
+  /**
+   * The room the page has to fit into, measured rather than guessed.
+   *
+   * The paper is `aspect-ratio` + `width: 100%` capped by a max-width, and the cap is what
+   * keeps its shape: too generous a cap and `max-h-full` clamps the height while the width
+   * stays where it was, which stretches the page. A guess at the chrome's height ("viewport
+   * minus 150px") was 56px out, so every page rendered ~7% wide — circles weren't round,
+   * the eraser tip wasn't circular, and on-screen ink disagreed with the export, which
+   * measures against the paper. This is the frame's own content height, so the cap is
+   * exact on any screen and after any toolbar reflow.
+   */
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [frameH, setFrameH] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   /**
    * Committed strokes are painted once to this offscreen canvas and blitted each frame;
-   * only the live stroke is repainted on top. Without it, drawing on a page that already
-   * holds thousands of strokes repaints every one of them on every pointer move. It's
-   * rebuilt (flagged by `inkCacheDirty`) only when the committed set, the page size or
-   * the zoom actually changes.
+   * the stroke being written goes on its own layer above. Without it, drawing on a page
+   * that already holds thousands of strokes repaints every one of them on every pointer
+   * move. It's rebuilt only when the committed set, the page size or the zoom changes.
    */
   const inkCacheRef = useRef<HTMLCanvasElement | null>(null);
-  const inkCacheDirty = useRef(true);
+  /**
+   * The element list the cache was painted from. Invalidation is by *identity*, not a
+   * flag someone has to remember to set: every path that changes a page swaps in a
+   * fresh array, so anything that repaints is compared against this and rebuilt when
+   * it differs. The flag version silently missed undo — the cache still held the
+   * stroke you'd just taken back, and it stayed on screen until the next edit.
+   */
+  const inkCachePainted = useRef<PageElement[] | null>(null);
+  /**
+   * The stroke being drawn right now lives on its own canvas above the committed ink,
+   * and only the newest segments are painted to it. Nothing is cleared and nothing is
+   * blitted while the pen is down, so the cost of a frame is the length of the last
+   * flick rather than the length of the whole stroke.
+   */
+  const liveCanvasRef = useRef<HTMLCanvasElement>(null);
+  /** The ring showing where the eraser will rub, moved without re-rendering. */
+  const eraserTipRef = useRef<HTMLDivElement>(null);
+  /** How many of the live stroke's points have already been painted. */
+  const livePainted = useRef(0);
   /** The background <img>, so a page can be captured as a template. */
   const bgImgRef = useRef<HTMLImageElement>(null);
   const pageRef = useRef(page);
@@ -1124,7 +1362,19 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryAttempt = useRef(0);
   const lastToastAt = useRef(0);
-  const drawingPointer = useRef<number | null>(null);
+  /**
+   * The gesture in progress: which pointer owns the page, and what it's doing. One at
+   * a time (a pinch is the exception, handled on its own). Every pointer event checks
+   * this before acting, which is what stops a second pointer — a palm, a stray finger
+   * — being handled as if it were the one writing.
+   *
+   * `rect` is the page box as it was when the gesture began: it can't change mid-
+   * gesture (nothing pans or zooms while a pointer owns the page), so measuring it
+   * once keeps a layout read out of the per-move path.
+   */
+  const gestureRef = useRef<{ id: number; mode: InputMode; rect: DOMRect } | null>(null);
+  /** True while a pointer is marking the paper, so chrome can ignore a resting hand. */
+  const drawingRef = useRef(false);
   const rendererRef = useRef<PdfRenderer | null>(null);
   /** A high-resolution PDF renderer used only while exporting. */
   const exportRendererRef = useRef<PdfRenderer | null>(null);
@@ -1157,10 +1407,28 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   /** The sticker armed to be stamped, mirrored so the pointer handler sees it at once. */
   const armedStickerRef = useRef<SavedElement | null>(null);
   armedStickerRef.current = armedSticker;
+  /** The paste waiting to be placed, mirrored for the same reason. */
+  const armedPasteRef = useRef<PageElement[] | null>(null);
+  armedPasteRef.current = armedPaste;
+  /** Where the ghost of an armed paste is being drawn, so hover can rub it out again. */
+  const ghostAt = useRef<[number, number] | null>(null);
+  /** The tool the paste was armed under, so arming's own switch to Select isn't a change. */
+  const armedTool = useRef<Tool | null>(null);
   /** Set when the stroke being drawn is one the Shapes tool will snap on release. */
   const snapping = useRef(false);
   const [snapped, setSnapped] = useState<string | null>(null);
   const snapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Which shape the Shapes tool makes: one you name and drag out, or "auto", where you
+   * sketch it and recognition decides. Named is the reliable one and the default —
+   * recognition can always decline, and a tool that sometimes refuses is a poor way to
+   * draw a box you definitely want.
+   */
+  const [shapeKind, setShapeKind] = useState<DragShape | "auto">("rectangle");
+  const shapeKindRef = useRef(shapeKind);
+  shapeKindRef.current = shapeKind;
+  /** A named shape being dragged out: where it started, and how hard. */
+  const shapeDrag = useRef<{ from: [number, number]; pressure: number } | null>(null);
   /**
    * A transform in progress. `from` is the page as it was when the gesture started
    * and every frame is computed from it, so a long drag can't accumulate rounding
@@ -1246,17 +1514,46 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     return thumbRendererRef.current.page(sourcePage);
   }, [planner.pdfKey]);
 
-  // The user's own templates, so a page can reference one by id.
+  /**
+   * A content stamp per slot, so the rail can tell which page's thumbnail is stale.
+   * Bumped wherever a page's elements are replaced — writing, erasing, undo, redo,
+   * pasting, duplicating, clearing — and the tick that follows is debounced, because a
+   * single eraser drag replaces the page's elements many times over.
+   */
+  const inkVersions = useRef(new Map<number, number>());
+  const [thumbTick, setThumbTick] = useState(0);
+  const thumbTimer = useRef<number | null>(null);
+  const bumpThumb = useCallback((s: number) => {
+    inkVersions.current.set(s, (inkVersions.current.get(s) ?? 0) + 1);
+    if (thumbTimer.current !== null) return;
+    thumbTimer.current = window.setTimeout(() => {
+      thumbTimer.current = null;
+      setThumbTick((t) => t + 1);
+    }, 180);
+  }, []);
+  useEffect(() => () => { if (thumbTimer.current !== null) window.clearTimeout(thumbTimer.current); }, []);
+
+  /** Put a slot's content in the cache. The one place that happens, so the rail can't
+   *  be left showing a thumbnail of what a page used to hold. */
+  const putSlot = useCallback((s: number, els: PageElement[]) => {
+    cacheRef.current.set(s, els);
+    bumpThumb(s);
+  }, [bumpThumb]);
+
+  // The user's own templates, so a page can reference one by id. Pulled from the
+  // account, so a template made on one device is there on the next.
   useEffect(() => {
     let alive = true;
-    listUserTemplates().then((t) => { if (alive) setCustomTemplates(t); });
+    listUserTemplates().then((t) => { if (alive && t.length) setCustomTemplates(t); });
+    syncUserTemplates().then((t) => { if (alive) setCustomTemplates(t); });
     return () => { alive = false; };
   }, []);
 
-  // The user's saved stickers, shared across every notebook on this device.
+  // The user's saved stickers, shared across every notebook and every device.
   useEffect(() => {
     let alive = true;
-    listSavedElements().then((s) => { if (alive) setStickers(s); });
+    listSavedElements().then((s) => { if (alive && s.length) setStickers(s); });
+    syncSavedElements().then((s) => { if (alive) setStickers(s); });
     return () => { alive = false; };
   }, []);
 
@@ -1305,6 +1602,29 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     };
   }, []);
 
+  // While the pen is marking the paper, a touch landing anywhere else is the hand
+  // holding the tablet steady — not a button press. It's swallowed in the capture phase,
+  // before it reaches whatever it came down on, along with the click the browser would
+  // synthesise from it. That's what stops the toolbar and the page rail being pressed at
+  // random while writing near them.
+  //
+  // Deliberately narrow: only touch, only while a stroke is actually in progress, and
+  // never for the page box, which sorts its own pointers out. Nothing about the UI
+  // changes the rest of the time — it stays as clickable as it ever was.
+  useEffect(() => {
+    const swallow = (e: Event) => {
+      if (!drawingRef.current) return;
+      const pt = (e as PointerEvent).pointerType;
+      if (pt && pt !== "touch") return; // a real stylus or mouse elsewhere is meant
+      if (boxRef.current?.contains(e.target as Node)) return;
+      e.stopPropagation();
+      e.preventDefault();
+    };
+    const types = ["pointerdown", "mousedown", "click"];
+    for (const t of types) document.addEventListener(t, swallow, true);
+    return () => { for (const t of types) document.removeEventListener(t, swallow, true); };
+  }, []);
+
   // Opening a different notebook starts fitted. Turning a page deliberately does
   // *not*: staying zoomed is what lets you write the same corner of one page after
   // another without setting the zoom up again each time.
@@ -1340,7 +1660,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (canvas.width !== pw || canvas.height !== ph) {
       canvas.width = pw;
       canvas.height = ph;
-      inkCacheDirty.current = true; // a resize invalidates the cached bitmap
+      inkCachePainted.current = null; // a resize invalidates the cached bitmap
     }
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -1354,8 +1674,9 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       c.clip();
     };
 
-    // Rebuild the committed-stroke cache only when something it depends on changed.
-    if (inkCacheDirty.current) {
+    // Rebuild the committed-stroke cache only when the set it was painted from is no
+    // longer the set on the page — see `inkCachePainted`.
+    if (inkCachePainted.current !== elementsRef.current) {
       let cache = inkCacheRef.current;
       if (!cache) { cache = document.createElement("canvas"); inkCacheRef.current = cache; }
       if (cache.width !== pw || cache.height !== ph) { cache.width = pw; cache.height = ph; }
@@ -1365,10 +1686,12 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
         cc.clearRect(0, 0, rect.width, rect.height);
         cc.save();
         clipPaper(cc);
-        for (const el of elementsRef.current) if (isStroke(el)) drawStroke(cc, el, rect.width, rect.height);
+        // Through `paintStrokes`, so a pencil or a highlighter is laid down whole and
+        // looks the same here as it does in an export.
+        paintStrokes(cc, elementsRef.current.filter(isStroke), rect.width, rect.height);
         cc.restore();
       }
-      inkCacheDirty.current = false;
+      inkCachePainted.current = elementsRef.current;
     }
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1381,12 +1704,8 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       ctx.drawImage(inkCacheRef.current, 0, 0);
       ctx.restore();
     }
-    if (liveRef.current) {
-      ctx.save();
-      clipPaper(ctx);
-      drawStroke(ctx, liveRef.current, rect.width, rect.height);
-      ctx.restore();
-    }
+    // The stroke in progress isn't painted here at all — it has its own canvas above
+    // this one (see `paintLive`), so a pointer move never touches the committed ink.
 
     // Selection furniture, drawn outside the clip: a lasso often strays over a
     // margin on its way round a word, and cutting it off there looks broken.
@@ -1427,6 +1746,128 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     }
   }, [pageGeom]);
 
+  /**
+   * Paint the stroke being written, on its own canvas above the committed ink.
+   *
+   * Only the points added since the last call are drawn: nothing is cleared, nothing is
+   * blitted, and no React state is touched — so the cost of a frame is the last flick of
+   * the pen rather than the length of the stroke or the contents of the page. Called
+   * straight from the pointer handler rather than on a frame callback, because the move
+   * events are already delivered a frame at a time and waiting for another one only adds
+   * latency. Called with no live stroke, it wipes the layer.
+   */
+  const paintLive = useCallback(() => {
+    const canvas = liveCanvasRef.current;
+    const box = boxRef.current;
+    if (!canvas || !box) return;
+    // The box can't move or resize mid-gesture, so the rect measured at pointerdown is
+    // still good — that keeps a layout read out of the hot path.
+    const rect = gestureRef.current?.rect ?? box.getBoundingClientRect();
+    const dpr = inkPixelRatio(rect.width, rect.height, window.devicePixelRatio || 1);
+    const pw = Math.round(rect.width * dpr);
+    const ph = Math.round(rect.height * dpr);
+    if (canvas.width !== pw || canvas.height !== ph) {
+      canvas.width = pw;
+      canvas.height = ph;
+      livePainted.current = 0; // a resized backing store is a blank one
+    }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const live = liveRef.current;
+    if (!live) {
+      ctx.clearRect(0, 0, rect.width, rect.height);
+      canvas.style.opacity = "1";
+      canvas.style.mixBlendMode = "normal";
+      livePainted.current = 0;
+      return;
+    }
+    // A see-through stroke (pencil, highlighter, anything with its opacity turned down)
+    // is painted at full strength and the *layer* is made see-through, exactly as
+    // `paintStrokes` flattens it when it's committed. Painting each new segment at a
+    // fraction of alpha instead would darken every join as the pen slowed down, and the
+    // stroke would visibly change the moment you lifted the pen.
+    const flat = isFlattened(live);
+    canvas.style.opacity = flat ? String(strokeAlpha(live)) : "1";
+    canvas.style.mixBlendMode = live.tool === "highlighter" ? "multiply" : "normal";
+    if (livePainted.current === 0) ctx.clearRect(0, 0, rect.width, rect.height);
+    if (live.points.length <= livePainted.current) return;
+    const wa = writeAreaRef.current;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(wa.x * rect.width, wa.y * rect.height, wa.w * rect.width, wa.h * rect.height);
+    ctx.clip();
+    drawStroke(ctx, flat ? { ...live, opacity: 1 } : live, rect.width, rect.height, livePainted.current);
+    ctx.restore();
+    livePainted.current = live.points.length;
+  }, []);
+
+  /**
+   * A see-through preview of an armed paste, following the pointer. Drawn on the live
+   * layer, which is idle while something is armed (a press places it rather than drawing),
+   * and from the same `placementOffset` the placement itself uses — so the ghost isn't an
+   * approximation of where it will land, it's a picture of it.
+   */
+  const paintGhost = useCallback((x: number | null, y = 0) => {
+    const canvas = liveCanvasRef.current;
+    const box = boxRef.current;
+    if (!canvas || !box) return;
+    const rect = box.getBoundingClientRect();
+    const dpr = inkPixelRatio(rect.width, rect.height, window.devicePixelRatio || 1);
+    const pw = Math.round(rect.width * dpr);
+    const ph = Math.round(rect.height * dpr);
+    if (canvas.width !== pw || canvas.height !== ph) { canvas.width = pw; canvas.height = ph; }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    canvas.style.opacity = "1";
+    canvas.style.mixBlendMode = "normal";
+    const clip = armedPasteRef.current;
+    if (x === null || !clip?.length) { ghostAt.current = null; return; }
+    const off = placementOffset(clip, x, y, pageGeom(), writeAreaRef.current);
+    const ghost = translate(clip, new Set(clip.map((el) => elementId(el))), off.dx, off.dy);
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    paintElements(ctx, ghost, rect.width, rect.height);
+    ctx.restore();
+    ghostAt.current = [x, y];
+  }, [pageGeom]);
+
+  /**
+   * A repaint at most once a frame. The pointer handlers that redraw whole-canvas
+   * furniture — a lasso being swept, an eraser rubbing strokes out — go through this, so
+   * a fast pointer can't queue up more full repaints than the display can show.
+   */
+  const redrawFrame = useRef(0);
+  const scheduleRedraw = useCallback(() => {
+    if (redrawFrame.current) return;
+    redrawFrame.current = requestAnimationFrame(() => {
+      redrawFrame.current = 0;
+      redraw();
+    });
+  }, [redraw]);
+  useEffect(() => () => { if (redrawFrame.current) cancelAnimationFrame(redrawFrame.current); }, []);
+
+  /**
+   * The style a new stroke starts out with: the tool it was drawn by, and that tool's own
+   * colour, thickness and opacity. `opacity` is left off when it's the tool's default, so
+   * a stroke drawn now serialises exactly as one drawn before the control existed.
+   */
+  const strokeStyle = useCallback(
+    (t: Tool): Omit<Stroke, "points"> => {
+      const pref = inkPrefs[prefKeyFor(t)];
+      const tool = strokeToolFor(t);
+      return {
+        tool,
+        color: pref.color,
+        size: pref.size,
+        ...(pref.opacity === TOOL_ALPHA[tool] ? {} : { opacity: pref.opacity }),
+      };
+    },
+    [inkPrefs],
+  );
+
   // The page box's *layout* size — its size at zoom 1, which is what normalised
   // coordinates are a fraction of. Deliberately not the bounding rect: that one
   // carries the zoom transform, and a text box's font size would then be scaled
@@ -1446,6 +1887,31 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     ro.observe(box);
     return () => ro.disconnect();
   }, [redraw]);
+
+  // How tall the page may be. Watching the frame rather than the page avoids the loop the
+  // other way round: the frame is `flex-1` inside a fixed-height column, so its size never
+  // depends on the page's. `contentRect` is inside the padding, which is what the page's
+  // own `max-h-full` resolves against.
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const ro = new ResizeObserver(([entry]) => setFrameH(entry.contentRect.height));
+    ro.observe(frame);
+    return () => ro.disconnect();
+  }, []);
+
+  // The action bar's own size, so the clamp that keeps it on the paper knows how far in it
+  // has to sit. Measured while it's up: it only exists when something is selected.
+  useEffect(() => {
+    const el = selBarRef.current;
+    if (!el) return;
+    const measure = () => setSelBarSize((s) =>
+      s.w === el.offsetWidth && s.h === el.offsetHeight ? s : { w: el.offsetWidth, h: el.offsetHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [selection]);
 
   // Zoom changes the canvas's displayed size without touching its layout size, so
   // the observer above can't see it: resize the backing store here instead.
@@ -1546,12 +2012,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       }
     }
     elementsRef.current = next;
-    cacheRef.current.set(forSlot, next);
-    inkCacheDirty.current = true; // committed set changed — the cached bitmap is stale
+    putSlot(forSlot, next);
     scheduleSave(forSlot);
     redraw();
     rerender();
-  }, [readOnly, redraw, rerender, scheduleSave, pushOp]);
+  }, [readOnly, redraw, rerender, scheduleSave, pushOp, putSlot]);
 
   // Recover any pages a previous session couldn't sync.
   useEffect(() => {
@@ -1576,7 +2041,10 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     setSelection(selectionRef.current);
     textHeights.current.clear();
     burstRef.current = null; // a typing session doesn't span pages
-    inkCacheDirty.current = true; // a new page's strokes need a fresh cache
+    // A page turn is the one case identity can't catch: flipping back to a page reuses
+    // the very array the cache was last painted from, while the bitmap now holds the
+    // page in between. Say so outright.
+    inkCachePainted.current = null;
 
     const cached = cacheRef.current.get(slot);
     if (cached) {
@@ -1589,7 +2057,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (local) {
       const parsed = parseElements(local.json);
       elementsRef.current = parsed;
-      cacheRef.current.set(slot, parsed);
+      putSlot(slot, parsed);
       redraw();
       rerender();
       setSaveState("unsaved");
@@ -1606,15 +2074,14 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
         const data = await res.json();
         if (cancelled) return;
         const parsed = parseElements(data.strokes);
-        cacheRef.current.set(slot, parsed);
+        putSlot(slot, parsed);
         elementsRef.current = parsed;
-        inkCacheDirty.current = true; // the fetched strokes replace the empty page
         redraw();
         rerender();
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [slot, planner.id, redraw, rerender, saveNow]);
+  }, [slot, planner.id, redraw, rerender, saveNow, putSlot]);
 
   // Render the current page's PDF page on demand. A page of this notebook that
   // isn't from the PDF (an inserted template page) resolves to an image instead,
@@ -1765,9 +2232,16 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (action === "paste") {
       const clip = getClipboard();
       if (!clip.length) return;
-      const { elements, ids: pasted } = addCopies(els, clip, { dx: 0.02, dy: 0.02 });
-      setElements(elements);
-      applySelection(pasted);
+      // Armed, not dropped: the next contact on the paper decides where it goes. Landing it
+      // straight away can only guess, and its old coordinates are the worst guess of all.
+      setTool("select");
+      applySelection(new Set());
+      setArmedSticker(null);
+      setArmedPaste(clip);
+      armedPasteRef.current = clip;
+      // Arming *is* a switch to Select, so remember what it was armed under: only a later
+      // change of tool means "never mind".
+      armedTool.current = "select";
       return;
     }
     if (!ids.size) return;
@@ -1799,10 +2273,16 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     }
   }, [applySelection, rerender, setElements]);
 
-  const recolorSelection = useCallback((c: string) => {
+  /**
+   * Recolour what's selected. `live` is for a colour being dragged in the picker: the
+   * whole drag is folded into one undo step, closed when the picker settles, so undo
+   * doesn't have to walk back through every shade the pointer passed over.
+   */
+  const recolorSelection = useCallback((c: string, live = false) => {
     if (!selectionRef.current.size) return;
-    setElements(recolor(elementsRef.current, selectionRef.current, c));
-  }, [setElements]);
+    if (live && !burstRef.current) beginBurst();
+    setElements(recolor(elementsRef.current, selectionRef.current, c), { history: !live });
+  }, [setElements, beginBurst]);
 
   // ---- stickers ----
   // A saved element is the selection's own strokes and text boxes, lifted into their
@@ -1849,6 +2329,41 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     setArmedSticker(null);
   }, [applySelection, setElements, beginBurst, endBurst]);
 
+  /**
+   * Put an armed paste down with its middle at a page-coordinate point, and hand it to the
+   * selection so it can be nudged, resized or rotated straight away — one undo step for the
+   * whole thing.
+   */
+  const placePasteAt = useCallback((clip: PageElement[], x: number, y: number) => {
+    const off = placementOffset(clip, x, y, pageGeom(), writeAreaRef.current);
+    const { elements, ids } = addCopies(elementsRef.current, clip, off);
+    beginBurst();
+    setElements(elements);
+    endBurst();
+    applySelection(ids);
+    setArmedPaste(null);
+    ghostAt.current = null;
+  }, [applySelection, setElements, beginBurst, endBurst, pageGeom]);
+
+  /**
+   * Change your mind about a paste: it stops waiting, and the ghost goes with it. Escape does
+   * this, and so does picking another tool — an armed paste that survived a tool change would
+   * swallow the first stroke of whatever you picked instead.
+   */
+  const cancelPaste = useCallback(() => {
+    if (!armedPasteRef.current) return;
+    armedPasteRef.current = null;
+    armedTool.current = null;
+    setArmedPaste(null);
+    paintGhost(null);
+  }, [paintGhost]);
+
+  /** Escape: nothing is waiting to be placed any more, sticker or paste. */
+  const cancelPlacement = useCallback(() => {
+    setArmedSticker(null);
+    cancelPaste();
+  }, [cancelPaste]);
+
   const renameSticker = useCallback((id: string, name: string) => {
     setStickers((prev) => prev.map((s) => (s.id === id ? { ...s, name: name.trim().slice(0, 40) || s.name } : s)));
     renameSavedElement(id, name).catch(() => {});
@@ -1876,6 +2391,31 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (local) return parseElements(local.json);
     return fetchSlot(planner.id, s);
   }, [planner.id]);
+
+  /**
+   * Thumbnails for the page rail: the handwriting on a page, painted small over the
+   * paper the rail already draws.
+   *
+   * `key` is the page's content identity, so the rail paints a version once and holds
+   * it — writing on one page never repaints the notebook. Only rows the rail can see
+   * ask for one, and the ink comes from the same cache/mirror/server ladder an export
+   * uses, so the page being written on costs nothing to keep current.
+   */
+  const pageInk = useMemo(() => ({
+    tick: thumbTick,
+    key: (pm: PageMeta, position: number) => {
+      const s = pm.slot ?? position;
+      return thumbKey(planner.id, s, inkVersions.current.get(s) ?? 0);
+    },
+    render: async (pm: PageMeta, position: number) => {
+      const s = pm.slot ?? position;
+      const key = thumbKey(planner.id, s, inkVersions.current.get(s) ?? 0);
+      const hit = cachedThumb(key);
+      if (hit !== undefined) return hit;
+      const els = await fetchInkFor(s);
+      return paintThumb(key, els, pageAspect(pm, planner), THUMB_H);
+    },
+  }), [thumbTick, planner, fetchInkFor]);
 
   /** The background image for a page, resolved at export resolution. */
   const exportBackground = useCallback(async (pm: PageMeta): Promise<HTMLImageElement | null> => {
@@ -2005,6 +2545,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
         }
         return;
       }
+      // Escape first cancels whatever is waiting to be put down, then lets a selection go.
+      if (e.key === "Escape" && (armedPasteRef.current || armedStickerRef.current)) {
+        cancelPlacement();
+        return;
+      }
       if (picked) {
         if (e.key === "Escape") { applySelection(new Set()); return; }
         if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); selAction("delete"); return; }
@@ -2021,13 +2566,21 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [page, go, zoomTo, readOnly, selAction, nudgeSelection, applySelection]);
+  }, [page, go, zoomTo, readOnly, selAction, nudgeSelection, applySelection, cancelPlacement]);
 
   // The selection belongs to the tool that made it: switching away lets it go, so
   // no invisible handles are left holding a page's ink.
   useEffect(() => {
     if (tool !== "select" && selectionRef.current.size) applySelection(new Set());
   }, [tool, applySelection]);
+
+  // A paste doesn't stay armed across a change of tool or a page turn: it would eat the next
+  // press, which by then means something else entirely. Arming switches to Select itself, so
+  // only a tool other than the one it was armed under counts as a change of mind.
+  useEffect(() => {
+    if (armedTool.current && armedTool.current !== tool) cancelPaste();
+  }, [tool, cancelPaste]);
+  useEffect(() => { cancelPaste(); }, [page, plannerId, cancelPaste]);
 
   useEffect(() => () => { if (snapTimer.current) clearTimeout(snapTimer.current); }, []);
 
@@ -2045,30 +2598,65 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   };
 
 
-  const shouldDraw = (e: React.PointerEvent) =>
-    !readOnly && (e.pointerType === "pen" || (e.pointerType === "mouse" && toolRef.current !== "hand"));
+  /** Take ownership of the page for this pointer, and keep the events coming. */
+  const beginGesture = (e: React.PointerEvent, mode: InputMode) => {
+    const rect = boxRef.current?.getBoundingClientRect() ?? new DOMRect(0, 0, 1, 1);
+    gestureRef.current = { id: e.pointerId, mode, rect };
+    drawingRef.current = marksPaper(mode);
+    // Capture on the box, not the event target: a text box or a handle under the
+    // pointer can be re-rendered mid-gesture, and capture on it would be lost.
+    boxRef.current?.setPointerCapture(e.pointerId);
+  };
 
+  /**
+   * The page coordinate of an event, measured against the gesture's own page rect — the
+   * box as it was when the gesture began, since it can't move while a pointer owns it.
+   * `rect` is passed explicitly where the gesture has already been handed back.
+   */
+  const gestureNorm = (
+    e: { clientX: number; clientY: number },
+    rect = gestureRef.current?.rect,
+  ): [number, number] => {
+    const r = rect ?? boxRef.current!.getBoundingClientRect();
+    return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
+  };
+
+  /**
+   * Rub out at one point. The whole drag is one undo step (a burst), so taking back an
+   * erase restores everything that gesture removed rather than one tip-width of it.
+   * Positions where the tip touched nothing don't reach `setElements` at all.
+   */
   const eraseAt = useCallback((x: number, y: number) => {
-    const R = 0.012; // eraser radius as a fraction of page width
-    const before = elementsRef.current;
-    const after = before.filter((el) => {
-      if (!isStroke(el)) return true;
-      return !el.points.some(([px, py]) => {
-        // Normalised coordinates squash the page, so the vertical distance is
-        // corrected by the aspect ratio of the page you're actually on.
-        const dx = px - x, dy = (py - y) / aspectRef.current;
-        return dx * dx + dy * dy < R * R;
-      });
-    });
-    if (after.length !== before.length) setElements(after);
-  }, [setElements]);
+    const next = eraseElements(
+      elementsRef.current,
+      { x, y, r: eraserSize, aspect: aspectRef.current },
+      eraserMode,
+    );
+    if (next) setElements(next, { history: false });
+  }, [eraserMode, eraserSize, setElements]);
+
+  /**
+   * Show the eraser's tip where the pointer is. Positioned straight from the pointer
+   * handler — no state, no re-render — so it keeps up with the pen. The tip is a circle
+   * on screen: its radius is in width units, so the height has to be corrected by the
+   * page's aspect ratio.
+   */
+  const showEraserTip = useCallback((x: number | null, y = 0) => {
+    const tip = eraserTipRef.current;
+    if (!tip) return;
+    if (x === null) { tip.style.display = "none"; return; }
+    const r = eraserSize;
+    tip.style.display = "block";
+    tip.style.left = `${x * 100}%`;
+    tip.style.top = `${y * 100}%`;
+    tip.style.width = `${r * 2 * 100}%`;
+    tip.style.height = `${r * 2 * aspectRef.current * 100}%`;
+  }, [eraserSize]);
 
   /** A pending tap from this pointer, recorded so a drag can pan and a tap can navigate. */
   const beginTap = (e: React.PointerEvent, opts: { chromeOnly: boolean; flip: boolean }) => {
+    beginGesture(e, "navigate");
     tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), lx: e.clientX, ly: e.clientY, ...opts };
-    // Zoomed in this pointer is going to pan, and a pan mustn't stop the moment it
-    // leaves the page box.
-    if (!isFit(viewRef.current)) boxRef.current?.setPointerCapture(e.pointerId);
   };
 
   /** Recompute a transform in progress from the snapshot it started with. */
@@ -2101,9 +2689,10 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (!b) return;
     e.stopPropagation();
     e.preventDefault();
-    const [x, y] = norm(e);
-    boxRef.current?.setPointerCapture(e.pointerId);
-    drawingPointer.current = e.pointerId;
+    // A handle is grabbed by whatever is nearest to hand — a finger as readily as the
+    // stylus — so this deliberately doesn't ask which kind of pointer it was.
+    beginGesture(e, "select");
+    const [x, y] = gestureNorm(e);
     beginBurst(); // the whole gesture is one undo step
     dragSel.current = { kind, handle, from: elementsRef.current, bounds: b, x, y };
   };
@@ -2111,42 +2700,59 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const onPointerDown = (e: React.PointerEvent) => {
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
 
+    // A palm or finger landing while the pen is marking the paper is the hand resting
+    // on it. It's swallowed here — and `preventDefault` matters as much as the early
+    // return, because without it the browser goes on to synthesise a tap, which is
+    // how a resting hand used to press whatever was under it.
+    if (drawingRef.current && e.pointerType === "touch") {
+      e.preventDefault();
+      return;
+    }
+
     // A second finger is a pinch, not a tap: two fingers zoom and pan the page.
     const touches = [...pointers.current.values()].filter((p) => p.type === "touch");
     if (touches.length >= 2) {
       tapStart.current = null;
+      gestureRef.current = null;
       const [a, b] = touches;
       pinch.current = { dist: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       return;
     }
 
-    // A finger or palm landing while the pen is writing is the hand resting on the
-    // page. Ignoring it outright is what stops a stroke turning into a page flip.
-    if (drawingPointer.current !== null && e.pointerType === "touch") return;
+    // A pointer already owns the page. A second one doesn't get to interfere.
+    if (gestureRef.current) return;
 
     const [x, y] = norm(e);
+    const mode = routePointer({ tool: toolRef.current, pointerType: e.pointerType, readOnly });
 
-    // Read-only planner: every input is navigation, whatever the tool says.
-    if (readOnly) {
-      beginTap(e, { chromeOnly: false, flip: true });
+    // A sticker or a paste armed for placement: the next contact on the paper puts it
+    // down. Off the paper (a tab or the margin) it's ignored, so it can't land where ink
+    // is clipped, and the tap goes on to mean whatever it usually means.
+    //
+    // This comes before every other branch on purpose. While something is armed the next
+    // contact has one meaning — "here" — whatever it's made with: a press mustn't start a
+    // lasso instead, and a finger mustn't turn the page out from under the thing it was
+    // about to place.
+    if (!readOnly && (armedStickerRef.current || armedPasteRef.current) && inkAllowed(x, y)) {
+      e.preventDefault();
+      if (armedStickerRef.current) stampAt(armedStickerRef.current, x, y);
+      else placePasteAt(armedPasteRef.current!, x, y);
       return;
     }
 
-    // A sticker armed for placement: the next tap on the paper stamps it. Off the
-    // paper (a tab or the margin) it's ignored, so it can't land where ink is clipped.
-    if (armedStickerRef.current && inkAllowed(x, y)) {
-      e.preventDefault();
-      stampAt(armedStickerRef.current, x, y);
+    // Anything that isn't marking the paper navigates: taps on tabs and day cells,
+    // page turns, and panning a zoomed page.
+    if (mode === "navigate") {
+      // A stylus in navigate mode is still a stylus: it may only work the printed
+      // furniture, never a writable day cell — unless the whole planner is read-only,
+      // where there's nothing to write on anyway.
+      beginTap(e, { chromeOnly: !readOnly && e.pointerType === "pen", flip: true });
       return;
     }
 
-    // Selection tool: grab what's already picked to move it, or sweep a new region.
-    // Fingers are left out deliberately — they go on panning and tapping tabs, so
-    // the page never feels locked while the tool is armed.
-    if (toolRef.current === "select" && shouldDraw(e)) {
+    if (mode === "select") {
       e.preventDefault();
-      boxRef.current?.setPointerCapture(e.pointerId);
-      drawingPointer.current = e.pointerId; // also makes a resting hand a no-op
+      beginGesture(e, "select");
       const b = selBoundsNow();
       if (b && boundsContain(b, x, y, 0.008)) {
         beginBurst();
@@ -2162,41 +2768,56 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     // Tapping the paper while a text box is selected just deselects it.
     if (selectedText) { setSelectedText(null); return; }
 
-    // Text tool: a tap on the paper drops a new box; taps elsewhere navigate.
-    if (toolRef.current === "text") {
+    if (mode === "text") {
       if (inkAllowed(x, y)) { e.preventDefault(); addTextAt(x, y); }
       else beginTap(e, { chromeOnly: e.pointerType === "pen", flip: false });
       return;
     }
 
-    if (e.pointerType === "touch" || !shouldDraw(e)) {
-      // Fingers and the hand tool navigate anywhere on the page — and pan it when
-      // there's more page than frame.
-      beginTap(e, { chromeOnly: false, flip: true });
-      return;
-    }
     if (!inkAllowed(x, y)) {
       // Landed on a tab or the outer margin: no ink here, but a tab tap counts.
       beginTap(e, { chromeOnly: true, flip: false });
       return;
     }
+
     e.preventDefault();
-    const activeTool = e.pointerType === "pen" && toolRef.current === "hand" ? "pen" : toolRef.current;
-    if (activeTool === "eraser") {
-      drawingPointer.current = e.pointerId;
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    beginGesture(e, mode);
+    if (mode === "erase") {
+      beginBurst(); // one drag of the eraser is one undo step
+      showEraserTip(x, y);
       eraseAt(x, y);
       return;
     }
-    drawingPointer.current = e.pointerId;
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    snapping.current = activeTool === "shape";
+    // A named shape is dragged out from here: the stroke is rebuilt from the two ends on
+    // every move rather than accumulating the path the pointer took.
+    const named = toolRef.current === "shape" && shapeKindRef.current !== "auto";
+    shapeDrag.current = named ? { from: [x, y], pressure: e.pressure || 0.5 } : null;
+    snapping.current = toolRef.current === "shape" && !named;
     liveRef.current = {
-      tool: activeTool === "highlighter" ? "highlighter" : "pen",
-      color, size,
+      ...strokeStyle(toolRef.current),
       points: [[x, y, e.pressure || 0.5]],
     };
-    redraw();
+    livePainted.current = 0;
+    paintLive();
+  };
+
+  /** Redraw the shape being dragged out, from where it started to where the pointer is. */
+  const trackShape = (to: [number, number], constrain: boolean) => {
+    const drag = shapeDrag.current;
+    const live = liveRef.current;
+    if (!drag || !live) return;
+    const kind = shapeKindRef.current;
+    if (kind === "auto") return;
+    const points = dragShape(kind, drag.from, to, aspectRef.current, {
+      constrain,
+      pressure: drag.pressure,
+    });
+    live.points = points ?? [[drag.from[0], drag.from[1], drag.pressure]];
+    // The whole shape changes shape every frame, so the live layer is repainted rather
+    // than extended. It's one shape of at most a hundred points — cheaper than the
+    // freehand path it replaces.
+    livePainted.current = 0;
+    paintLive();
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -2224,15 +2845,70 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       return;
     }
 
-    // A selection gesture: sweeping a region, or transforming what's picked.
-    if (drawingPointer.current === e.pointerId && (marquee.current || dragSel.current)) {
+    // The eraser tip follows a hovering pointer too, so you can see what it'll take
+    // before you touch the paper.
+    if (toolRef.current === "eraser" && !readOnly && !gestureRef.current && e.pointerType !== "touch") {
+      const [hx, hy] = norm(e);
+      showEraserTip(hx, hy);
+    }
+
+    // So does an armed paste, so you can see where it's about to land.
+    if (armedPasteRef.current && !gestureRef.current) {
+      const [hx, hy] = norm(e);
+      paintGhost(inkAllowed(hx, hy) ? hx : null, hy);
+    }
+
+    // From here on, only the pointer that owns the page is listened to, and only in the
+    // mode it claimed at pointerdown. This is what stops one gesture being handled as
+    // another: before, a palm's pan was checked ahead of the pen's own moves, so while
+    // zoomed in a resting hand quietly ate the stroke being written.
+    const g = gestureRef.current;
+    if (!g || g.id !== e.pointerId) return;
+
+    if (g.mode === "draw") {
       e.preventDefault();
-      const [x, y] = norm(e);
+      const live = liveRef.current;
+      if (!live) return;
+      if (shapeDrag.current) {
+        trackShape(gestureNorm(e), e.shiftKey);
+        return;
+      }
+      // Coalesced events give the full high-frequency pen path — every sample the
+      // digitiser took between frames, pressure included. Some inputs and browsers hand
+      // back an empty list, so fall back to the event itself.
+      const coalesced = (e.nativeEvent as PointerEvent).getCoalescedEvents?.();
+      const events = coalesced?.length ? coalesced : [e.nativeEvent as PointerEvent];
+      const { rect } = g;
+      for (const ev of events) {
+        live.points.push([
+          (ev.clientX - rect.left) / rect.width,
+          (ev.clientY - rect.top) / rect.height,
+          ev.pressure || 0.5,
+        ]);
+      }
+      // Straight to the canvas: no React state is touched while the pen is down, so
+      // nothing here re-renders the page.
+      paintLive();
+      return;
+    }
+
+    if (g.mode === "erase") {
+      e.preventDefault();
+      const [x, y] = gestureNorm(e);
+      showEraserTip(x, y);
+      eraseAt(x, y);
+      return;
+    }
+
+    // A selection gesture: sweeping a region, or transforming what's picked.
+    if (g.mode === "select") {
+      e.preventDefault();
+      const [x, y] = gestureNorm(e);
       const m = marquee.current;
       if (m) {
         if (m.mode === "rect") marquee.current = { mode: "rect", a: m.a, b: [x, y] };
         else m.points.push([x, y]);
-        redraw();
+        scheduleRedraw();
         return;
       }
       applyDrag(x, y, e.shiftKey);
@@ -2241,33 +2917,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
 
     // Zoomed in, a navigating pointer drags the page about.
     const tap = tapStart.current;
-    if (tap && !isFit(viewRef.current)) {
+    if (g.mode === "navigate" && tap && !isFit(viewRef.current)) {
       const dx = e.clientX - tap.lx, dy = e.clientY - tap.ly;
       tap.lx = e.clientX;
       tap.ly = e.clientY;
       if (dx || dy) setView((v) => panBy(v, dx, dy, layout()));
-      return;
-    }
-
-    if (drawingPointer.current !== e.pointerId) return;
-    e.preventDefault();
-    // Coalesced events give the full high-frequency pen path; some inputs and
-    // browsers hand back an empty list, so fall back to the event itself.
-    const coalesced = (e.nativeEvent as PointerEvent).getCoalescedEvents?.();
-    const events = coalesced?.length ? coalesced : [e.nativeEvent as PointerEvent];
-    const rect = boxRef.current!.getBoundingClientRect();
-    if (liveRef.current) {
-      for (const ev of events) {
-        liveRef.current.points.push([
-          (ev.clientX - rect.left) / rect.width,
-          (ev.clientY - rect.top) / rect.height,
-          ev.pressure || 0.5,
-        ]);
-      }
-      redraw();
-    } else {
-      const [x, y] = norm(e); // eraser drag
-      eraseAt(x, y);
     }
   };
 
@@ -2280,20 +2934,28 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       return;
     }
 
+    // Only the pointer holding the page finishes anything, and the page is handed back
+    // here — before any of the work below — so no mode can outlive the pointer that
+    // claimed it. Everything else (a palm that was swallowed, a stray finger) lifts
+    // without effect.
+    const g = gestureRef.current;
+    if (!g || g.id !== e.pointerId) return;
+    gestureRef.current = null;
+    drawingRef.current = false;
+
     // A selection gesture finishing.
-    if (marquee.current || dragSel.current) {
+    if (g.mode === "select") {
       const m = marquee.current;
       const transform = dragSel.current;
       marquee.current = null;
       dragSel.current = null;
-      if (drawingPointer.current === e.pointerId) drawingPointer.current = null;
       if (transform) {
         endBurst(); // the next gesture is a new undo step
         redraw();
         return;
       }
       if (!m) return;
-      const [x, y] = norm(e);
+      const [x, y] = gestureNorm(e, g.rect);
       const travel =
         m.mode === "rect"
           ? Math.hypot(m.b[0] - m.a[0], m.b[1] - m.a[1])
@@ -2309,11 +2971,33 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       return;
     }
 
-    if (drawingPointer.current === e.pointerId) {
-      drawingPointer.current = null;
-      if (liveRef.current) {
-        const live = liveRef.current;
-        liveRef.current = null;
+    if (g.mode === "draw") {
+      const live = liveRef.current;
+      liveRef.current = null;
+      // A named shape: what's on the live layer is already the shape, ideal points and
+      // all, so it's committed as it stands — no recognition, nothing to decline. A drag
+      // too short to be a shape commits nothing rather than leaving a dot behind.
+      const named = shapeDrag.current;
+      shapeDrag.current = null;
+      if (named && live) {
+        const kind = shapeKindRef.current;
+        const points =
+          kind === "auto"
+            ? null
+            : dragShape(kind, named.from, gestureNorm(e, g.rect), aspectRef.current, {
+                constrain: e.shiftKey,
+                pressure: named.pressure,
+              });
+        if (points) {
+          setElements([...elementsRef.current, { ...live, points }]);
+          setSnapped(kind === "auto" ? null : DRAG_SHAPE_LABEL[kind]);
+          if (snapTimer.current) clearTimeout(snapTimer.current);
+          snapTimer.current = setTimeout(() => setSnapped(null), 900);
+        }
+        paintLive();
+        return;
+      }
+      if (live) {
         // The Shapes tool: if the path was meant to be a circle, a box, a line or an
         // arrow, commit the ideal one instead. It's still a stroke either way — see
         // src/lib/planner-shapes.ts — so nothing downstream can tell the difference.
@@ -2324,10 +3008,21 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
           if (snapTimer.current) clearTimeout(snapTimer.current);
           snapTimer.current = setTimeout(() => setSnapped(null), 1200);
         }
+        // Commit first — that repaints the committed ink with this stroke in it — and
+        // only then wipe the live layer, so the stroke is never off both canvases at once.
         setElements([...elementsRef.current, snap?.kind ? snap.stroke : simplifyStroke(live)]);
       }
+      paintLive();
       return;
     }
+
+    if (g.mode === "erase") {
+      endBurst(); // the next drag is a new undo step
+      showEraserTip(null);
+      return;
+    }
+    if (g.mode === "text") return;
+
     // Tap navigation (finger, hand tool, or a stylus tap on a tab).
     const start = tapStart.current;
     tapStart.current = null;
@@ -2335,7 +3030,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     const dx = e.clientX - start.x;
     const dy = e.clientY - start.y;
     const moved = Math.hypot(dx, dy);
-    const [x, y] = norm(e);
+    const [x, y] = gestureNorm(e, g.rect);
     // Zoomed in, that drag was a pan and the edges are somewhere off-screen, so
     // neither gesture turns the page — the arrows and the page rail still do.
     const flip = start.flip && isFit(viewRef.current);
@@ -2366,7 +3061,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     const box = boxRef.current;
     if (!box) return;
     const onWheel = (e: WheelEvent) => {
-      if (drawingPointer.current !== null) return;
+      if (gestureRef.current) return; // a gesture owns the page; don't move it under them
       // Don't yank the page out from under someone scrolling a text box they're typing in.
       if ((e.target as HTMLElement)?.closest?.("textarea, input, [contenteditable='true']")) return;
 
@@ -2414,7 +3109,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     setSelectedText(null);
     if (op.kind === "content") {
       const next = direction === "undo" ? op.before : op.after;
-      cacheRef.current.set(op.slot, next);
+      putSlot(op.slot, next);
       scheduleSave(op.slot);
       // Undoing an edit you made on another page takes you back to it, so what
       // changes is always what you can see.
@@ -2433,7 +3128,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     savePageIndex(next).catch(() => {});
     setPage(Math.min(Math.max(1, direction === "undo" ? op.page : op.toPage), next.pages.length));
     rerender();
-  }, [redraw, rerender, scheduleSave]);
+  }, [redraw, rerender, scheduleSave, putSlot]);
 
   const undo = () => {
     const op = undoRef.current.pop();
@@ -2461,10 +3156,10 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
    * of this clear and put a deleted page's handwriting onto a brand new one.
    */
   const blankSlot = useCallback(async (s: number) => {
-    cacheRef.current.set(s, []);
+    putSlot(s, []);
     clearLocal(planner.id, s);
     await clearSlot(planner.id, s);
-  }, [planner.id]);
+  }, [planner.id, putSlot]);
 
   const applyPageOp = useCallback(async (
     label: string,
@@ -2515,16 +3210,26 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     };
   }, [planner]);
 
-  const duplicatePagesAt = useCallback(async (positions: number[]) => {
+  /**
+   * Duplicate pages, with or without what's written on them.
+   *
+   * Both are real operations on the same page metadata — same paper, colour, size and
+   * orientation — and they differ only in whether the handwriting comes too. A blank
+   * duplicate is how you use a page you've laid out as a form: a fresh copy to fill in,
+   * not a copy of last week's answers.
+   */
+  const duplicatePagesAt = useCallback(async (positions: number[], withContent = true) => {
     flushPending();
-    const res = duplicatePages(indexRef.current, positions);
-    if (!res.copies.length) return;
-    const targets = new Set(res.copies.map((c) => c.to));
+    const res = duplicatePages(indexRef.current, positions, { content: withContent });
+    if (!res.slots.length) return;
+    const targets = new Set(res.slots);
 
     // A recycled target can still hold a deleted page's handwriting. Blank it here,
     // before anything is copied in, so an empty source doesn't leave the old ink
     // sitting on the copy. applyPageOp is told to skip these for the same reason.
-    for (const s of res.clear) if (targets.has(s)) await blankSlot(s);
+    // For a blank duplicate every target is blanked, recycled or not, because "blank"
+    // has to be true of the page on the server as well as in this tab.
+    for (const s of res.slots) if (!withContent || res.clear.includes(s)) await blankSlot(s);
 
     // The copy we're about to land on needs its content in the cache *before* the
     // page changes: the loader would otherwise find the slot empty, show a blank
@@ -2535,11 +3240,13 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (landingCopy) {
       const content = cacheRef.current.get(landingCopy.from) ?? (await fetchSlot(planner.id, landingCopy.from));
       seeded.set(landingCopy.to, content);
-      cacheRef.current.set(landingCopy.to, content);
+      putSlot(landingCopy.to, content);
     }
 
     await applyPageOp(
-      res.copies.length > 1 ? `Duplicated ${res.copies.length} pages` : "Duplicated a page",
+      withContent
+        ? res.slots.length > 1 ? `Duplicated ${res.slots.length} pages` : "Duplicated a page"
+        : res.slots.length > 1 ? `Added ${res.slots.length} blank pages` : "Added a blank page",
       res.index,
       { toPage: res.at, clear: res.clear.filter((s) => !targets.has(s)) },
     );
@@ -2550,7 +3257,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     for (const { from, to } of res.copies) {
       const content = seeded.get(to) ?? cacheRef.current.get(from);
       if (content) {
-        cacheRef.current.set(to, content);
+        putSlot(to, content);
         if (content.length) await saveNow(to);
       } else if (!(await copySlot(planner.id, from, to))) {
         toast.error("The copy's handwriting didn't save — check your connection.");
@@ -2558,7 +3265,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     }
     redraw();
     rerender();
-  }, [applyPageOp, blankSlot, flushPending, planner.id, saveNow, redraw, rerender]);
+  }, [applyPageOp, blankSlot, flushPending, planner.id, saveNow, redraw, rerender, putSlot]);
 
   const deletePagesAt = useCallback((positions: number[]) => {
     const next = deletePages(indexRef.current, positions);
@@ -2620,8 +3327,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
 
   const ToolButton = ({ t, icon, title }: { t: Tool; icon: React.ReactNode; title: string }) => (
     <button
-      onClick={() => { setTool(t); setSelectedText(null); }}
+      onClick={() => { setTool(t); setSelectedText(null); if (t !== "eraser") showEraserTip(null); }}
       title={title}
+      // A stable handle for tests: the tooltip explains the tool, so its wording changes.
+      data-tool={t}
+      aria-pressed={tool === t}
       className={`p-2 rounded-xl transition-colors ${tool === t ? "bg-[#FFB400] text-black shadow-sm" : "text-black/50 hover:bg-black/5"}`}
     >
       {icon}
@@ -2629,10 +3339,14 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   );
 
   const textBoxes = elementsRef.current.filter(isText);
-  const showInkControls = tool === "pen" || tool === "highlighter" || tool === "shape";
+  const showInkControls = isInkTool(tool) || tool === "shape";
+  /** The swatches offered for the armed tool: a highlighter wants bright, not black. */
+  const swatches = tool === "highlighter" ? HIGHLIGHTER_COLORS : PEN_COLORS;
   // The box round the selection, in page coordinates: where the handles and the
   // action bar hang. Recomputed each render, so it follows a drag frame by frame.
   const selBounds = tool === "select" && selection.size ? selectionBounds(elementsRef.current, selection, pageGeom()) : null;
+  /** What the selection is currently coloured, so the picker opens on it rather than black. */
+  const selectionColor = selBounds ? selectedElements(elementsRef.current, selection)[0]?.color : undefined;
   /**
    * Selection furniture counter-scales with the zoom, so a handle stays the size of
    * a finger at 6× instead of covering a quarter of the page. `scale()` comes first
@@ -2640,6 +3354,29 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
    * handle centred on its corner and the bar a constant gap above the box.
    */
   const unzoom = (offset: string) => `scale(${1 / view.z}) ${offset}`;
+
+  /**
+   * A screen size, as a fraction of the page. Selection furniture is counter-scaled, so its
+   * footprint on the page shrinks as you zoom in — which is why the zoom is in here.
+   */
+  const asFraction = (px: number, axis: "w" | "h") =>
+    boxSize[axis] ? px / (view.z * boxSize[axis]) : 0;
+
+  /**
+   * Where the knob and the action bar are anchored. Both hang *outside* the selection's box,
+   * and the paper clips what leaves it (`overflow-hidden`), so writing along an edge used to
+   * put its own controls off the page: a stroke at the foot of a page had its rotate knob cut
+   * off and simply couldn't be turned. The anchors are pulled back inside instead — at the
+   * page's edge the control overlaps the selection rather than disappearing off it.
+   */
+  const knobAnchor = selBounds && {
+    x: Math.min(Math.max(selBounds.x + selBounds.w / 2, asFraction(KNOB_PX / 2, "w")), 1 - asFraction(KNOB_PX / 2, "w")),
+    y: Math.min(selBounds.y + selBounds.h, 1 - asFraction(KNOB_PX * 1.6, "h")),
+  };
+  const barAnchor = selBounds && {
+    x: Math.min(Math.max(selBounds.x + selBounds.w / 2, asFraction(selBarSize.w / 2, "w")), 1 - asFraction(selBarSize.w / 2, "w")),
+    y: Math.max(selBounds.y, asFraction(selBarSize.h * 1.2, "h")),
+  };
 
   return (
     // The viewer owns the viewport: a definite height is what lets the page rail
@@ -2687,115 +3424,14 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
         ) : (
           <div className="flex items-center gap-0.5 rounded-2xl bg-black/[0.04] p-0.5">
             <ToolButton t="hand" icon={<Hand className="w-4 h-4" />} title="Navigate (tap tabs & days)" />
-            <ToolButton t="pen" icon={<Pen className="w-4 h-4" />} title="Pen" />
-            <ToolButton t="highlighter" icon={<Highlighter className="w-4 h-4" />} title="Highlighter" />
-            <ToolButton t="shape" icon={<Shapes className="w-4 h-4" />} title="Shapes — draw roughly and it snaps to a circle, box, triangle, line or arrow" />
+            <ToolButton t="pen" icon={<Pen className="w-4 h-4" />} title="Pen — crisp ink, pressure-sensitive" />
+            <ToolButton t="pencil" icon={<Pencil className="w-4 h-4" />} title="Pencil — soft graphite, shades with pressure" />
+            <ToolButton t="marker" icon={<Brush className="w-4 h-4" />} title="Marker — a broad felt tip, one steady width" />
+            <ToolButton t="highlighter" icon={<Highlighter className="w-4 h-4" />} title="Highlighter — see-through, never covers your writing" />
+            <ToolButton t="shape" icon={<Shapes className="w-4 h-4" />} title="Shapes — pick a line, arrow, box, ellipse or triangle and drag it out, or sketch one roughly and let it snap" />
             <ToolButton t="text" icon={<Type className="w-4 h-4" />} title="Text box (tap the paper to type)" />
             <ToolButton t="select" icon={<Lasso className="w-4 h-4" />} title="Select — move, resize, recolour or copy what you've written" />
-            <ToolButton t="eraser" icon={<Eraser className="w-4 h-4" />} title="Eraser (removes whole strokes)" />
-          </div>
-        )}
-
-        {showInkControls && (
-          <>
-            <div className="flex items-center gap-1 ml-1">
-              {PEN_COLORS.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setColor(c)}
-                  className={`w-5 h-5 rounded-full transition-transform ${color === c ? "ring-2 ring-offset-1 ring-black/40 scale-110" : "hover:scale-110"}`}
-                  style={{ background: c }}
-                  title="Pen colour"
-                />
-              ))}
-            </div>
-            <div className="flex items-center gap-0.5 ml-1">
-              {PEN_SIZES.map((s, i) => (
-                <button
-                  key={s}
-                  onClick={() => setSize(s)}
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center ${size === s ? "bg-black/10" : "hover:bg-black/5"}`}
-                  title={["Fine", "Medium", "Bold"][i]}
-                >
-                  <span className="rounded-full bg-black/70" style={{ width: 3 + i * 3, height: 3 + i * 3 }} />
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-
-        {tool === "shape" && (
-          <span
-            className={`ml-1 text-[11px] font-semibold px-2 py-1 rounded-full transition-opacity ${snapped ? "bg-[#8A6DE9]/12 text-[#6F55C7] opacity-100" : "text-black/35 opacity-100"}`}
-            style={MARKER}
-          >
-            {snapped ?? "draw roughly — it'll snap"}
-          </span>
-        )}
-
-        {tool === "select" && (
-          <div className="flex items-center gap-1 ml-1">
-            <div className="flex items-center gap-0.5 rounded-xl bg-black/[0.04] p-0.5">
-              {([["lasso", Lasso, "Lasso — draw a loop round what you want"], ["rect", SquareDashed, "Box — drag a rectangle over it"]] as const).map(
-                ([m, Icon, title]) => (
-                  <button
-                    key={m}
-                    onClick={() => setSelMode(m)}
-                    title={title}
-                    className={`p-1.5 rounded-lg transition-colors ${selMode === m ? "bg-white shadow-sm text-black/70" : "text-black/40 hover:bg-black/5"}`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                  </button>
-                ),
-              )}
-            </div>
-            <button
-              onClick={() => selAction("paste")}
-              disabled={clipboardSize() === 0}
-              className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30"
-              title="Paste (⌘V) — works across pages and notebooks"
-            >
-              <ClipboardPaste className="w-4 h-4" />
-            </button>
-            <span className="text-[11px] text-black/35 hidden lg:inline">
-              {selection.size ? `${selection.size} selected` : "draw round some writing to pick it up"}
-            </span>
-          </div>
-        )}
-
-        {tool === "text" && (
-          <div className="flex items-center gap-1 ml-1">
-            <select
-              value={font}
-              onChange={(e) => setFont(e.target.value)}
-              className="text-[12px] rounded-lg border border-black/10 bg-white px-2 py-1"
-              title="Font"
-            >
-              {PLANNER_FONTS.map((f) => <option key={f.key} value={f.key} style={{ fontFamily: f.stack }}>{f.name}</option>)}
-            </select>
-            <div className="flex items-center gap-0.5">
-              {TEXT_SIZES.map((s, i) => (
-                <button
-                  key={s}
-                  onClick={() => setTextSize(s)}
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center text-black/70 ${textSize === s ? "bg-black/10" : "hover:bg-black/5"}`}
-                  title={["Small", "Normal", "Large", "Title"][i]}
-                >
-                  <span style={{ fontSize: 9 + i * 3 }}>A</span>
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-1">
-              {PEN_COLORS.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setColor(c)}
-                  className={`w-5 h-5 rounded-full transition-transform ${color === c ? "ring-2 ring-offset-1 ring-black/40 scale-110" : "hover:scale-110"}`}
-                  style={{ background: c }}
-                  title="Text colour"
-                />
-              ))}
-            </div>
+            <ToolButton t="eraser" icon={<Eraser className="w-4 h-4" />} title="Eraser" />
           </div>
         )}
 
@@ -2880,6 +3516,234 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
         )}
       </div>
 
+      {/* Tool options.
+
+          Its own row, always present, always the same height. When these controls
+          shared the row above, switching from the pen to the eraser dropped the
+          toolbar from two lines to one and the paper jumped 36px up the screen —
+          so a stylus that had been resting on a word was suddenly over a different
+          one. The row never wraps either; it scrolls sideways if it has to.
+
+          It ranks below the row above, so the export and sticker menus hanging down
+          from that row aren't covered by this one. */}
+      {!readOnly && (
+        <div className="flex items-center gap-1 px-3 h-11 bg-white/80 backdrop-blur border-b border-black/5 shrink-0 z-20 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {showInkControls && (
+            <>
+              <div className="flex items-center gap-1 ml-1">
+                {swatches.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setColor(c)}
+                    className={`w-5 h-5 rounded-full transition-transform ${color === c ? "ring-2 ring-offset-1 ring-black/40 scale-110" : "hover:scale-110"}`}
+                    style={{ background: c }}
+                    title={`${TOOL_NAME[prefKey]} colour`}
+                    data-swatch={c}
+                    aria-pressed={color === c}
+                  />
+                ))}
+                {/* Any colour at all, kept per tool like the presets are. */}
+                <ColorPickerButton
+                  name={prefKey}
+                  title={`${TOOL_NAME[prefKey]} — any colour`}
+                  label={`${TOOL_NAME[prefKey]} colour`}
+                  color={color}
+                  onChange={setColor}
+                  presets={swatches}
+                  alpha={opacity}
+                  onAlphaChange={(a) => setPref({ opacity: a })}
+                />
+              </div>
+              <div className="flex items-center gap-0.5 ml-1">
+                {PEN_SIZES.map((s, i) => (
+                  <button
+                    key={s}
+                    onClick={() => setSize(s)}
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center ${size === s ? "bg-black/10" : "hover:bg-black/5"}`}
+                    title={["Fine", "Medium", "Bold"][i]}
+                  >
+                    <span className="rounded-full bg-black/70" style={{ width: 3 + i * 3, height: 3 + i * 3 }} />
+                  </button>
+                ))}
+              </div>
+              {/* How see-through this tool is. Kept per tool, so turning the highlighter
+                  down doesn't fade the pen. */}
+              <label className="flex items-center gap-1.5 ml-1" title="How see-through this tool is">
+                <input
+                  type="range"
+                  min={10}
+                  max={100}
+                  step={5}
+                  value={Math.round(opacity * 100)}
+                  onChange={(e) => setPref({ opacity: Number(e.target.value) / 100 })}
+                  className="w-16 accent-[#8A6DE9]"
+                  aria-label="Opacity"
+                />
+                <span className="text-[10px] text-black/40 tabular-nums w-7">{Math.round(opacity * 100)}%</span>
+              </label>
+            </>
+          )}
+
+          {tool === "eraser" && (
+            <div className="flex items-center gap-1 ml-1">
+              <div className="flex items-center gap-0.5 rounded-xl bg-black/[0.04] p-0.5">
+                {([
+                  ["precise", "Precise", "Precise — rubs out only the bit you touch, and leaves the rest of the stroke exactly as you drew it"],
+                  ["stroke", "Whole stroke", "Whole stroke — touch a stroke anywhere and all of it goes"],
+                ] as const).map(([m, label, title]) => (
+                  <button
+                    key={m}
+                    onClick={() => setEraserMode(m)}
+                    title={title}
+                    className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors ${eraserMode === m ? "bg-white shadow-sm text-black/75" : "text-black/40 hover:bg-black/5"}`}
+                    style={MARKER}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-0.5">
+                {ERASER_SIZES.map((r, i) => (
+                  <button
+                    key={r}
+                    onClick={() => setEraserSize(r)}
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center ${eraserSize === r ? "bg-black/10" : "hover:bg-black/5"}`}
+                    title={`${["Small", "Medium", "Large"][i]} tip`}
+                  >
+                    <span className="rounded-full border border-black/50" style={{ width: 5 + i * 4, height: 5 + i * 4 }} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {tool === "shape" && (
+            <div className="flex items-center gap-1 ml-1">
+              {/* Which shape. Pick one and drag it out; "Sketch" hands the drawing to
+                  recognition instead, which is the older, cleverer, less certain way. */}
+              <div className="flex items-center gap-0.5 rounded-xl bg-black/[0.04] p-0.5">
+                {DRAG_SHAPES.map((k) => {
+                  const { icon: Icon, title } = SHAPE_PICKER[k];
+                  return (
+                    <button
+                      key={k}
+                      onClick={() => setShapeKind(k)}
+                      title={title}
+                      data-shape={k}
+                      aria-pressed={shapeKind === k}
+                      className={`p-1.5 rounded-lg transition-colors ${shapeKind === k ? "bg-white shadow-sm text-black/75" : "text-black/40 hover:bg-black/5"}`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                    </button>
+                  );
+                })}
+                <span className="w-px h-4 bg-black/10 mx-0.5" />
+                <button
+                  onClick={() => setShapeKind("auto")}
+                  title="Sketch — draw a shape roughly and let go, and it snaps to whichever one it was · anything that isn't a shape is kept as you drew it"
+                  data-shape="auto"
+                  aria-pressed={shapeKind === "auto"}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors ${shapeKind === "auto" ? "bg-white shadow-sm text-black/75" : "text-black/40 hover:bg-black/5"}`}
+                  style={MARKER}
+                >
+                  <Wand2 className="w-3.5 h-3.5" /> Sketch
+                </button>
+              </div>
+              <span
+                className={`text-[11px] font-semibold px-2 py-1 rounded-full ${snapped ? "bg-[#8A6DE9]/12 text-[#6F55C7]" : "text-black/35"}`}
+                style={MARKER}
+              >
+                {snapped ??
+                  (shapeKind === "auto"
+                    ? "draw roughly — it'll snap"
+                    : `drag out a ${DRAG_SHAPE_LABEL[shapeKind].toLowerCase()}`)}
+              </span>
+            </div>
+          )}
+
+          {tool === "select" && (
+            <div className="flex items-center gap-1 ml-1">
+              <div className="flex items-center gap-0.5 rounded-xl bg-black/[0.04] p-0.5">
+                {([["lasso", Lasso, "Lasso — draw a loop round what you want"], ["rect", SquareDashed, "Box — drag a rectangle over it"]] as const).map(
+                  ([m, Icon, title]) => (
+                    <button
+                      key={m}
+                      onClick={() => setSelMode(m)}
+                      title={title}
+                      className={`p-1.5 rounded-lg transition-colors ${selMode === m ? "bg-white shadow-sm text-black/70" : "text-black/40 hover:bg-black/5"}`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                    </button>
+                  ),
+                )}
+              </div>
+              <button
+                onClick={() => selAction("paste")}
+                disabled={clipboardSize() === 0}
+                className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30"
+                title="Paste (⌘V) — works across pages and notebooks"
+              >
+                <ClipboardPaste className="w-4 h-4" />
+              </button>
+              <span className="text-[11px] text-black/35 hidden lg:inline">
+                {selection.size ? `${selection.size} selected` : "draw round some writing to pick it up"}
+              </span>
+            </div>
+          )}
+
+          {tool === "text" && (
+            <div className="flex items-center gap-1 ml-1">
+              <select
+                value={font}
+                onChange={(e) => setFont(e.target.value)}
+                className="text-[12px] rounded-lg border border-black/10 bg-white px-2 py-1"
+                title="Font"
+              >
+                {PLANNER_FONTS.map((f) => <option key={f.key} value={f.key} style={{ fontFamily: f.stack }}>{f.name}</option>)}
+              </select>
+              <div className="flex items-center gap-0.5">
+                {TEXT_SIZES.map((s, i) => (
+                  <button
+                    key={s}
+                    onClick={() => setTextSize(s)}
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center text-black/70 ${textSize === s ? "bg-black/10" : "hover:bg-black/5"}`}
+                    title={["Small", "Normal", "Large", "Title"][i]}
+                  >
+                    <span style={{ fontSize: 9 + i * 3 }}>A</span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-1">
+                {PEN_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setColor(c)}
+                    className={`w-5 h-5 rounded-full transition-transform ${color === c ? "ring-2 ring-offset-1 ring-black/40 scale-110" : "hover:scale-110"}`}
+                    style={{ background: c }}
+                    title="Text colour"
+                    data-swatch={c}
+                    aria-pressed={color === c}
+                  />
+                ))}
+                <ColorPickerButton
+                  name="text"
+                  title="Text — any colour"
+                  label="Text colour"
+                  color={color}
+                  onChange={setColor}
+                  presets={PEN_COLORS}
+                />
+              </div>
+            </div>
+          )}
+          {tool === "hand" && (
+            <span className="text-[11px] text-black/35" style={MARKER}>
+              Tap tabs, days and links — or drag to move the page
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Page rail + page */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
         {sidebar && (
@@ -2889,27 +3753,32 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
             editable={canEditPages}
             background={thumbBackground}
             pdfThumb={pdfBacked ? pdfThumb : undefined}
+            pageInk={pageInk}
             aspect={(p) => pageAspect(p, planner)}
             onJump={go}
             onClose={() => setSidebar(false)}
             onInsertAt={(at) => setSetupFor({ positions: [at], mode: "insert" })}
-            onDuplicate={duplicatePagesAt}
+            onDuplicate={(positions) => duplicatePagesAt(positions, true)}
+            onDuplicateBlank={(positions) => duplicatePagesAt(positions, false)}
             onDelete={deletePagesAt}
             onMove={movePagesTo}
             onSetup={(positions) => setSetupFor({ positions, mode: "apply" })}
           />
         )}
 
-        <div className="flex-1 flex items-center justify-center p-2 md:p-4 overflow-hidden">
+        <div ref={frameRef} className="flex-1 flex items-center justify-center p-2 md:p-4 overflow-hidden">
           <div
             ref={boxRef}
             className="group relative w-full max-h-full shadow-xl rounded-lg overflow-hidden select-none"
             // The width cap is what keeps the shape: with `width: 100%` a max-height
-            // alone would squash the page rather than shrink it. It's measured off the
-            // viewer's own height, so it's right on a phone too.
+            // alone would clamp the height and leave the page stretched. It comes from
+            // the frame's measured height (see `frameH`), with the old estimate standing
+            // in for the one frame before the observer has reported.
             style={{
               aspectRatio: `${aspect}`,
-              maxWidth: `min(100%, calc((var(--planner-vh) - 150px) * ${aspect}))`,
+              maxWidth: frameH
+                ? `min(100%, ${frameH * aspect}px)`
+                : `min(100%, calc((var(--planner-vh) - 150px) * ${aspect}))`,
               touchAction: "none",
               background: "#fff",
               // Zoom and pan are one composited transform on the whole page, paper,
@@ -2922,6 +3791,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
             onPointerMove={onPointerMove}
             onPointerUp={endStroke}
             onPointerCancel={endStroke}
+            onPointerLeave={() => {
+              if (gestureRef.current) return;
+              showEraserTip(null);
+              if (armedPasteRef.current) paintGhost(null);
+            }}
           >
             {bgSrc ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -2938,6 +3812,18 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
               </div>
             )}
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ cursor: tool === "hand" ? "pointer" : tool === "text" ? "text" : "crosshair" }} />
+            {/* The stroke being written, on its own layer directly above the committed
+                ink: while the pen is down only this canvas is touched, and only its
+                newest segments. Nothing below it is cleared, blitted or re-rendered. */}
+            <canvas ref={liveCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+
+            {/* Where the eraser will rub. Hidden until the eraser is over the page, and
+                moved by `showEraserTip` rather than by rendering. */}
+            <div
+              ref={eraserTipRef}
+              className="absolute rounded-full pointer-events-none border border-black/40 bg-black/[0.06]"
+              style={{ display: "none", transform: "translate(-50%, -50%)" }}
+            />
 
             {/* Typed text boxes sit above the ink so they can be edited and moved. */}
             {textBoxes.map((t) => (
@@ -2998,8 +3884,8 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
                   onPointerDown={(e) => startHandle(e, "rotate")}
                   className="absolute w-7 h-7 flex items-center justify-center rounded-full bg-white border border-[#8A6DE9] text-[#8A6DE9] shadow-sm touch-none cursor-grab z-10"
                   style={{
-                    left: `${(selBounds.x + selBounds.w / 2) * 100}%`,
-                    top: `${(selBounds.y + selBounds.h) * 100}%`,
+                    left: `${knobAnchor!.x * 100}%`,
+                    top: `${knobAnchor!.y * 100}%`,
                     transform: unzoom("translate(-50%, 60%)"),
                   }}
                   title="Drag to rotate — hold shift to snap to 15°"
@@ -3008,10 +3894,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
                 </div>
 
                 <div
+                  ref={selBarRef}
                   className="absolute flex items-center gap-0.5 px-1 py-1 rounded-xl bg-white border border-black/10 shadow-lg z-20 whitespace-nowrap"
                   style={{
-                    left: `${(selBounds.x + selBounds.w / 2) * 100}%`,
-                    top: `${selBounds.y * 100}%`,
+                    left: `${barAnchor!.x * 100}%`,
+                    top: `${barAnchor!.y * 100}%`,
                     transform: unzoom("translate(-50%, -120%)"),
                   }}
                   onPointerDown={(e) => e.stopPropagation()}
@@ -3036,8 +3923,19 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
                       className="w-4 h-4 rounded-full hover:scale-110 transition-transform"
                       style={{ background: c }}
                       title="Recolour"
+                      data-recolor={c}
                     />
                   ))}
+                  <ColorPickerButton
+                    name="selection"
+                    title="Recolour — any colour"
+                    label="Recolour"
+                    color={selectionColor ?? color}
+                    onChange={(c) => recolorSelection(c, true)}
+                    onCommit={endBurst}
+                    presets={PEN_COLORS}
+                    className="relative w-4 h-4 rounded-full ring-1 ring-black/15 flex items-center justify-center hover:scale-110 transition-transform"
+                  />
                   <span className="w-px h-4 bg-black/10 mx-0.5" />
                   <button onClick={() => selAction("front")} className="p-1.5 rounded-lg text-black/60 hover:bg-black/5" title="Bring to front">
                     <BringToFront className="w-3.5 h-3.5" />
@@ -3137,6 +4035,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
           </button>
           {/* One tap in and back out again — the two zooms people actually want. */}
           <button
+            data-zoom
             onClick={() => (isFit(view) ? zoomTo(2) : setView(FIT))}
             className="text-[11px] text-black/45 tabular-nums w-12 text-center py-1.5 rounded-lg hover:bg-black/5"
             title={isFit(view) ? "Zoom to 200%" : "Back to the whole page (⌘0)"}
@@ -3162,16 +4061,25 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
         </div>
       </div>
 
-      <p className="text-center text-[11px] text-black/35 pb-1.5 pt-1 px-4 line-clamp-2 md:line-clamp-none">
-        {readOnly
+      {/* The hint changes with the tool, and a two-line hint gave the paper less room
+          than a one-line one — so picking the lasso resized the page. Two lines are
+          reserved whatever it says, and anything longer is clamped. */}
+      <p className="h-9 shrink-0 flex items-center justify-center text-center text-[11px] leading-[1.15] text-black/35 px-4">
+        <span className="line-clamp-2">
+        {armedPaste
+          ? `${armedPaste.length === 1 ? "That copy is" : `Those ${armedPaste.length} pieces are`} waiting to be placed — tap the page where you want the middle of it and it lands there, picked up ready to nudge, resize or rotate · Esc leaves it on the clipboard`
+          : readOnly
           ? "This is a built-in planner, so it stays as printed — tap the tabs or a day to look around, and make a copy when you want to write in it · tap the side edges, swipe or scroll to turn one page · pinch to zoom in"
           : tool === "shape"
-            ? "Draw a shape roughly and let go — a rough circle, box, triangle, line or one-stroke arrow snaps to a clean one · it stays ink, so the lasso can still move, resize and recolour it · anything that isn't a shape is kept exactly as you drew it"
+            ? shapeKind === "auto"
+              ? "Draw a shape roughly and let go — a rough circle, box, triangle, line or one-stroke arrow snaps to a clean one · anything that isn't a shape is kept exactly as you drew it"
+              : `Drag out a ${DRAG_SHAPE_LABEL[shapeKind].toLowerCase()} — it follows the pointer until you let go, hold Shift to keep it regular · it stays ink, so the lasso can still move, resize, rotate and recolour it`
             : tool === "select"
             ? "Draw a loop round some writing (or drag a box) to pick it up · drag it to move, the handles to resize, the knob to rotate · ⌘C, ⌘X and ⌘V move it between pages · ⌫ deletes it · Esc lets it go"
             : paperBacked
               ? "Write anywhere with your Apple Pencil · the Text tool drops a box you can type in · the lasso moves, resizes and recolours what you've written · the page rail adds, copies, reorders and re-papers pages · scroll to turn one page · pinch, or ⌘+scroll, to zoom in and write smaller"
               : "Tap the tabs or a day to jump around · write with your Apple Pencil on the paper · the Text tool drops a box you can type in — tabs and margins stay clear · the lasso picks writing up to move or recolour · scroll, or pick the hand and tap the side edges, to turn one page · pinch to zoom in"}
+        </span>
       </p>
 
       {setupFor && (

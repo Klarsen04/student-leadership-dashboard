@@ -25,6 +25,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { useCalendars, SubCalendar, CalendarTag, calHex } from "@/lib/useCalendars";
+import { useSyncedSetting, type SettingSpec } from "@/lib/synced-setting";
 import { CalendarEngineHost } from "@/components/calendar/engines";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { BlurFade } from "@/components/ui/blur-fade";
@@ -124,24 +125,19 @@ function findGaps(classes: ClassBlock[], day: Date): { start: number; end: numbe
   return gaps;
 }
 
-const CLASSES_STORAGE_KEY = "leadership-os-classes";
+// The class schedule follows the account, so a timetable entered on a laptop
+// shows up on a tablet too (src/lib/synced-setting.ts).
+const CLASSES: SettingSpec<ClassBlock[]> = {
+  key: "leadership-os-classes",
+  fallback: [],
+  revive: (raw) =>
+    Array.isArray(raw)
+      // Backfill `calendar` for classes saved before classes could be assigned to
+      // a sub-calendar; default them to the built-in "Personal" calendar.
+      ? raw.map((c: any) => ({ ...c, calendar: c.calendar || "Personal" }))
+      : null,
+};
 
-function getStoredClasses(): ClassBlock[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = localStorage.getItem(CLASSES_STORAGE_KEY);
-    if (!stored) return [];
-    const parsed = JSON.parse(stored);
-    if (!Array.isArray(parsed)) return [];
-    // Backfill `calendar` for classes saved before classes could be assigned to
-    // a sub-calendar; default them to the built-in "Personal" calendar.
-    return parsed.map((c: any) => ({ ...c, calendar: c.calendar || "Personal" }));
-  } catch { return []; }
-}
-
-function saveClasses(classes: ClassBlock[]) {
-  localStorage.setItem(CLASSES_STORAGE_KEY, JSON.stringify(classes));
-}
 
 /* ---------- Seasonal SVG Illustrations ---------- */
 function SeasonalIcon({ month, size = 32 }: { month: number; size?: number }) {
@@ -252,7 +248,7 @@ export default function CalendarPage() {
   const [defaultEventTime, setDefaultEventTime] = useState<{ start: string; end: string } | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [editingEvent, setEditingEvent] = useState(false);
-  const [classes, setClasses] = useState<ClassBlock[]>([]);
+  const { value: classes, setValue: saveClasses } = useSyncedSetting(CLASSES);
   const [showAddClass, setShowAddClass] = useState(false);
   const [selectedCalendar, setSelectedCalendar] = useState<string | null>(null);
   const [activeTag, setActiveTag] = useState<string | null>(null);
@@ -308,8 +304,6 @@ export default function CalendarPage() {
       toast.error("Failed to reschedule event");
     }
   };
-
-  useEffect(() => { setClasses(getStoredClasses()); }, []);
 
   const totalCredits = useMemo(() => classes.reduce((sum, c) => sum + c.creditHours, 0), [classes]);
   const weeklyHours = useMemo(() => {
@@ -478,26 +472,20 @@ export default function CalendarPage() {
   }, [tasks]);
 
   const addClass = (cls: ClassBlock) => {
-    const updated = [...classes, cls];
-    setClasses(updated);
-    saveClasses(updated);
+    saveClasses([...classes, cls]);
     toast.success("Class added!");
     setShowAddClass(false);
   };
 
   const updateClass = (cls: ClassBlock) => {
-    const updated = classes.map((c) => (c.id === cls.id ? cls : c));
-    setClasses(updated);
-    saveClasses(updated);
+    saveClasses(classes.map((c) => (c.id === cls.id ? cls : c)));
     toast.success("Class updated!");
     setEditingClass(false);
     setSelectedClass(null);
   };
 
   const deleteClass = (id: string) => {
-    const updated = classes.filter((c) => c.id !== id);
-    setClasses(updated);
-    saveClasses(updated);
+    saveClasses(classes.filter((c) => c.id !== id));
     toast.success("Class removed");
   };
 

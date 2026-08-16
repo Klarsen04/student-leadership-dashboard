@@ -30,6 +30,7 @@ import {
   updateUserPlanner,
   type UserPlanner,
 } from "@/lib/planner-library";
+import { docValue, pullDoc, pushDoc } from "@/lib/sync";
 import { parseElements, pushPage, serializeElements, type PageElement } from "@/lib/planner-ink";
 import {
   DEFAULT_PAGE_COLOR,
@@ -136,15 +137,30 @@ export function defaultIndex(planner: PlannerInfo): PageIndex {
 export async function loadPageIndex(planner: PlannerInfo): Promise<PageIndex> {
   if (!isOwned(planner)) return defaultIndex(planner);
   const stored = await idbGet<PageIndex>(PAGE_STORE, planner.id);
-  const valid =
-    stored &&
-    Array.isArray(stored.pages) &&
-    stored.pages.length > 0 &&
-    stored.pages.every((p) => Number.isFinite(p?.slot) && p.slot >= 1 && Boolean(p.background));
-  if (!valid) return defaultIndex(planner);
+  // The arrangement is per account, so pages added on one device are there on the
+  // next. Whichever copy was written last wins; a device that's been offline
+  // pushes its own index up instead of silently losing the pages it added.
+  const remote = validIndex(docValue<PageIndex>(await pullDoc("pageIndex", planner.id)));
+  const local = validIndex(stored);
+  if (remote && (!local || remote.updatedAt > local.updatedAt)) {
+    await idbPut(PAGE_STORE, { ...remote, plannerId: planner.id });
+    return { ...remote, plannerId: planner.id };
+  }
+  if (!local) return defaultIndex(planner);
+  if (!remote || local.updatedAt > remote.updatedAt) void pushDoc("pageIndex", planner.id, local);
   // The page count on the notebook record is what the library card shows; the
   // index is the truth, so trust the index and let a save reconcile the record.
-  return { ...stored, plannerId: planner.id };
+  return { ...local, plannerId: planner.id };
+}
+
+/** An index only counts if it actually describes pages we can render. */
+function validIndex(index: PageIndex | null): PageIndex | null {
+  const ok =
+    index &&
+    Array.isArray(index.pages) &&
+    index.pages.length > 0 &&
+    index.pages.every((p) => Number.isFinite(p?.slot) && p.slot >= 1 && Boolean(p.background));
+  return ok ? { ...index!, updatedAt: index!.updatedAt ?? 0 } : null;
 }
 
 /**
@@ -154,6 +170,7 @@ export async function loadPageIndex(planner: PlannerInfo): Promise<PageIndex> {
 export async function savePageIndex(index: PageIndex): Promise<void> {
   const next: PageIndex = { ...index, updatedAt: Date.now() };
   await idbPut(PAGE_STORE, next);
+  void pushDoc("pageIndex", next.plannerId, next);
   await updateUserPlanner(index.plannerId, { pages: index.pages.length });
 }
 
@@ -163,11 +180,20 @@ export const isRearranged = (index: PageIndex) =>
 
 // ---- geometry and backgrounds -------------------------------------------------------
 
+/** The same paper the other way up, if that's the way round it's wanted. */
+export const turnPaper = (g: PageGeometry, orientation: Orientation | undefined): PageGeometry =>
+  (orientation === "landscape" && g.h > g.w) || (orientation === "portrait" && g.w > g.h)
+    ? { w: g.h, h: g.w }
+    : g;
+
 /** A page's size in points, falling back to the notebook's own page shape. */
 export function pageGeometry(page: PageMeta | undefined, planner: PlannerInfo): PageGeometry {
   if (page?.size) return pageDimensions(page.size, page.orientation ?? "portrait", page.custom);
+  // Orientation is stored separately from size, and a page that never named a paper size
+  // still has one — the notebook's. Turning it has to work there too, or "make this page
+  // landscape" turns the dialog's preview and leaves the page portrait.
   const aspect = planner.aspect || 595 / 842;
-  return { w: 612, h: Math.round(612 / aspect) };
+  return turnPaper({ w: 612, h: Math.round(612 / aspect) }, page?.orientation);
 }
 
 export const pageAspect = (page: PageMeta | undefined, planner: PlannerInfo) =>
@@ -300,8 +326,19 @@ export function insertPages(index: PageIndex, at: number, count: number, spec: N
 }
 
 export interface DuplicateResult extends InsertResult {
-  /** Source slot → new slot, for the caller to copy content across. */
+  /** Source slot → new slot, for the caller to copy content across. Empty for a blank copy. */
   copies: Array<{ from: number; to: number }>;
+  /** The new pages' slots, in order — whether or not content is being copied. */
+  slots: number[];
+}
+
+export interface DuplicateOptions {
+  /**
+   * Copy the handwriting across as well. `false` gives new pages of the same paper —
+   * same template, colour, size and orientation — with nothing written on them, which is
+   * what you want when a page is a form you fill in again rather than one you're revising.
+   */
+  content?: boolean;
 }
 
 /**
@@ -309,9 +346,13 @@ export interface DuplicateResult extends InsertResult {
  * immediately after the block. Content is not copied here — the caller does that
  * with `copySlot`, because it is a server round trip.
  */
-export function duplicatePages(index: PageIndex, positions: number[]): DuplicateResult {
+export function duplicatePages(
+  index: PageIndex,
+  positions: number[],
+  { content = true }: DuplicateOptions = {},
+): DuplicateResult {
   const picked = normalise(positions, index.pages.length);
-  if (!picked.length) return { index, clear: [], at: 1, copies: [] };
+  if (!picked.length) return { index, clear: [], at: 1, copies: [], slots: [] };
   let work = index;
   const added: PageMeta[] = [];
   const copies: Array<{ from: number; to: number }> = [];
@@ -323,13 +364,15 @@ export function duplicatePages(index: PageIndex, positions: number[]): Duplicate
     if (!got) break;
     work = got.index;
     if (got.recycled) clear.push(got.slot);
-    added.push({ ...src, slot: got.slot, label: src.label ? `${src.label} (copy)` : undefined });
-    copies.push({ from: src.slot, to: got.slot });
+    // A blank page isn't a copy of anything written, so it doesn't inherit the label
+    // either — two rows reading "March 3" would be worse than one reading nothing.
+    added.push({ ...src, slot: got.slot, label: content && src.label ? `${src.label} (copy)` : undefined });
+    if (content) copies.push({ from: src.slot, to: got.slot });
   }
   const after = picked[picked.length - 1];
   const pages = [...work.pages];
   pages.splice(after, 0, ...added);
-  return { index: { ...work, pages }, clear, at: after + 1, copies };
+  return { index: { ...work, pages }, clear, at: after + 1, copies, slots: added.map((p) => p.slot) };
 }
 
 /**

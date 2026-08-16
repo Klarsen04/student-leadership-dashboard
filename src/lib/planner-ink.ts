@@ -10,10 +10,16 @@
 // rather than "your handwriting is gone", and survives a reload or a crash.
 
 export interface Stroke {
-  tool: "pen" | "highlighter";
+  tool: "pen" | "pencil" | "marker" | "highlighter";
   color: string;
   size: number; // base width as a fraction of page width
   points: [number, number, number][]; // x, y, pressure
+  /**
+   * How see-through the whole stroke is, 0..1. Absent means the tool's own default
+   * (see `strokeAlpha` in planner-render) — which is what every stroke written before
+   * the highlighter became adjustable has, so they go on looking the same.
+   */
+  opacity?: number;
 }
 
 export interface TextBox {

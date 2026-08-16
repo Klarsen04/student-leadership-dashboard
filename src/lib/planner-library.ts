@@ -8,10 +8,12 @@
 // entirely — the deployment has no blob storage and a serverless request body
 // cap well under a typical planner PDF.
 //
-// The consequence is that an imported notebook lives on the device that
-// imported it. Handwriting does *not*: ink is keyed by planner id and still
-// syncs to the account through /api/planner, so the same notebook re-imported
-// on another device picks its ink back up.
+// The consequence is that an imported notebook's *file* lives on the device that
+// imported it. Nothing else does. Handwriting is keyed by planner id and syncs
+// through /api/planner, and since the notebook list itself now syncs through
+// /api/sync (see syncUserPlanners below), an import shows up on every device —
+// the ones without the file offer to re-add it, which relinks the same id and
+// picks the ink back up.
 //
 // A "copy" stores no file at all — it points at the planner it was duplicated
 // from and only claims a fresh id, so it gets its own ink layer. A "blank"
@@ -26,6 +28,7 @@ import type { Hotspot } from "@/lib/planner";
 import type { PlannerInfo } from "@/lib/planners";
 import { clearLocalPlanner } from "@/lib/planner-ink";
 import { DEFAULT_PAPER, DEFAULT_TINT } from "@/lib/planner-paper";
+import { deleteDoc, docValue, pullScope, pushDoc, pushDocs } from "@/lib/sync";
 
 const DB_NAME = "leadora-planner-library";
 const DB_VERSION = 2;
@@ -48,6 +51,8 @@ export interface UserPlanner extends PlannerInfo {
   /** How this notebook came to exist. */
   kind: "import" | "copy" | "blank";
   createdAt: number;
+  /** Last metadata change, so two devices can tell whose copy is newer. */
+  updatedAt?: number;
   /** import: key of the PDF blob in IndexedDB. */
   pdfKey?: string;
   /** copy: the planner id this was duplicated from. */
@@ -132,6 +137,7 @@ export async function idbDelete(store: string, key: IDBValidKey): Promise<void> 
   }
 }
 
+/** This device's notebooks, newest first. Local only — see loadUserPlanners. */
 export async function listUserPlanners(): Promise<UserPlanner[]> {
   if (typeof indexedDB === "undefined") return [];
   try {
@@ -143,7 +149,91 @@ export async function listUserPlanners(): Promise<UserPlanner[]> {
 }
 
 async function putMeta(meta: UserPlanner) {
-  await tx(META_STORE, "readwrite", (s) => s.put(meta));
+  const next = { ...meta, updatedAt: Date.now() };
+  await tx(META_STORE, "readwrite", (s) => s.put(next));
+  // Best-effort: IndexedDB already has it, so a failed push means "not on the
+  // other devices yet", not "lost".
+  void pushDoc("notebook", next.id, next);
+  return next;
+}
+
+// ---- cross-device sync ------------------------------------------------------------
+//
+// The notebook list is per-account, not per-device. A device pulls the account's
+// notebooks, reconciles them against its own IndexedDB, and pushes anything the
+// account hasn't seen — which is also how notebooks made before this existed get
+// carried up the first time the app is opened.
+//
+// Reconciling is per notebook and by id, never a wholesale replace: two devices
+// each holding a notebook the other doesn't must end up with both.
+
+/**
+ * Whether this device holds the PDF an imported notebook needs.
+ *
+ * A copy or a blank notebook needs no file, so they're always openable. An import
+ * that syncs to a second device arrives without its PDF; the library says so and
+ * offers to re-add it rather than opening a notebook that can't render.
+ */
+export async function fileMissing(meta: PlannerInfo): Promise<boolean> {
+  const p = meta as UserPlanner;
+  if (p.kind !== "import" || !p.pdfKey) return false;
+  return (await getFile(p.pdfKey)) === null;
+}
+
+/**
+ * Merge the account's notebooks with this device's and return the result.
+ *
+ * Conflicts are settled by `updatedAt` — last edit wins, which for renaming a
+ * notebook on one device while it sits idle on another is exactly right. A
+ * tombstone always wins, so deleting a notebook on one device removes it
+ * everywhere instead of being resurrected by the next device that syncs.
+ *
+ * Offline, or signed out, this is just `listUserPlanners()`.
+ */
+export async function syncUserPlanners(): Promise<UserPlanner[]> {
+  const local = await listUserPlanners();
+  const remote = await pullScope("notebook");
+  if (!remote) return local;
+
+  const byId = new Map(local.map((m) => [m.id, m]));
+  const push: { key: string; value: UserPlanner }[] = [];
+  const seen = new Set<string>();
+
+  for (const doc of remote) {
+    seen.add(doc.key);
+    const mine = byId.get(doc.key);
+    if (doc.deleted) {
+      // Deleted elsewhere. Drop the local copy, but leave the ink alone: this
+      // device isn't the one that decided, and deleteUserPlanner already told
+      // the server what to do with it.
+      if (mine) {
+        byId.delete(doc.key);
+        await idbDelete(META_STORE, doc.key);
+        await idbDelete(PAGE_STORE, doc.key);
+      }
+      continue;
+    }
+    const theirs = docValue<UserPlanner>(doc);
+    if (!theirs || typeof theirs.id !== "string" || theirs.id !== doc.key) continue;
+    if (!mine || (theirs.updatedAt ?? 0) > (mine.updatedAt ?? mine.createdAt ?? 0)) {
+      // Their metadata wins — except for pdfKey, which names a blob in *this*
+      // device's IndexedDB. Keeping ours means a device that has the file
+      // doesn't lose track of it because another device synced without one.
+      const merged: UserPlanner = { ...theirs, pdfKey: mine?.pdfKey ?? theirs.pdfKey };
+      byId.set(merged.id, merged);
+      await tx(META_STORE, "readwrite", (s) => s.put(merged));
+    } else if ((mine.updatedAt ?? 0) > (theirs.updatedAt ?? 0)) {
+      push.push({ key: mine.id, value: mine });
+    }
+  }
+
+  // Notebooks this device has that the account has never heard of.
+  for (const mine of byId.values()) {
+    if (!seen.has(mine.id)) push.push({ key: mine.id, value: mine });
+  }
+  if (push.length) void pushDocs("notebook", push);
+
+  return [...byId.values()].sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export async function renameUserPlanner(id: string, name: string) {
@@ -161,9 +251,7 @@ export async function updateUserPlanner(
   const all = await listUserPlanners();
   const meta = all.find((m) => m.id === id);
   if (!meta) return null;
-  const next = { ...meta, ...patch };
-  await putMeta(next);
-  return next;
+  return await putMeta({ ...meta, ...patch });
 }
 
 /**
@@ -180,6 +268,10 @@ export async function deleteUserPlanner(id: string) {
   const meta = all.find((m) => m.id === id);
   await tx(META_STORE, "readwrite", (s) => s.delete(id));
   await idbDelete(PAGE_STORE, id);
+  // Tombstone both documents so the other devices drop their copies rather than
+  // syncing this notebook straight back.
+  void deleteDoc("notebook", id);
+  void deleteDoc("pageIndex", id);
   if (meta?.pdfKey) {
     const stillUsed = all.some((m) => m.id !== id && m.pdfKey === meta.pdfKey);
     if (!stillUsed) await tx(FILE_STORE, "readwrite", (s) => s.delete(meta.pdfKey!));
@@ -189,6 +281,52 @@ export async function deleteUserPlanner(id: string) {
     // Best-effort: the notebook is already gone from the library either way.
     await fetch(`/api/planner?planner=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
   }
+}
+
+/**
+ * The same reconcile as `syncUserPlanners`, for the plain id-keyed stores: the
+ * user's stickers and their custom templates. Both are "one small JSON record per
+ * id" with nothing device-specific in them, so they need no special cases.
+ *
+ * Records without an `updatedAt` fall back to `createdAt`, which is what every
+ * record saved before this existed has.
+ */
+export async function syncRecords<T extends { id: string; updatedAt?: number; createdAt?: number }>(
+  store: string,
+  scope: "sticker" | "template",
+): Promise<T[]> {
+  const local = await idbAll<T>(store);
+  const remote = await pullScope(scope);
+  if (!remote) return local;
+
+  const stamp = (r: T) => r.updatedAt ?? r.createdAt ?? 0;
+  const byId = new Map(local.map((r) => [r.id, r]));
+  const push: { key: string; value: T }[] = [];
+  const seen = new Set<string>();
+
+  for (const doc of remote) {
+    seen.add(doc.key);
+    const mine = byId.get(doc.key);
+    if (doc.deleted) {
+      if (mine) {
+        byId.delete(doc.key);
+        await idbDelete(store, doc.key);
+      }
+      continue;
+    }
+    const theirs = docValue<T>(doc);
+    if (!theirs || theirs.id !== doc.key) continue;
+    if (!mine || stamp(theirs) > stamp(mine)) {
+      byId.set(theirs.id, theirs);
+      await idbPut(store, theirs).catch(() => {});
+    } else if (stamp(mine) > stamp(theirs)) {
+      push.push({ key: mine.id, value: mine });
+    }
+  }
+  for (const mine of byId.values()) if (!seen.has(mine.id)) push.push({ key: mine.id, value: mine });
+  if (push.length) void pushDocs(scope, push);
+
+  return [...byId.values()];
 }
 
 export async function putFile(key: string, blob: Blob) {
@@ -380,6 +518,45 @@ export async function importPdf(file: File, onProgress?: ImportProgress): Promis
   return meta;
 }
 
+/**
+ * Give an imported notebook its PDF on *this* device.
+ *
+ * An import syncs as metadata — its file is far too big for the account — so on a
+ * second device the notebook is listed but can't render. This puts the file back
+ * under the notebook's existing key, which keeps the id, and with it every page
+ * of handwriting already saved against it.
+ *
+ * The page count has to match. Attaching a different document would leave every
+ * stroke sitting on the wrong page, and silently is the worst way to find out.
+ */
+export async function attachPdf(meta: UserPlanner, file: File): Promise<UserPlanner> {
+  if (meta.kind !== "import" || !meta.pdfKey) {
+    throw new Error("That notebook doesn't use a PDF.");
+  }
+  if (file.size > MAX_IMPORT_BYTES) {
+    throw new Error(`That PDF is ${(file.size / 1024 / 1024).toFixed(0)} MB — the limit is ${MAX_IMPORT_BYTES / 1024 / 1024} MB.`);
+  }
+  const bytes = await file.arrayBuffer();
+  // pdf.js takes ownership of the buffer it parses, so keep a copy for storage.
+  const { doc, close } = await openPdf(bytes.slice(0));
+  let pages: number;
+  try {
+    pages = doc.numPages;
+  } finally {
+    await close().catch(() => {});
+  }
+  if (!pages) throw new Error("That PDF has no pages.");
+  if (pages !== meta.pages) {
+    throw new Error(
+      `“${meta.name}” has ${meta.pages} pages but that PDF has ${pages}. Pick the same file you imported, so your handwriting lines up.`,
+    );
+  }
+  await putFile(meta.pdfKey, new Blob([bytes], { type: "application/pdf" }));
+  // The record itself is unchanged, so nothing is pushed: the file is what this
+  // device was missing, and the file never leaves it.
+  return meta;
+}
+
 /** Name a copy would get by default, so the rename box can be pre-filled. */
 export async function suggestedCopyName(source: PlannerInfo): Promise<string> {
   const existing = await listUserPlanners();
@@ -440,7 +617,11 @@ export async function duplicatePlanner(
   // the ink is cloned slot-for-slot, so a rearranged notebook duplicates as it
   // looks rather than as its source was ordered.
   const index = await idbGet<{ plannerId: string }>(PAGE_STORE, source.id);
-  if (index) await idbPut(PAGE_STORE, { ...index, plannerId: id, updatedAt: Date.now() });
+  if (index) {
+    const copied = { ...index, plannerId: id, updatedAt: Date.now() };
+    await idbPut(PAGE_STORE, copied);
+    void pushDoc("pageIndex", id, copied);
+  }
   // Ink comes from the notebook being duplicated, not from the image source: a
   // copy of your marked-up copy has to carry your handwriting, not the original's.
   if (withInk) await copyInk(source.id, id);
