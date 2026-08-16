@@ -107,6 +107,19 @@ const PEN_COLORS = ["#1a1a1a", "#e03131", "#1971c2", "#2f9e44", "#f08c00", "#9c3
 const PEN_SIZES = [0.0012, 0.0022, 0.004]; // fine / medium / bold (fraction of page width)
 const HIGHLIGHT_ALPHA = 0.35;
 
+// ---- turning pages -----------------------------------------------------------
+// A planner runs to hundreds of pages and the interesting ones (the weekly and
+// daily spreads behind a month) sit right after the page a tab lands you on, so
+// there are three ways to step one page without reaching for the toolbar arrows:
+// tap the outer edge of the page, swipe sideways, or scroll.
+
+/** Fraction of the page width, at either side, where a tap turns the page. */
+const EDGE_FLIP = 0.07;
+/** Sideways travel (px) that makes a drag a flip rather than a tap. */
+const SWIPE_FLIP_PX = 55;
+/** Accumulated wheel/trackpad travel (px) that turns one page. */
+const WHEEL_FLIP_PX = 90;
+
 function drawStroke(ctx: CanvasRenderingContext2D, s: Stroke, W: number, H: number) {
   if (s.points.length === 0) return;
   ctx.save();
@@ -970,9 +983,17 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const rendererRef = useRef<PdfRenderer | null>(null);
   // A pending tap. `chromeOnly` taps came from a stylus landing on page
   // furniture, so they may only activate tabs — never a writable day cell.
-  const tapStart = useRef<{ x: number; y: number; t: number; chromeOnly: boolean } | null>(null);
+  // `flip` marks the pointer as one that's navigating rather than writing, so an
+  // edge tap or a sideways drag may turn the page.
+  const tapStart = useRef<{ x: number; y: number; t: number; chromeOnly: boolean; flip: boolean } | null>(null);
   const toolRef = useRef(tool);
   toolRef.current = tool;
+  /** Wheel travel banked since the last flip, so a trackpad's dribble of small deltas adds up. */
+  const wheelAccum = useRef(0);
+  // Edge taps and swipes only turn the page when nothing else wants the gesture:
+  // the hand tool (and a read-only planner, where every tool is a hand) navigates
+  // instead of drawing.
+  const flipGestures = readOnly || tool === "hand";
 
   // Link-based planners get their tab strips inferred from the link geometry.
   const pageLinks = planner.links?.[String(page)];
@@ -1189,8 +1210,10 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   // notebook, and rewriting the URL then would stomp a navigation in flight (e.g.
   // "make a copy to write", which points the URL at the new notebook).
   useEffect(() => {
-    router.replace(`/planner?planner=${plannerId}&page=${page}`, { scroll: false });
-  }, [page, plannerId, router]);
+    // `debug` rides along, or this rewrite would switch the overlays off the
+    // moment you opened a planner with ?debug=1.
+    router.replace(`/planner?planner=${plannerId}&page=${page}${debug ? "&debug=1" : ""}`, { scroll: false });
+  }, [page, plannerId, router, debug]);
 
   // Preload neighbouring pages for snappy flips.
   useEffect(() => {
@@ -1281,7 +1304,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
 
     // Read-only planner: every input is navigation, whatever the tool says.
     if (readOnly) {
-      tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: false };
+      tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: false, flip: true };
       return;
     }
 
@@ -1291,18 +1314,18 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     // Text tool: a tap on the paper drops a new box; taps elsewhere navigate.
     if (toolRef.current === "text") {
       if (inkAllowed(x, y)) { e.preventDefault(); addTextAt(x, y); }
-      else tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: e.pointerType === "pen" };
+      else tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: e.pointerType === "pen", flip: false };
       return;
     }
 
     if (e.pointerType === "touch" || !shouldDraw(e)) {
       // Fingers and the hand tool navigate anywhere on the page.
-      tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: false };
+      tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: false, flip: true };
       return;
     }
     if (!inkAllowed(x, y)) {
       // Landed on a tab or the outer margin: no ink here, but a tab tap counts.
-      tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: true };
+      tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: true, flip: false };
       return;
     }
     e.preventDefault();
@@ -1360,11 +1383,41 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     const start = tapStart.current;
     tapStart.current = null;
     if (!start) return;
-    const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y);
-    if (moved > 12 || Date.now() - start.t > 600) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    const moved = Math.hypot(dx, dy);
     const [x, y] = norm(e);
+
+    // A sideways drag turns the page, the way you'd flick a paper one over.
+    if (start.flip && Math.abs(dx) >= SWIPE_FLIP_PX && Math.abs(dx) > Math.abs(dy)) {
+      go(dx < 0 ? page + 1 : page - 1);
+      return;
+    }
+    if (moved > 12 || Date.now() - start.t > 600) return;
     const hit = hotspots.find((h) => inside(h, x, y) && (!start.chromeOnly || h.kind === "chrome"));
-    if (hit) go(hit.page);
+    if (hit) { go(hit.page); return; }
+    // Nothing to jump to here. A tap on the outer edge turns the page — checked
+    // after the hotspots, because tab strips run down the edges too and a tab
+    // has to win.
+    if (start.flip) {
+      if (x >= 1 - EDGE_FLIP) go(page + 1);
+      else if (x <= EDGE_FLIP) go(page - 1);
+    }
+  };
+
+  // Scrolling over the page turns it. Trackpads deliver a continuous stream of
+  // small deltas, so wait until one flick's worth has accumulated.
+  const onWheel = (e: React.WheelEvent) => {
+    if (drawingPointer.current !== null) return;
+    if (Math.abs(e.deltaY) < Math.abs(e.deltaX)) return; // sideways scroll: not ours
+    // Don't yank the page out from under someone scrolling a text box they're typing in.
+    if ((e.target as HTMLElement)?.closest?.("textarea, input, [contenteditable='true']")) return;
+    if (wheelAccum.current !== 0 && Math.sign(e.deltaY) !== Math.sign(wheelAccum.current)) wheelAccum.current = 0;
+    wheelAccum.current += e.deltaY;
+    if (Math.abs(wheelAccum.current) < WHEEL_FLIP_PX) return;
+    const forward = wheelAccum.current > 0;
+    wheelAccum.current = 0;
+    go(forward ? page + 1 : page - 1);
   };
 
   const undo = () => {
@@ -1587,12 +1640,13 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       <div className="flex-1 flex items-center justify-center p-2 md:p-4 overflow-hidden">
         <div
           ref={boxRef}
-          className="relative w-full max-h-full shadow-xl rounded-lg overflow-hidden select-none"
+          className="group relative w-full max-h-full shadow-xl rounded-lg overflow-hidden select-none"
           style={{ aspectRatio: `${planner.aspect}`, maxWidth: `min(100%, calc((100vh - 120px) * ${planner.aspect}))`, touchAction: "none", background: "#fff" }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endStroke}
           onPointerCancel={endStroke}
+          onWheel={onWheel}
         >
           {(paperUrl ?? (pdfBacked ? pdfSrc : imageSrc(planner, page))) ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -1624,6 +1678,28 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
             />
           ))}
 
+          {/* Which edges will turn the page. Purely a hint — the tap itself is
+              handled by endStroke, so these must never eat the pointer (a month
+              tab often sits right underneath). */}
+          {flipGestures && (
+            <>
+              {page > 1 && (
+                <div className="absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-0 group-hover:opacity-70 transition-opacity">
+                  <div className="w-7 h-7 rounded-full bg-white/85 shadow ring-1 ring-black/10 flex items-center justify-center">
+                    <ChevronLeft className="w-4 h-4 text-black/60" />
+                  </div>
+                </div>
+              )}
+              {page < pages && (
+                <div className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-0 group-hover:opacity-70 transition-opacity">
+                  <div className="w-7 h-7 rounded-full bg-white/85 shadow ring-1 ring-black/10 flex items-center justify-center">
+                    <ChevronRight className="w-4 h-4 text-black/60" />
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
           {debug && (
             <>
               <div
@@ -1646,10 +1722,10 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
 
       <p className="text-center text-[11px] text-black/35 pb-2 px-4">
         {readOnly
-          ? "This is a built-in planner, so it stays as printed — tap the tabs or a day to look around, and make a copy when you want to write in it"
+          ? "This is a built-in planner, so it stays as printed — tap the tabs or a day to look around, and make a copy when you want to write in it · tap the side edges, swipe or scroll to turn one page"
           : paperBacked
-            ? "Write anywhere with your Apple Pencil · the Text tool drops a box you can type in · add pages with + when you run out"
-            : "Tap the tabs or a day to jump around · write with your Apple Pencil on the paper · the Text tool drops a box you can type in — tabs and margins stay clear"}
+            ? "Write anywhere with your Apple Pencil · the Text tool drops a box you can type in · add pages with + when you run out · scroll to turn one page"
+            : "Tap the tabs or a day to jump around · write with your Apple Pencil on the paper · the Text tool drops a box you can type in — tabs and margins stay clear · scroll, or pick the hand and tap the side edges, to turn one page"}
       </p>
     </div>
   );

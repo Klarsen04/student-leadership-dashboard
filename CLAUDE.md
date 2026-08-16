@@ -104,6 +104,17 @@ finger tap or the hand tool. Ink is clipped to `writeArea`, so strokes never
 land on the tabs or outer margins. Add `?debug=1` to the URL to see the write
 area (blue) and hotspots (amber = chrome, red = content).
 
+Stepping one page (a planner runs to hundreds, and the weekly/daily spreads sit
+right behind the page a month tab lands on) doesn't need the toolbar arrows:
+- **edge tap** — a tap inside `EDGE_FLIP` of either side turns the page, but only
+  for a pointer that's navigating rather than writing (`tapStart.flip`: fingers,
+  the hand tool, any read-only planner). Hotspots are checked *first*, so a tab
+  strip down the edge still wins.
+- **swipe** — a sideways drag past `SWIPE_FLIP_PX` on the same pointers.
+- **scroll** — wheel/trackpad travel banked in `wheelAccum` until it passes
+  `WHEEL_FLIP_PX`; ignored mid-stroke and over a text box being edited.
+Hover shows a chevron chip on whichever edges have a page to go to.
+
 Pages hold **strokes and text boxes** (`PageElement` in `src/lib/planner-ink.ts`).
 The Text tool drops an editable, draggable, resizable text box; fonts come from
 `PLANNER_FONTS` (Inter/Instrument Serif/Fredoka/Caveat/Patrick Hand/mono, wired

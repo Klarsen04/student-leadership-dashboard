@@ -14,6 +14,23 @@ const VIEW_MAP: Record<EngineView, string> = {
   month: "month",
 };
 
+/**
+ * Format an instant as a zone-less wall-clock string, e.g. "2026-08-13T10:00:00".
+ *
+ * ilamy's dayjs is wired so its constructor forwards to `dayjs.tz()`, which reads
+ * its input *as* wall time in the display zone and throws any offset away:
+ * `dayjs.tz("2026-08-13T14:00:00.000Z")` is 2pm, not 10am EDT. Feeding it the UTC
+ * ISO strings the API returns therefore drew every event and class one UTC offset
+ * late (a 10am class landed in the 2pm row). Local wall time is what it wants;
+ * `toISO` turns the dayjs it hands back into a real instant again.
+ */
+function toWallClock(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 // dayjs objects come back from callbacks; normalize to ISO for the app's API.
 function toISO(d: any): string {
   if (!d) return "";
@@ -36,8 +53,8 @@ export default function IlamyEngine({
   onEventUpdate,
   onEventDelete,
 }: CalendarEngineProps) {
-  // ilamy accepts ISO strings for start/end directly. Merge real events with
-  // recurring classes expanded into dated instances so classes render too.
+  // Merge real events with recurring classes expanded into dated instances so
+  // classes render too, handing ilamy local wall-clock times (see toWallClock).
   // Each event block is filled with its tag's colour (or its sub-calendar's
   // when untagged; classes carry their own hex). ilamy uses `backgroundColor`
   // for the block fill and `color` for the text, so set both.
@@ -46,8 +63,8 @@ export default function IlamyEngine({
       [...events, ...classesToEvents(classes, currentDate, view)].map((e) => ({
         id: e.id,
         title: e.title,
-        start: e.startTime,
-        end: e.endTime,
+        start: toWallClock(e.startTime),
+        end: toWallClock(e.endTime),
         description: e.description,
         backgroundColor: calHex(getColor(e.category, e.role)),
         color: "#ffffff",
