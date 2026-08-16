@@ -125,5 +125,5 @@ index.planners = index.planners.filter((x) => x.id !== id);
 index.planners.push(entry);
 fs.writeFileSync(indexPath, JSON.stringify(index, null, 2) + "\n");
 
-const mb = (execSync(`du -sm "${outDir}"`, { encoding: "utf8" }).split("\t")[0] || "?").trim();
+const mb = (execFileSync("du", ["-sm", outDir], { encoding: "utf8" }).split("\t")[0] || "?").trim();
 console.log(`\nDone. ${pages} pages (${mb} MB) in public/planner/${id}/ — it now appears in the planner library.`);
