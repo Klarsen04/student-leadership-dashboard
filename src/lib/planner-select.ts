@@ -361,6 +361,27 @@ export function addCopies(
   return { elements: [...els, ...copies], ids };
 }
 
+/**
+ * The offset that puts `source`'s middle under `(x, y)`, pulled back so it stays on the
+ * writable paper.
+ *
+ * Paste uses this to land where you point rather than where the copy came from: pasting
+ * onto another page used to drop the content at its old coordinates, which on a page you'd
+ * scrolled away from meant "somewhere off the top". The ghost that follows the pointer is
+ * drawn from the same offset, so what you see under the pointer is exactly where it lands.
+ */
+export function placementOffset(
+  source: PageElement[],
+  x: number,
+  y: number,
+  geom: PageGeom,
+  area: Bounds,
+): { dx: number; dy: number } {
+  const b = unionBounds(source.map((el) => elementBounds(el, geom)));
+  if (!b) return { dx: 0, dy: 0 };
+  return clampMove(b, x - (b.x + b.w / 2), y - (b.y + b.h / 2), area);
+}
+
 // One clipboard for the session, so a lasso on one page pastes onto another — or
 // into another notebook. Deliberately not the system clipboard: these are objects
 // with pressure, not an image, and nothing else would know what to do with them.

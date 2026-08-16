@@ -401,6 +401,22 @@ its shape on any page size. Stamped ink is ordinary page content. Stickers persi
 in IndexedDB `ELEMENT_STORE` and sync to the account (a sticker is pure vectors, so
 it travels in full); thumbnails are SVG drawn from the vectors.
 
+**Armed placement** is how anything gets *put* on a page — a sticker from the tray, and a
+paste. Arming doesn't add anything: it says "tell me where", and the next contact inside the
+write area drops the content centred on that point, hands it to the selection so it can be
+nudged straight away, and counts as one undo step. `placementOffset()` (planner-select)
+computes the offset from the content's own bounds, clamped to the paper, and `paintGhost()`
+draws a 45%-opacity preview from that same offset on the live layer — so the ghost under the
+pointer is a picture of where it lands, not an approximation. The armed branch is checked
+**first** in `onPointerDown`, ahead of even the navigate branch: while something is armed the
+next contact means "here" whatever it's made with, so a stylus mustn't start a lasso and a
+finger mustn't turn the page instead. Off the paper the arm declines and the tap means what it
+usually means (a month tab still works). Escape, a change of tool, a page turn or a change of
+notebook cancel it — `armedTool` remembers what it was armed under, because arming *is* a
+switch to Select and that first change doesn't count. Paste used to land the copy at the
+coordinates it was cut from and then have the first press meant to nudge it start a fresh
+lasso.
+
 ### Rendering and export
 `src/lib/planner-render.ts` is the one place strokes/text become pixels
 (`drawStroke`, `drawTextBox`, `paintElements`) — shared by the live viewer and

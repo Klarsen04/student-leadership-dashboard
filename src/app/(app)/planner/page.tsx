@@ -184,6 +184,7 @@ import {
   handleAt,
   pick,
   pickAt,
+  placementOffset,
   recolor,
   remove as removeSelected,
   reorder,
@@ -224,7 +225,7 @@ import { ColorPickerButton } from "@/components/planner/ColorPicker";
 import { PageSidebar, THUMB_H } from "@/components/planner/PageSidebar";
 import { cachedThumb, paintThumb, thumbKey } from "@/lib/planner-thumbs";
 import { PageSetupDialog } from "@/components/planner/PageSetupDialog";
-import { TOOL_ALPHA, drawStroke, isFlattened, paintStrokes, strokeAlpha } from "@/lib/planner-render";
+import { TOOL_ALPHA, drawStroke, isFlattened, paintElements, paintStrokes, strokeAlpha } from "@/lib/planner-render";
 import { type EraserMode, ERASER_SIZES, eraseAt as eraseElements } from "@/lib/planner-erase";
 import {
   EXPORT_LONG_EDGE,
@@ -1240,6 +1241,14 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const [stickers, setStickers] = useState<SavedElement[]>([]);
   const [trayOpen, setTrayOpen] = useState(false);
   const [armedSticker, setArmedSticker] = useState<SavedElement | null>(null);
+  /**
+   * Content waiting to be put down: a paste, armed for placement. The next contact on the
+   * paper drops it there, and a ghost follows the pointer until then. Paste used to land the
+   * copy at the coordinates it was cut from — on another page, that's "somewhere near the
+   * top", nowhere near what you were looking at — and then the first press meant to nudge it
+   * into place started a fresh lasso instead.
+   */
+  const [armedPaste, setArmedPaste] = useState<PageElement[] | null>(null);
   /** A selection on its way into the tray, waiting for a name. */
   const [namingSticker, setNamingSticker] = useState<Omit<SavedElement, "id" | "createdAt"> | null>(null);
   /** Export menu open, and a running-export message for the busy overlay. */
@@ -1389,6 +1398,13 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   /** The sticker armed to be stamped, mirrored so the pointer handler sees it at once. */
   const armedStickerRef = useRef<SavedElement | null>(null);
   armedStickerRef.current = armedSticker;
+  /** The paste waiting to be placed, mirrored for the same reason. */
+  const armedPasteRef = useRef<PageElement[] | null>(null);
+  armedPasteRef.current = armedPaste;
+  /** Where the ghost of an armed paste is being drawn, so hover can rub it out again. */
+  const ghostAt = useRef<[number, number] | null>(null);
+  /** The tool the paste was armed under, so arming's own switch to Select isn't a change. */
+  const armedTool = useRef<Tool | null>(null);
   /** Set when the stroke being drawn is one the Shapes tool will snap on release. */
   const snapping = useRef(false);
   const [snapped, setSnapped] = useState<string | null>(null);
@@ -1778,6 +1794,38 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   }, []);
 
   /**
+   * A see-through preview of an armed paste, following the pointer. Drawn on the live
+   * layer, which is idle while something is armed (a press places it rather than drawing),
+   * and from the same `placementOffset` the placement itself uses — so the ghost isn't an
+   * approximation of where it will land, it's a picture of it.
+   */
+  const paintGhost = useCallback((x: number | null, y = 0) => {
+    const canvas = liveCanvasRef.current;
+    const box = boxRef.current;
+    if (!canvas || !box) return;
+    const rect = box.getBoundingClientRect();
+    const dpr = inkPixelRatio(rect.width, rect.height, window.devicePixelRatio || 1);
+    const pw = Math.round(rect.width * dpr);
+    const ph = Math.round(rect.height * dpr);
+    if (canvas.width !== pw || canvas.height !== ph) { canvas.width = pw; canvas.height = ph; }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    canvas.style.opacity = "1";
+    canvas.style.mixBlendMode = "normal";
+    const clip = armedPasteRef.current;
+    if (x === null || !clip?.length) { ghostAt.current = null; return; }
+    const off = placementOffset(clip, x, y, pageGeom(), writeAreaRef.current);
+    const ghost = translate(clip, new Set(clip.map((el) => elementId(el))), off.dx, off.dy);
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    paintElements(ctx, ghost, rect.width, rect.height);
+    ctx.restore();
+    ghostAt.current = [x, y];
+  }, [pageGeom]);
+
+  /**
    * A repaint at most once a frame. The pointer handlers that redraw whole-canvas
    * furniture — a lasso being swept, an eraser rubbing strokes out — go through this, so
    * a fast pointer can't queue up more full repaints than the display can show.
@@ -2162,9 +2210,16 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (action === "paste") {
       const clip = getClipboard();
       if (!clip.length) return;
-      const { elements, ids: pasted } = addCopies(els, clip, { dx: 0.02, dy: 0.02 });
-      setElements(elements);
-      applySelection(pasted);
+      // Armed, not dropped: the next contact on the paper decides where it goes. Landing it
+      // straight away can only guess, and its old coordinates are the worst guess of all.
+      setTool("select");
+      applySelection(new Set());
+      setArmedSticker(null);
+      setArmedPaste(clip);
+      armedPasteRef.current = clip;
+      // Arming *is* a switch to Select, so remember what it was armed under: only a later
+      // change of tool means "never mind".
+      armedTool.current = "select";
       return;
     }
     if (!ids.size) return;
@@ -2251,6 +2306,41 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     setTool("select");
     setArmedSticker(null);
   }, [applySelection, setElements, beginBurst, endBurst]);
+
+  /**
+   * Put an armed paste down with its middle at a page-coordinate point, and hand it to the
+   * selection so it can be nudged, resized or rotated straight away — one undo step for the
+   * whole thing.
+   */
+  const placePasteAt = useCallback((clip: PageElement[], x: number, y: number) => {
+    const off = placementOffset(clip, x, y, pageGeom(), writeAreaRef.current);
+    const { elements, ids } = addCopies(elementsRef.current, clip, off);
+    beginBurst();
+    setElements(elements);
+    endBurst();
+    applySelection(ids);
+    setArmedPaste(null);
+    ghostAt.current = null;
+  }, [applySelection, setElements, beginBurst, endBurst, pageGeom]);
+
+  /**
+   * Change your mind about a paste: it stops waiting, and the ghost goes with it. Escape does
+   * this, and so does picking another tool — an armed paste that survived a tool change would
+   * swallow the first stroke of whatever you picked instead.
+   */
+  const cancelPaste = useCallback(() => {
+    if (!armedPasteRef.current) return;
+    armedPasteRef.current = null;
+    armedTool.current = null;
+    setArmedPaste(null);
+    paintGhost(null);
+  }, [paintGhost]);
+
+  /** Escape: nothing is waiting to be placed any more, sticker or paste. */
+  const cancelPlacement = useCallback(() => {
+    setArmedSticker(null);
+    cancelPaste();
+  }, [cancelPaste]);
 
   const renameSticker = useCallback((id: string, name: string) => {
     setStickers((prev) => prev.map((s) => (s.id === id ? { ...s, name: name.trim().slice(0, 40) || s.name } : s)));
@@ -2433,6 +2523,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
         }
         return;
       }
+      // Escape first cancels whatever is waiting to be put down, then lets a selection go.
+      if (e.key === "Escape" && (armedPasteRef.current || armedStickerRef.current)) {
+        cancelPlacement();
+        return;
+      }
       if (picked) {
         if (e.key === "Escape") { applySelection(new Set()); return; }
         if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); selAction("delete"); return; }
@@ -2449,13 +2544,21 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [page, go, zoomTo, readOnly, selAction, nudgeSelection, applySelection]);
+  }, [page, go, zoomTo, readOnly, selAction, nudgeSelection, applySelection, cancelPlacement]);
 
   // The selection belongs to the tool that made it: switching away lets it go, so
   // no invisible handles are left holding a page's ink.
   useEffect(() => {
     if (tool !== "select" && selectionRef.current.size) applySelection(new Set());
   }, [tool, applySelection]);
+
+  // A paste doesn't stay armed across a change of tool or a page turn: it would eat the next
+  // press, which by then means something else entirely. Arming switches to Select itself, so
+  // only a tool other than the one it was armed under counts as a change of mind.
+  useEffect(() => {
+    if (armedTool.current && armedTool.current !== tool) cancelPaste();
+  }, [tool, cancelPaste]);
+  useEffect(() => { cancelPaste(); }, [page, plannerId, cancelPaste]);
 
   useEffect(() => () => { if (snapTimer.current) clearTimeout(snapTimer.current); }, []);
 
@@ -2600,6 +2703,21 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     const [x, y] = norm(e);
     const mode = routePointer({ tool: toolRef.current, pointerType: e.pointerType, readOnly });
 
+    // A sticker or a paste armed for placement: the next contact on the paper puts it
+    // down. Off the paper (a tab or the margin) it's ignored, so it can't land where ink
+    // is clipped, and the tap goes on to mean whatever it usually means.
+    //
+    // This comes before every other branch on purpose. While something is armed the next
+    // contact has one meaning — "here" — whatever it's made with: a press mustn't start a
+    // lasso instead, and a finger mustn't turn the page out from under the thing it was
+    // about to place.
+    if (!readOnly && (armedStickerRef.current || armedPasteRef.current) && inkAllowed(x, y)) {
+      e.preventDefault();
+      if (armedStickerRef.current) stampAt(armedStickerRef.current, x, y);
+      else placePasteAt(armedPasteRef.current!, x, y);
+      return;
+    }
+
     // Anything that isn't marking the paper navigates: taps on tabs and day cells,
     // page turns, and panning a zoomed page.
     if (mode === "navigate") {
@@ -2607,14 +2725,6 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       // furniture, never a writable day cell — unless the whole planner is read-only,
       // where there's nothing to write on anyway.
       beginTap(e, { chromeOnly: !readOnly && e.pointerType === "pen", flip: true });
-      return;
-    }
-
-    // A sticker armed for placement: the next contact on the paper stamps it. Off the
-    // paper (a tab or the margin) it's ignored, so it can't land where ink is clipped.
-    if (armedStickerRef.current && inkAllowed(x, y)) {
-      e.preventDefault();
-      stampAt(armedStickerRef.current, x, y);
       return;
     }
 
@@ -2718,6 +2828,12 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (toolRef.current === "eraser" && !readOnly && !gestureRef.current && e.pointerType !== "touch") {
       const [hx, hy] = norm(e);
       showEraserTip(hx, hy);
+    }
+
+    // So does an armed paste, so you can see where it's about to land.
+    if (armedPasteRef.current && !gestureRef.current) {
+      const [hx, hy] = norm(e);
+      paintGhost(inkAllowed(hx, hy) ? hx : null, hy);
     }
 
     // From here on, only the pointer that owns the page is listened to, and only in the
@@ -3630,7 +3746,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
             onPointerMove={onPointerMove}
             onPointerUp={endStroke}
             onPointerCancel={endStroke}
-            onPointerLeave={() => { if (!gestureRef.current) showEraserTip(null); }}
+            onPointerLeave={() => {
+              if (gestureRef.current) return;
+              showEraserTip(null);
+              if (armedPasteRef.current) paintGhost(null);
+            }}
           >
             {bgSrc ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -3900,7 +4020,9 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
           reserved whatever it says, and anything longer is clamped. */}
       <p className="h-9 shrink-0 flex items-center justify-center text-center text-[11px] leading-[1.15] text-black/35 px-4">
         <span className="line-clamp-2">
-        {readOnly
+        {armedPaste
+          ? `${armedPaste.length === 1 ? "That copy is" : `Those ${armedPaste.length} pieces are`} waiting to be placed — tap the page where you want the middle of it and it lands there, picked up ready to nudge, resize or rotate · Esc leaves it on the clipboard`
+          : readOnly
           ? "This is a built-in planner, so it stays as printed — tap the tabs or a day to look around, and make a copy when you want to write in it · tap the side edges, swipe or scroll to turn one page · pinch to zoom in"
           : tool === "shape"
             ? shapeKind === "auto"
