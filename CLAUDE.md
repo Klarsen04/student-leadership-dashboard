@@ -79,6 +79,33 @@ The tasks page uses a cassette tape metaphor:
 
 URL: `/tasks` = shelf, `/tasks?day=0-6` = board. Assets in `/public/tasktape/`.
 
+### Planner Library
+`/planner` is a multi-planner digital notebook. Each planner is a PDF rendered to
+WebP pages under `public/planner/<id>/`, listed in `public/planner/index.json`:
+
+```bash
+node scripts/add-planner.mjs <pdf> <id> "Name" "Description" "Category" "Credit"
+```
+
+The script needs `poppler` + `webp` (`brew install poppler webp`), renders every
+page, extracts the PDF's internal link annotations into `manifest.json`, and
+registers the planner. `category` becomes a section heading in the library.
+
+Tap navigation comes from one of two sources:
+- **manifest links** — hotspots read from the PDF's own hyperlinks
+- **`template`** — a key in `src/lib/planner-templates.ts`, for PDFs exported
+  without link annotations (iOS PDF export strips them). A template supplies
+  `hotspots(page)`, `label(page)`, `today(now)` and a `writeArea`.
+
+Hotspots are normalised rects (0..1 fractions of the page). `kind: "chrome"`
+marks printed tabs and buttons: ink is refused there and a stylus tap navigates.
+`kind: "content"` (day cells) sits on writable paper and only navigates from a
+finger tap or the hand tool. Ink is clipped to `writeArea`, so strokes never
+land on the tabs or outer margins. Add `?debug=1` to the URL to see the write
+area (blue) and hotspots (amber = chrome, red = content).
+
+Ink is stored per planner/page in the `PlannerInk` table via `/api/planner`.
+
 ## Key Patterns
 
 ### Light-themed pages (Tasks, Calendar)
