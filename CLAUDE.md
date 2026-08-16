@@ -57,11 +57,26 @@ prisma/
 ### Auth Flow
 Middleware (`src/middleware.ts`) checks for `next-auth.session-token` cookie on protected paths (`/dashboard`, `/calendar`, `/analytics`, `/reflections`). Missing token → redirect to `/login`. CSP nonce is generated per-request and injected via `x-nonce` header.
 
-### Client-Side Storage
-Some features use localStorage instead of the database:
-- **Classes** (`leadership-os-classes`): Recurring class schedule blocks
-- **Sub-calendars** (`leadership-os-calendars`): Calendar groupings and tags
-- Hooks in `src/lib/use*.ts` manage these
+### Client-Side Storage (account-synced)
+Some features keep their state as a JSON document rather than rows — classes
+(`leadership-os-classes`), sub-calendars (`leadership-os-calendars`), roles, goal
+categories, semester dates and the time budget. They are written to
+`localStorage` first and mirrored to the **account** in the `UserData` table via
+`/api/sync`, so signing in on a second device shows the same data.
+
+`src/lib/synced-setting.ts` is the primitive: `useSyncedSetting(spec)` reads
+localStorage synchronously (so there's no flash of defaults and SSR is safe),
+pulls the account copy once on mount, and pushes local edits after a 600 ms
+debounce. Rules that matter when adding one:
+- **Local first.** A failed push means "not on the other devices yet", never lost
+  data — the local copy stands and syncs on the next load.
+- **Last write wins** by `updatedAt`; the server never merges a document.
+- A local edit made *before* the pull returns outranks the pull (`dirty`), so
+  typing during a slow network isn't overwritten.
+- If the account has no copy, the local one is pushed up — that's how state
+  created before sync existed migrates itself.
+
+Hooks in `src/lib/use*.ts` wrap this; their public API is unchanged.
 
 ### Calendar Architecture
 The calendar page (`src/app/(app)/calendar/page.tsx`) is a large client component (~1300 lines) containing:
@@ -130,8 +145,8 @@ self-heals a drifted `PlannerInk` table on a "no such table/column" error.
 ### User notebooks (`src/lib/planner-library.ts`)
 The shipped planners are **read-only** — everyone shares them, so the viewer
 refuses ink and offers "Make a copy to write" instead (`isOwned()` is the test;
-existing ink still renders, frozen). Everything a user makes lives per-device in
-IndexedDB under "My Notebooks", and only those can be renamed, edited or deleted:
+existing ink still renders, frozen). Everything a user makes lives in IndexedDB
+under "My Notebooks", and only those can be renamed, edited or deleted:
 - An **import** keeps the original PDF in IndexedDB and renders pages on demand
   with pdf.js (`PdfRenderer`); its own hyperlinks are extracted at import time
   into tappable hotspots, so a PDF planner's month tabs work. `pdfKey` marks a
@@ -146,10 +161,26 @@ IndexedDB under "My Notebooks", and only those can be renamed, edited or deleted
   Paper-backed notebooks are the only ones that can **add pages**, append-only —
   inserting mid-notebook would shuffle ink onto the wrong page numbers.
 
-Ink still syncs to the account (keyed by planner id), so it isn't lost with the
-device. Deleting an import keeps its ink — re-importing the same PDF picks it back
-up — while deleting a copy or blank notebook clears it (`DELETE /api/planner`),
-since its id goes with it.
+Ink syncs to the account (keyed by planner id), so it isn't lost with the device.
+Deleting an import keeps its ink — re-importing the same PDF picks it back up —
+while deleting a copy or blank notebook clears it (`DELETE /api/planner`), since
+its id goes with it.
+
+**Notebooks follow the account too.** A notebook's *record* (name, kind, paper,
+`sourceId`, page count), its page index, its stickers and its custom templates
+sync through `/api/sync` (`syncUserPlanners`, `syncRecords`, `syncSavedElements`,
+`syncUserTemplates`) — so a copy made on a laptop is on the iPad, with its
+handwriting. Same rules as settings above: newest `updatedAt` wins, and a delete
+leaves a **tombstone** so an offline device doesn't push the notebook back up.
+
+What can't travel is the **file**. An import's PDF (up to 100 MB) stays on the
+device that imported it, and `pdfKey` names a blob in *this* device's IndexedDB —
+so a merge keeps the local `pdfKey` rather than the remote one. Elsewhere the
+notebook still appears, its card says "Add the PDF · Your handwriting is safe",
+and `attachPdf()` re-links the same file to the same id (refusing a PDF with a
+different page count, which would land ink on the wrong pages). Opening such a
+notebook by URL bounces to the library instead of showing blank pages. A custom
+template's picture *does* travel, inlined as a base64 data URL when ≤ 1.2 MB.
 
 pdf.js is loaded at runtime as a native module from `/public` (`pdf.min.mjs` +
 `pdf.worker.min.mjs`, copied by `scripts/copy-pdf-worker.mjs` from
@@ -181,7 +212,8 @@ window's samples so a shaky hand doesn't invent corners.
 for reuse. A sticker is kept as its own vector strokes/text in its own square
 space (x 0..aspect, y 0..1); stamping scales it by a target height, so it keeps
 its shape on any page size. Stamped ink is ordinary page content. Stickers persist
-per-device in IndexedDB `ELEMENT_STORE`; thumbnails are SVG drawn from the vectors.
+in IndexedDB `ELEMENT_STORE` and sync to the account (a sticker is pure vectors, so
+it travels in full); thumbnails are SVG drawn from the vectors.
 
 ### Rendering and export
 `src/lib/planner-render.ts` is the one place strokes/text become pixels

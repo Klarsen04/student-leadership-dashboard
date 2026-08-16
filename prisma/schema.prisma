@@ -50,6 +50,7 @@ model User {
   tasks         Task[]
   checkIns      DailyCheckIn[]
   plannerInk    PlannerInk[]
+  userData      UserData[]
 }
 
 model VerificationToken {
@@ -159,6 +160,34 @@ model PlannerInk {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, plannerId, page])
+}
+
+// Per-account documents that used to live only in the browser: sub-calendars,
+// the class schedule, roles, the notebooks a user made, their page indexes,
+// stickers and custom templates. Each row is one JSON document, so a device
+// syncs by pulling a scope and pushing back what it changed.
+//
+// It's a key/value table on purpose. Nothing here is queried by its contents —
+// the server only ever hands a document back to the client that owns it — and
+// the shapes are versioned by the client code that reads them, so modelling
+// each one as its own table would buy no integrity and cost a migration every
+// time a field moves.
+model UserData {
+  id        String    @id @default(cuid())
+  scope     String // "setting" | "notebook" | "pageIndex" | "sticker" | "template"
+  key       String // sub-key within the scope: the setting name, or a notebook id
+  value     String // JSON document
+  // Soft delete: a device that has been offline has to learn a notebook was
+  // deleted elsewhere. A hard delete would look identical to "never synced" and
+  // the stale copy would be pushed straight back up.
+  deletedAt DateTime?
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([userId, scope, key])
+  @@index([userId, scope])
 }
 
 model Reflection {

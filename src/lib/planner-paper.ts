@@ -195,6 +195,8 @@ export interface TemplateDefinition {
   /** Set on templates the user made, which are the only deletable ones. */
   custom?: boolean;
   createdAt?: number;
+  /** Last edit to a user template, so devices can tell whose copy is newer. */
+  updatedAt?: number;
 }
 
 const RULE = "#C7D5E2";

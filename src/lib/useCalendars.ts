@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback } from "react";
+import { readSetting, useSyncedSetting, type SettingSpec } from "@/lib/synced-setting";
 
 export interface CalendarTag {
   name: string;
@@ -53,40 +54,30 @@ const COLOR_OPTIONS = [
   "bg-emerald-500",
 ];
 
-function getStoredCalendars(): SubCalendar[] {
-  if (typeof window === "undefined") return DEFAULT_CALENDARS;
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        // Strip any legacy `engine` field from calendars saved before the app
-        // standardized on the single iLamy calendar view. Tags saved before
-        // they had their own colour were plain strings — give them the
-        // calendar's colour.
-        return parsed.map(({ engine: _engine, ...c }: any) => ({
-          ...c,
-          tags: (c.tags || []).map((t: any) =>
-            typeof t === "string" ? { name: t, color: c.color || "bg-blue-500" } : t
-          ),
-        }));
-      }
-    }
-  } catch {}
-  return DEFAULT_CALENDARS;
-}
+// Calendars follow the account, so the same ones show up on every device the
+// user signs in on. Details of the local/remote contract: src/lib/synced-setting.ts.
+const CALENDARS: SettingSpec<SubCalendar[]> = {
+  key: STORAGE_KEY,
+  fallback: DEFAULT_CALENDARS,
+  revive: (raw) => {
+    if (!Array.isArray(raw) || raw.length === 0) return null;
+    // Strip any legacy `engine` field from calendars saved before the app
+    // standardized on the single iLamy calendar view. Tags saved before
+    // they had their own colour were plain strings — give them the
+    // calendar's colour.
+    return raw.map(({ engine: _engine, ...c }: any) => ({
+      ...c,
+      tags: (c.tags || []).map((t: any) =>
+        typeof t === "string" ? { name: t, color: c.color || "bg-blue-500" } : t
+      ),
+    }));
+  },
+};
+
+const getStoredCalendars = (): SubCalendar[] => readSetting(CALENDARS);
 
 export function useCalendars() {
-  const [calendars, setCalendars] = useState<SubCalendar[]>(DEFAULT_CALENDARS);
-
-  useEffect(() => {
-    setCalendars(getStoredCalendars());
-  }, []);
-
-  const save = useCallback((updated: SubCalendar[]) => {
-    setCalendars(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-  }, []);
+  const { value: calendars, setValue: save } = useSyncedSetting(CALENDARS);
 
   const addCalendar = useCallback((name: string, color: string) => {
     const current = getStoredCalendars();

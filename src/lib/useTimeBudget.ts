@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback } from "react";
+import { readSetting, useSyncedSetting, type SettingSpec } from "@/lib/synced-setting";
 
 export interface BudgetEntry {
   calendar: string;
@@ -9,36 +10,28 @@ export interface BudgetEntry {
 
 const STORAGE_KEY = "leadership-os-time-budget";
 
-function getStored(): BudgetEntry[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) return JSON.parse(stored);
-  } catch {}
-  return [];
-}
+// The weekly budget follows the account (src/lib/synced-setting.ts).
+const BUDGETS: SettingSpec<BudgetEntry[]> = {
+  key: STORAGE_KEY,
+  fallback: [],
+  revive: (raw) => (Array.isArray(raw) ? (raw as BudgetEntry[]) : null),
+};
+
+const getStored = (): BudgetEntry[] => readSetting(BUDGETS);
 
 export function useTimeBudget() {
-  const [budgets, setBudgets] = useState<BudgetEntry[]>([]);
-
-  useEffect(() => {
-    setBudgets(getStored());
-  }, []);
-
-  const save = useCallback((updated: BudgetEntry[]) => {
-    setBudgets(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-  }, []);
+  const { value: budgets, setValue: save } = useSyncedSetting(BUDGETS);
 
   const setBudget = useCallback((calendar: string, hours: number) => {
     const current = getStored();
     const existing = current.findIndex((b) => b.calendar === calendar);
-    if (existing >= 0) {
-      current[existing].hoursPerWeek = hours;
-    } else {
-      current.push({ calendar, hoursPerWeek: hours });
-    }
-    save(current);
+    // Rebuilt rather than mutated in place: the stored array is the shared value
+    // now, so editing it directly would change it behind the store's back.
+    save(
+      existing >= 0
+        ? current.map((b, i) => (i === existing ? { ...b, hoursPerWeek: hours } : b))
+        : [...current, { calendar, hoursPerWeek: hours }],
+    );
   }, [save]);
 
   const removeBudget = useCallback((calendar: string) => {

@@ -54,6 +54,7 @@ import {
   Download,
   FileText,
   FileImage,
+  FileUp,
   Files,
   Loader2,
 } from "lucide-react";
@@ -101,12 +102,15 @@ import {
   USER_CATEGORY,
   createBlankNotebook,
   deleteUserPlanner,
+  attachPdf,
   duplicatePlanner,
   importPdf,
+  fileMissing,
   isOwned,
   listUserPlanners,
   renameUserPlanner,
   suggestedCopyName,
+  syncUserPlanners,
 } from "@/lib/planner-library";
 import {
   type TemplateDefinition,
@@ -142,6 +146,7 @@ import {
   capturePage,
   listUserTemplates,
   saveUserTemplate,
+  syncUserTemplates,
   templateImageUrl,
   templateImageUrlNow,
 } from "@/lib/planner-user-templates";
@@ -198,6 +203,7 @@ import {
   renameSavedElement,
   saveElement,
   stampElements,
+  syncSavedElements,
 } from "@/lib/planner-elements";
 import { PageSidebar, THUMB_H } from "@/components/planner/PageSidebar";
 import { PageSetupDialog } from "@/components/planner/PageSetupDialog";
@@ -272,11 +278,17 @@ function PlannerRoot() {
   const [planners, setPlanners] = useState<PlannerInfo[] | null>(null);
   const [active, setActive] = useState<PlannerManifest | null>(null);
 
-  // The library is the shipped planners plus whatever this device has imported
-  // or duplicated. User notebooks come first so they're the first thing seen.
+  // The library is the shipped planners plus the user's own notebooks. Their
+  // notebooks come first so they're the first thing seen.
+  //
+  // This device's copy is shown as soon as it's read, then reconciled with the
+  // account: a notebook made on another device appears a moment later rather
+  // than the shelf sitting empty while the network answers.
   const reload = useCallback(async () => {
     const [builtIn, mine] = await Promise.all([fetchPlannerIndex(), listUserPlanners()]);
     setPlanners([...mine, ...builtIn]);
+    const synced = await syncUserPlanners();
+    setPlanners([...synced, ...builtIn]);
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
@@ -294,11 +306,19 @@ function PlannerRoot() {
       return;
     }
     let cancelled = false;
-    fetchPlannerManifest(info).then((m) => {
+    (async () => {
+      // An import synced from another device has no PDF here, so there's nothing
+      // to render. Send it to the library, which offers to add the file — better
+      // than opening a notebook that shows blank pages with no explanation.
+      if (await fileMissing(info)) {
+        if (!cancelled) router.replace("/planner?library=1");
+        return;
+      }
+      const m = await fetchPlannerManifest(info);
       if (!cancelled) setActive(m);
-    });
+    })();
     return () => { cancelled = true; };
-  }, [planners, urlPlanner, showLibrary]);
+  }, [planners, urlPlanner, showLibrary, router]);
 
   if (!planners) {
     return (
@@ -372,16 +392,56 @@ function PlannerLibrary({ planners, onOpen, onChanged }: {
     | null
   >(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  // Which import is waiting for a file, so the same picker serves both "import a
+  // new PDF" and "add the PDF for this one".
+  const attachTo = useRef<UserPlanner | null>(null);
 
   useEffect(() => setSelectedId(getSelectedPlannerId()), []);
 
   const sections = useMemo(() => groupByCategory(planners), [planners]);
   const shown = filter ? sections.filter((s) => s.category === filter) : sections;
 
+  // Imports that reached this device through the account without their PDF. The
+  // check reads IndexedDB, so it's done once per library load rather than per card.
+  const [missing, setMissing] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const ids: string[] = [];
+      for (const p of planners) if (await fileMissing(p)) ids.push(p.id);
+      if (alive) setMissing(new Set(ids));
+    })();
+    return () => { alive = false; };
+  }, [planners]);
+
+  /** Re-add the PDF for a notebook imported on another device. */
+  const onAttach = async (meta: UserPlanner, file: File) => {
+    const t = toast.loading(`Adding “${file.name}”…`);
+    try {
+      await attachPdf(meta, file);
+      await onChanged();
+      toast.success(`“${meta.name}” is ready on this device`, {
+        id: t,
+        description: "Your handwriting was waiting on your account.",
+      });
+      setSelectedPlannerId(meta.id);
+      onOpen(meta.id);
+    } catch (e: any) {
+      toast.error("Couldn't use that PDF", { id: t, description: e?.message?.slice(0, 180) });
+    }
+  };
+
   const onImport = async (file: File | undefined) => {
+    const attach = attachTo.current;
+    attachTo.current = null;
     if (!file) return;
     if (file.type && file.type !== "application/pdf") {
       toast.error("Please choose a PDF file.");
+      return;
+    }
+    if (attach) {
+      if (fileInput.current) fileInput.current.value = "";
+      await onAttach(attach, file);
       return;
     }
     setImporting(true);
@@ -529,10 +589,15 @@ function PlannerLibrary({ planners, onOpen, onChanged }: {
                       planner={p}
                       accent={accent}
                       current={p.id === selectedId}
+                      needsFile={missing.has(p.id)}
                       onOpen={() => onOpen(p.id)}
                       onDuplicate={() => askDuplicate(p)}
                       onDelete={isOwned(p) ? () => setDialog({ mode: "delete", planner: p }) : undefined}
                       onRename={isOwned(p) ? () => setDialog({ mode: "rename", planner: p }) : undefined}
+                      onAddFile={() => {
+                        attachTo.current = p as UserPlanner;
+                        fileInput.current?.click();
+                      }}
                     />
                   ))}
                 </div>
@@ -885,14 +950,15 @@ function SegmentButton({ active, onClick, icon, label, accent }: {
   );
 }
 
-function PlannerCard({ planner, accent, current, onOpen, onDuplicate, onDelete, onRename }: {
-  planner: PlannerInfo; accent: string; current: boolean; onOpen: () => void;
-  onDuplicate: () => void; onDelete?: () => void; onRename?: () => void;
+function PlannerCard({ planner, accent, current, needsFile, onOpen, onDuplicate, onDelete, onRename, onAddFile }: {
+  planner: PlannerInfo; accent: string; current: boolean; needsFile?: boolean; onOpen: () => void;
+  onDuplicate: () => void; onDelete?: () => void; onRename?: () => void; onAddFile?: () => void;
 }) {
   const [menu, setMenu] = useState(false);
   const owned = isOwned(planner); // an import, a copy, or a blank notebook
   const kind = (planner as UserPlanner).kind;
-  const pdfCover = Boolean(planner.pdfKey);
+  // No point asking pdf.js for a cover when the file isn't on this device.
+  const pdfCover = Boolean(planner.pdfKey) && !needsFile;
   const [cover, setCover] = useState<string | null>(null);
 
   // A duplicate reuses its source's WebP cover; a PDF has to render page 1.
@@ -906,9 +972,11 @@ function PlannerCard({ planner, accent, current, onOpen, onDuplicate, onDelete, 
 
   const coverSrc = isPaperBacked(planner)
     ? paperSrc(planner.paper, planner.aspect, planner.tint)
-    : pdfCover
-      ? cover
-      : imageSrc(planner, 1);
+    : needsFile
+      ? null
+      : pdfCover
+        ? cover
+        : imageSrc(planner, 1);
   const badge = kind === "import" ? "Imported" : kind === "copy" ? "Copy" : kind === "blank" ? "Notebook" : null;
   const BadgeIcon = kind === "import" ? FilePlus2 : kind === "copy" ? Copy : NotebookPen;
 
@@ -916,7 +984,15 @@ function PlannerCard({ planner, accent, current, onOpen, onDuplicate, onDelete, 
     <div
       className="group relative snap-start shrink-0 w-[230px] sm:w-[248px] rounded-3xl bg-white border border-black/5 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all p-3"
     >
-      <button onClick={onOpen} title={planner.credit ? `${planner.name} — ${planner.credit}` : planner.name} className="block w-full text-left">
+      <button
+        onClick={needsFile ? onAddFile : onOpen}
+        title={
+          needsFile
+            ? `“${planner.name}” was imported on another device — add the PDF here to open it`
+            : planner.credit ? `${planner.name} — ${planner.credit}` : planner.name
+        }
+        className="block w-full text-left"
+      >
         {/* Cover, contained so tall and wide planners both sit nicely */}
         <div className="relative h-[190px] flex items-center justify-center rounded-2xl bg-black/[0.02] overflow-hidden">
           {coverSrc ? (
@@ -927,6 +1003,14 @@ function PlannerCard({ planner, accent, current, onOpen, onDuplicate, onDelete, 
               className="max-h-full max-w-full object-contain rounded-lg shadow-[0_2px_10px_rgba(0,0,0,0.12)]"
               loading="lazy"
             />
+          ) : needsFile ? (
+            // Imported on another device: the notebook and its handwriting are on
+            // the account, but a PDF is too big to sync, so the file is re-added here.
+            <div className="px-4 text-center text-black/45">
+              <FileUp className="w-7 h-7 mx-auto mb-2 text-[#8A6DE9]" />
+              <p className="text-[12px] font-semibold text-black/60" style={MARKER}>Add the PDF</p>
+              <p className="text-[11px] mt-0.5 leading-snug">Imported on another device. Your handwriting is safe.</p>
+            </div>
           ) : (
             <div className="w-6 h-6 rounded-full border-2 border-black/10 border-t-[#8A6DE9] animate-spin" />
           )}
@@ -993,11 +1077,20 @@ function PlannerCard({ planner, accent, current, onOpen, onDuplicate, onDelete, 
       </button>
       {menu && (
         <div className="absolute top-12 right-4 z-10 w-48 rounded-xl bg-white border border-black/10 shadow-lg py-1 text-[13px]">
-          <MenuItem
-            icon={<Copy className="w-3.5 h-3.5" />}
-            label={owned ? "Duplicate" : "Make an editable copy"}
-            onClick={() => { setMenu(false); onDuplicate(); }}
-          />
+          {needsFile && onAddFile && (
+            <MenuItem
+              icon={<FileUp className="w-3.5 h-3.5" />}
+              label="Add the PDF"
+              onClick={() => { setMenu(false); onAddFile(); }}
+            />
+          )}
+          {!needsFile && (
+            <MenuItem
+              icon={<Copy className="w-3.5 h-3.5" />}
+              label={owned ? "Duplicate" : "Make an editable copy"}
+              onClick={() => { setMenu(false); onDuplicate(); }}
+            />
+          )}
           {onRename && <MenuItem icon={<Pencil className="w-3.5 h-3.5" />} label="Rename" onClick={() => { setMenu(false); onRename(); }} />}
           {onDelete && <MenuItem icon={<Trash2 className="w-3.5 h-3.5" />} label="Delete" danger onClick={() => { setMenu(false); onDelete(); }} />}
           {!owned && (
@@ -1246,17 +1339,20 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     return thumbRendererRef.current.page(sourcePage);
   }, [planner.pdfKey]);
 
-  // The user's own templates, so a page can reference one by id.
+  // The user's own templates, so a page can reference one by id. Pulled from the
+  // account, so a template made on one device is there on the next.
   useEffect(() => {
     let alive = true;
-    listUserTemplates().then((t) => { if (alive) setCustomTemplates(t); });
+    listUserTemplates().then((t) => { if (alive && t.length) setCustomTemplates(t); });
+    syncUserTemplates().then((t) => { if (alive) setCustomTemplates(t); });
     return () => { alive = false; };
   }, []);
 
-  // The user's saved stickers, shared across every notebook on this device.
+  // The user's saved stickers, shared across every notebook and every device.
   useEffect(() => {
     let alive = true;
-    listSavedElements().then((s) => { if (alive) setStickers(s); });
+    listSavedElements().then((s) => { if (alive && s.length) setStickers(s); });
+    syncSavedElements().then((s) => { if (alive) setStickers(s); });
     return () => { alive = false; };
   }, []);
 

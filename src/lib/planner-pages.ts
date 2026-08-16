@@ -30,6 +30,7 @@ import {
   updateUserPlanner,
   type UserPlanner,
 } from "@/lib/planner-library";
+import { docValue, pullDoc, pushDoc } from "@/lib/sync";
 import { parseElements, pushPage, serializeElements, type PageElement } from "@/lib/planner-ink";
 import {
   DEFAULT_PAGE_COLOR,
@@ -136,15 +137,30 @@ export function defaultIndex(planner: PlannerInfo): PageIndex {
 export async function loadPageIndex(planner: PlannerInfo): Promise<PageIndex> {
   if (!isOwned(planner)) return defaultIndex(planner);
   const stored = await idbGet<PageIndex>(PAGE_STORE, planner.id);
-  const valid =
-    stored &&
-    Array.isArray(stored.pages) &&
-    stored.pages.length > 0 &&
-    stored.pages.every((p) => Number.isFinite(p?.slot) && p.slot >= 1 && Boolean(p.background));
-  if (!valid) return defaultIndex(planner);
+  // The arrangement is per account, so pages added on one device are there on the
+  // next. Whichever copy was written last wins; a device that's been offline
+  // pushes its own index up instead of silently losing the pages it added.
+  const remote = validIndex(docValue<PageIndex>(await pullDoc("pageIndex", planner.id)));
+  const local = validIndex(stored);
+  if (remote && (!local || remote.updatedAt > local.updatedAt)) {
+    await idbPut(PAGE_STORE, { ...remote, plannerId: planner.id });
+    return { ...remote, plannerId: planner.id };
+  }
+  if (!local) return defaultIndex(planner);
+  if (!remote || local.updatedAt > remote.updatedAt) void pushDoc("pageIndex", planner.id, local);
   // The page count on the notebook record is what the library card shows; the
   // index is the truth, so trust the index and let a save reconcile the record.
-  return { ...stored, plannerId: planner.id };
+  return { ...local, plannerId: planner.id };
+}
+
+/** An index only counts if it actually describes pages we can render. */
+function validIndex(index: PageIndex | null): PageIndex | null {
+  const ok =
+    index &&
+    Array.isArray(index.pages) &&
+    index.pages.length > 0 &&
+    index.pages.every((p) => Number.isFinite(p?.slot) && p.slot >= 1 && Boolean(p.background));
+  return ok ? { ...index!, updatedAt: index!.updatedAt ?? 0 } : null;
 }
 
 /**
@@ -154,6 +170,7 @@ export async function loadPageIndex(planner: PlannerInfo): Promise<PageIndex> {
 export async function savePageIndex(index: PageIndex): Promise<void> {
   const next: PageIndex = { ...index, updatedAt: Date.now() };
   await idbPut(PAGE_STORE, next);
+  void pushDoc("pageIndex", next.plannerId, next);
   await updateUserPlanner(index.plannerId, { pages: index.pages.length });
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback } from "react";
+import { readSetting, useSyncedSetting, type SettingSpec } from "@/lib/synced-setting";
 
 const DEFAULT_ROLES = [
   "Personal",
@@ -26,30 +27,21 @@ const ROLE_COLOR_POOL = [
   "bg-lime-500",
 ];
 
-function getStoredRoles(): string[] {
-  if (typeof window === "undefined") return DEFAULT_ROLES;
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch {}
-  return DEFAULT_ROLES;
-}
+// Roles follow the account (src/lib/synced-setting.ts).
+const ROLES: SettingSpec<string[]> = {
+  key: STORAGE_KEY,
+  fallback: DEFAULT_ROLES,
+  revive: (raw) => (Array.isArray(raw) && raw.length > 0 ? (raw as string[]) : null),
+};
+
+const getStoredRoles = (): string[] => readSetting(ROLES);
 
 export function useRoles() {
-  const [roles, setRoles] = useState<string[]>(DEFAULT_ROLES);
-
-  useEffect(() => {
-    setRoles(getStoredRoles());
-  }, []);
+  const { value: roles, setValue } = useSyncedSetting(ROLES);
 
   const saveRoles = useCallback((newRoles: string[]) => {
-    setRoles(newRoles);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newRoles));
-    window.dispatchEvent(new Event("roles-updated"));
-  }, []);
+    setValue(newRoles);
+  }, [setValue]);
 
   const addRole = useCallback((name: string) => {
     const trimmed = name.trim();
@@ -65,12 +57,8 @@ export function useRoles() {
     saveRoles(current.filter((r) => r !== name));
   }, [saveRoles]);
 
-  useEffect(() => {
-    const handler = () => setRoles(getStoredRoles());
-    window.addEventListener("roles-updated", handler);
-    return () => window.removeEventListener("roles-updated", handler);
-  }, []);
-
+  // No cross-component event to dispatch any more: the synced store notifies
+  // every hook instance itself, which also covers a value arriving from the account.
   return { roles, addRole, deleteRole };
 }
 
