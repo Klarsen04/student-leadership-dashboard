@@ -197,9 +197,43 @@ The Text tool drops an editable, draggable, resizable text box; fonts come from
 `PLANNER_FONTS` (Inter/Instrument Serif/Fredoka/Caveat/Patrick Hand/mono, wired
 up as CSS variables in `src/app/layout.tsx`).
 
+### Colour (`src/lib/planner-color.ts`, `components/planner/ColorPicker.tsx`)
+Presets are a shortcut, never the whole set: every colour in the planner also opens a
+`ColorPickerButton` — saturation/brightness pad, hue slider, optional opacity, hex box,
+that thing's presets, and one **shared recents list** (`leadership-os-recent-colours`),
+because a colour mixed for the pen is the one you'll want for a heading a moment later.
+It's wired to the pen/pencil/marker/highlighter/shape nib, text boxes, the lasso's
+recolour, a page's paper and ruling, and a new notebook's tint.
+
+Three things it gets right and shouldn't be undone:
+- **hex is the only stored form.** Opacity lives beside it as its own field, never folded
+  into `#rrggbbaa` — the renderer already multiplies by `strokeAlpha`, so a packed alpha
+  would be applied twice.
+- **the panel keeps its own HSV.** Hex can't carry the hue of black or of a grey, so
+  deriving HSV from the prop each render would snap a hue back to red the moment value
+  hit the bottom. It re-reads the prop only when the value isn't the one it just emitted.
+- **it renders in a portal on `document.body`.** The toolbars use `backdrop-filter`, and
+  a filtered ancestor becomes the containing block for `position: fixed` — inside the
+  toolbar the panel was clipped off the right of the viewport.
+
+Recolouring a selection from the picker is **one** undo step: `onChange` edits inside a
+burst, and the picker's `onCommit` (drag end, preset tap, hex entered) closes it.
+
+### Toolbar geometry
+The toolbar is two rows: identity + tools + global actions, then a **tool options row of
+constant height** that never wraps (it scrolls sideways). This isn't cosmetic. When the
+options shared one wrapping row, switching pen → eraser dropped the toolbar from two
+lines to one and the paper jumped 36px up the screen, so a stylus resting on a word was
+suddenly over a different one — and a precise erase aimed at a stroke missed it entirely.
+The footer hint is height-reserved for the same reason (its text changes per tool, and a
+one-line hint left the paper more room than a two-line one). **Anything added to the
+toolbar or footer must not change size with the armed tool.** The options row also ranks
+`z-20` under the top row's `z-30`, or it covers the menus hanging down from it.
+
 Toolbar controls carry stable hooks for tests — `data-tool` on each tool button,
-`data-swatch` on each colour, `data-zoom` on the zoom readout, `aria-pressed` for
-what's armed. Tooltips describe the tool and get reworded; select on these instead.
+`data-swatch` on each colour, `data-picker`/`data-picker-panel` on a colour picker,
+`data-recolor` on the selection swatches, `data-zoom` on the zoom readout, `aria-pressed`
+for what's armed. Tooltips describe the tool and get reworded; select on these instead.
 
 Content is stored per planner/page in the `PlannerInk` table via `/api/planner`
 (the `strokes` column holds the serialized `PageElement[]`, text boxes included).

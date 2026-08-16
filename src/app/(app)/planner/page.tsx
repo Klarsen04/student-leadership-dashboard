@@ -207,6 +207,7 @@ import {
   stampElements,
   syncSavedElements,
 } from "@/lib/planner-elements";
+import { ColorPickerButton } from "@/components/planner/ColorPicker";
 import { PageSidebar, THUMB_H } from "@/components/planner/PageSidebar";
 import { PageSetupDialog } from "@/components/planner/PageSetupDialog";
 import { TOOL_ALPHA, drawStroke, isFlattened, paintStrokes, strokeAlpha } from "@/lib/planner-render";
@@ -946,8 +947,19 @@ function NewNotebookDialog({ onClose, onCreate }: {
                   tint === t.value ? "ring-2 ring-offset-1 ring-[#c98a00] scale-110" : "border-black/15 hover:scale-105"
                 }`}
                 style={{ background: t.value }}
+                data-swatch={t.value}
+                aria-pressed={tint === t.value}
               />
             ))}
+            <ColorPickerButton
+              name="tint"
+              title="Any colour"
+              label="Paper colour"
+              color={tint}
+              onChange={setTint}
+              presets={PAPER_TINTS.map((t) => t.value)}
+              className="w-7 h-7 rounded-full ring-1 ring-black/15 flex items-center justify-center hover:scale-105 transition-transform"
+            />
           </div>
         </div>
 
@@ -2095,10 +2107,16 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     }
   }, [applySelection, rerender, setElements]);
 
-  const recolorSelection = useCallback((c: string) => {
+  /**
+   * Recolour what's selected. `live` is for a colour being dragged in the picker: the
+   * whole drag is folded into one undo step, closed when the picker settles, so undo
+   * doesn't have to walk back through every shade the pointer passed over.
+   */
+  const recolorSelection = useCallback((c: string, live = false) => {
     if (!selectionRef.current.size) return;
-    setElements(recolor(elementsRef.current, selectionRef.current, c));
-  }, [setElements]);
+    if (live && !burstRef.current) beginBurst();
+    setElements(recolor(elementsRef.current, selectionRef.current, c), { history: !live });
+  }, [setElements, beginBurst]);
 
   // ---- stickers ----
   // A saved element is the selection's own strokes and text boxes, lifted into their
@@ -3013,6 +3031,8 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   // The box round the selection, in page coordinates: where the handles and the
   // action bar hang. Recomputed each render, so it follows a drag frame by frame.
   const selBounds = tool === "select" && selection.size ? selectionBounds(elementsRef.current, selection, pageGeom()) : null;
+  /** What the selection is currently coloured, so the picker opens on it rather than black. */
+  const selectionColor = selBounds ? selectedElements(elementsRef.current, selection)[0]?.color : undefined;
   /**
    * Selection furniture counter-scales with the zoom, so a handle stays the size of
    * a finger at 6× instead of covering a quarter of the page. `scale()` comes first
@@ -3075,159 +3095,6 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
             <ToolButton t="text" icon={<Type className="w-4 h-4" />} title="Text box (tap the paper to type)" />
             <ToolButton t="select" icon={<Lasso className="w-4 h-4" />} title="Select — move, resize, recolour or copy what you've written" />
             <ToolButton t="eraser" icon={<Eraser className="w-4 h-4" />} title="Eraser" />
-          </div>
-        )}
-
-        {showInkControls && (
-          <>
-            <div className="flex items-center gap-1 ml-1">
-              {swatches.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setColor(c)}
-                  className={`w-5 h-5 rounded-full transition-transform ${color === c ? "ring-2 ring-offset-1 ring-black/40 scale-110" : "hover:scale-110"}`}
-                  style={{ background: c }}
-                  title={`${TOOL_NAME[prefKey]} colour`}
-                  data-swatch={c}
-                  aria-pressed={color === c}
-                />
-              ))}
-            </div>
-            <div className="flex items-center gap-0.5 ml-1">
-              {PEN_SIZES.map((s, i) => (
-                <button
-                  key={s}
-                  onClick={() => setSize(s)}
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center ${size === s ? "bg-black/10" : "hover:bg-black/5"}`}
-                  title={["Fine", "Medium", "Bold"][i]}
-                >
-                  <span className="rounded-full bg-black/70" style={{ width: 3 + i * 3, height: 3 + i * 3 }} />
-                </button>
-              ))}
-            </div>
-            {/* How see-through this tool is. Kept per tool, so turning the highlighter
-                down doesn't fade the pen. */}
-            <label className="flex items-center gap-1.5 ml-1" title="How see-through this tool is">
-              <input
-                type="range"
-                min={10}
-                max={100}
-                step={5}
-                value={Math.round(opacity * 100)}
-                onChange={(e) => setPref({ opacity: Number(e.target.value) / 100 })}
-                className="w-16 accent-[#8A6DE9]"
-                aria-label="Opacity"
-              />
-              <span className="text-[10px] text-black/40 tabular-nums w-7">{Math.round(opacity * 100)}%</span>
-            </label>
-          </>
-        )}
-
-        {tool === "eraser" && (
-          <div className="flex items-center gap-1 ml-1">
-            <div className="flex items-center gap-0.5 rounded-xl bg-black/[0.04] p-0.5">
-              {([
-                ["precise", "Precise", "Precise — rubs out only the bit you touch, and leaves the rest of the stroke exactly as you drew it"],
-                ["stroke", "Whole stroke", "Whole stroke — touch a stroke anywhere and all of it goes"],
-              ] as const).map(([m, label, title]) => (
-                <button
-                  key={m}
-                  onClick={() => setEraserMode(m)}
-                  title={title}
-                  className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors ${eraserMode === m ? "bg-white shadow-sm text-black/75" : "text-black/40 hover:bg-black/5"}`}
-                  style={MARKER}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-0.5">
-              {ERASER_SIZES.map((r, i) => (
-                <button
-                  key={r}
-                  onClick={() => setEraserSize(r)}
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center ${eraserSize === r ? "bg-black/10" : "hover:bg-black/5"}`}
-                  title={`${["Small", "Medium", "Large"][i]} tip`}
-                >
-                  <span className="rounded-full border border-black/50" style={{ width: 5 + i * 4, height: 5 + i * 4 }} />
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {tool === "shape" && (
-          <span
-            className={`ml-1 text-[11px] font-semibold px-2 py-1 rounded-full transition-opacity ${snapped ? "bg-[#8A6DE9]/12 text-[#6F55C7] opacity-100" : "text-black/35 opacity-100"}`}
-            style={MARKER}
-          >
-            {snapped ?? "draw roughly — it'll snap"}
-          </span>
-        )}
-
-        {tool === "select" && (
-          <div className="flex items-center gap-1 ml-1">
-            <div className="flex items-center gap-0.5 rounded-xl bg-black/[0.04] p-0.5">
-              {([["lasso", Lasso, "Lasso — draw a loop round what you want"], ["rect", SquareDashed, "Box — drag a rectangle over it"]] as const).map(
-                ([m, Icon, title]) => (
-                  <button
-                    key={m}
-                    onClick={() => setSelMode(m)}
-                    title={title}
-                    className={`p-1.5 rounded-lg transition-colors ${selMode === m ? "bg-white shadow-sm text-black/70" : "text-black/40 hover:bg-black/5"}`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                  </button>
-                ),
-              )}
-            </div>
-            <button
-              onClick={() => selAction("paste")}
-              disabled={clipboardSize() === 0}
-              className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30"
-              title="Paste (⌘V) — works across pages and notebooks"
-            >
-              <ClipboardPaste className="w-4 h-4" />
-            </button>
-            <span className="text-[11px] text-black/35 hidden lg:inline">
-              {selection.size ? `${selection.size} selected` : "draw round some writing to pick it up"}
-            </span>
-          </div>
-        )}
-
-        {tool === "text" && (
-          <div className="flex items-center gap-1 ml-1">
-            <select
-              value={font}
-              onChange={(e) => setFont(e.target.value)}
-              className="text-[12px] rounded-lg border border-black/10 bg-white px-2 py-1"
-              title="Font"
-            >
-              {PLANNER_FONTS.map((f) => <option key={f.key} value={f.key} style={{ fontFamily: f.stack }}>{f.name}</option>)}
-            </select>
-            <div className="flex items-center gap-0.5">
-              {TEXT_SIZES.map((s, i) => (
-                <button
-                  key={s}
-                  onClick={() => setTextSize(s)}
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center text-black/70 ${textSize === s ? "bg-black/10" : "hover:bg-black/5"}`}
-                  title={["Small", "Normal", "Large", "Title"][i]}
-                >
-                  <span style={{ fontSize: 9 + i * 3 }}>A</span>
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-1">
-              {PEN_COLORS.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setColor(c)}
-                  className={`w-5 h-5 rounded-full transition-transform ${color === c ? "ring-2 ring-offset-1 ring-black/40 scale-110" : "hover:scale-110"}`}
-                  style={{ background: c }}
-                  title="Text colour"
-                />
-              ))}
-            </div>
           </div>
         )}
 
@@ -3311,6 +3178,199 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
           </button>
         )}
       </div>
+
+      {/* Tool options.
+
+          Its own row, always present, always the same height. When these controls
+          shared the row above, switching from the pen to the eraser dropped the
+          toolbar from two lines to one and the paper jumped 36px up the screen —
+          so a stylus that had been resting on a word was suddenly over a different
+          one. The row never wraps either; it scrolls sideways if it has to.
+
+          It ranks below the row above, so the export and sticker menus hanging down
+          from that row aren't covered by this one. */}
+      {!readOnly && (
+        <div className="flex items-center gap-1 px-3 h-11 bg-white/80 backdrop-blur border-b border-black/5 shrink-0 z-20 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {showInkControls && (
+            <>
+              <div className="flex items-center gap-1 ml-1">
+                {swatches.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setColor(c)}
+                    className={`w-5 h-5 rounded-full transition-transform ${color === c ? "ring-2 ring-offset-1 ring-black/40 scale-110" : "hover:scale-110"}`}
+                    style={{ background: c }}
+                    title={`${TOOL_NAME[prefKey]} colour`}
+                    data-swatch={c}
+                    aria-pressed={color === c}
+                  />
+                ))}
+                {/* Any colour at all, kept per tool like the presets are. */}
+                <ColorPickerButton
+                  name={prefKey}
+                  title={`${TOOL_NAME[prefKey]} — any colour`}
+                  label={`${TOOL_NAME[prefKey]} colour`}
+                  color={color}
+                  onChange={setColor}
+                  presets={swatches}
+                  alpha={opacity}
+                  onAlphaChange={(a) => setPref({ opacity: a })}
+                />
+              </div>
+              <div className="flex items-center gap-0.5 ml-1">
+                {PEN_SIZES.map((s, i) => (
+                  <button
+                    key={s}
+                    onClick={() => setSize(s)}
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center ${size === s ? "bg-black/10" : "hover:bg-black/5"}`}
+                    title={["Fine", "Medium", "Bold"][i]}
+                  >
+                    <span className="rounded-full bg-black/70" style={{ width: 3 + i * 3, height: 3 + i * 3 }} />
+                  </button>
+                ))}
+              </div>
+              {/* How see-through this tool is. Kept per tool, so turning the highlighter
+                  down doesn't fade the pen. */}
+              <label className="flex items-center gap-1.5 ml-1" title="How see-through this tool is">
+                <input
+                  type="range"
+                  min={10}
+                  max={100}
+                  step={5}
+                  value={Math.round(opacity * 100)}
+                  onChange={(e) => setPref({ opacity: Number(e.target.value) / 100 })}
+                  className="w-16 accent-[#8A6DE9]"
+                  aria-label="Opacity"
+                />
+                <span className="text-[10px] text-black/40 tabular-nums w-7">{Math.round(opacity * 100)}%</span>
+              </label>
+            </>
+          )}
+
+          {tool === "eraser" && (
+            <div className="flex items-center gap-1 ml-1">
+              <div className="flex items-center gap-0.5 rounded-xl bg-black/[0.04] p-0.5">
+                {([
+                  ["precise", "Precise", "Precise — rubs out only the bit you touch, and leaves the rest of the stroke exactly as you drew it"],
+                  ["stroke", "Whole stroke", "Whole stroke — touch a stroke anywhere and all of it goes"],
+                ] as const).map(([m, label, title]) => (
+                  <button
+                    key={m}
+                    onClick={() => setEraserMode(m)}
+                    title={title}
+                    className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors ${eraserMode === m ? "bg-white shadow-sm text-black/75" : "text-black/40 hover:bg-black/5"}`}
+                    style={MARKER}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-0.5">
+                {ERASER_SIZES.map((r, i) => (
+                  <button
+                    key={r}
+                    onClick={() => setEraserSize(r)}
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center ${eraserSize === r ? "bg-black/10" : "hover:bg-black/5"}`}
+                    title={`${["Small", "Medium", "Large"][i]} tip`}
+                  >
+                    <span className="rounded-full border border-black/50" style={{ width: 5 + i * 4, height: 5 + i * 4 }} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {tool === "shape" && (
+            <span
+              className={`ml-1 text-[11px] font-semibold px-2 py-1 rounded-full transition-opacity ${snapped ? "bg-[#8A6DE9]/12 text-[#6F55C7] opacity-100" : "text-black/35 opacity-100"}`}
+              style={MARKER}
+            >
+              {snapped ?? "draw roughly — it'll snap"}
+            </span>
+          )}
+
+          {tool === "select" && (
+            <div className="flex items-center gap-1 ml-1">
+              <div className="flex items-center gap-0.5 rounded-xl bg-black/[0.04] p-0.5">
+                {([["lasso", Lasso, "Lasso — draw a loop round what you want"], ["rect", SquareDashed, "Box — drag a rectangle over it"]] as const).map(
+                  ([m, Icon, title]) => (
+                    <button
+                      key={m}
+                      onClick={() => setSelMode(m)}
+                      title={title}
+                      className={`p-1.5 rounded-lg transition-colors ${selMode === m ? "bg-white shadow-sm text-black/70" : "text-black/40 hover:bg-black/5"}`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                    </button>
+                  ),
+                )}
+              </div>
+              <button
+                onClick={() => selAction("paste")}
+                disabled={clipboardSize() === 0}
+                className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30"
+                title="Paste (⌘V) — works across pages and notebooks"
+              >
+                <ClipboardPaste className="w-4 h-4" />
+              </button>
+              <span className="text-[11px] text-black/35 hidden lg:inline">
+                {selection.size ? `${selection.size} selected` : "draw round some writing to pick it up"}
+              </span>
+            </div>
+          )}
+
+          {tool === "text" && (
+            <div className="flex items-center gap-1 ml-1">
+              <select
+                value={font}
+                onChange={(e) => setFont(e.target.value)}
+                className="text-[12px] rounded-lg border border-black/10 bg-white px-2 py-1"
+                title="Font"
+              >
+                {PLANNER_FONTS.map((f) => <option key={f.key} value={f.key} style={{ fontFamily: f.stack }}>{f.name}</option>)}
+              </select>
+              <div className="flex items-center gap-0.5">
+                {TEXT_SIZES.map((s, i) => (
+                  <button
+                    key={s}
+                    onClick={() => setTextSize(s)}
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center text-black/70 ${textSize === s ? "bg-black/10" : "hover:bg-black/5"}`}
+                    title={["Small", "Normal", "Large", "Title"][i]}
+                  >
+                    <span style={{ fontSize: 9 + i * 3 }}>A</span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-1">
+                {PEN_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setColor(c)}
+                    className={`w-5 h-5 rounded-full transition-transform ${color === c ? "ring-2 ring-offset-1 ring-black/40 scale-110" : "hover:scale-110"}`}
+                    style={{ background: c }}
+                    title="Text colour"
+                    data-swatch={c}
+                    aria-pressed={color === c}
+                  />
+                ))}
+                <ColorPickerButton
+                  name="text"
+                  title="Text — any colour"
+                  label="Text colour"
+                  color={color}
+                  onChange={setColor}
+                  presets={PEN_COLORS}
+                />
+              </div>
+            </div>
+          )}
+          {tool === "hand" && (
+            <span className="text-[11px] text-black/35" style={MARKER}>
+              Tap tabs, days and links — or drag to move the page
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Page rail + page */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
@@ -3481,8 +3541,19 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
                       className="w-4 h-4 rounded-full hover:scale-110 transition-transform"
                       style={{ background: c }}
                       title="Recolour"
+                      data-recolor={c}
                     />
                   ))}
+                  <ColorPickerButton
+                    name="selection"
+                    title="Recolour — any colour"
+                    label="Recolour"
+                    color={selectionColor ?? color}
+                    onChange={(c) => recolorSelection(c, true)}
+                    onCommit={endBurst}
+                    presets={PEN_COLORS}
+                    className="relative w-4 h-4 rounded-full ring-1 ring-black/15 flex items-center justify-center hover:scale-110 transition-transform"
+                  />
                   <span className="w-px h-4 bg-black/10 mx-0.5" />
                   <button onClick={() => selAction("front")} className="p-1.5 rounded-lg text-black/60 hover:bg-black/5" title="Bring to front">
                     <BringToFront className="w-3.5 h-3.5" />
@@ -3608,7 +3679,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
         </div>
       </div>
 
-      <p className="text-center text-[11px] text-black/35 pb-1.5 pt-1 px-4 line-clamp-2 md:line-clamp-none">
+      {/* The hint changes with the tool, and a two-line hint gave the paper less room
+          than a one-line one — so picking the lasso resized the page. Two lines are
+          reserved whatever it says, and anything longer is clamped. */}
+      <p className="h-9 shrink-0 flex items-center justify-center text-center text-[11px] leading-[1.15] text-black/35 px-4">
+        <span className="line-clamp-2">
         {readOnly
           ? "This is a built-in planner, so it stays as printed — tap the tabs or a day to look around, and make a copy when you want to write in it · tap the side edges, swipe or scroll to turn one page · pinch to zoom in"
           : tool === "shape"
@@ -3618,6 +3693,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
             : paperBacked
               ? "Write anywhere with your Apple Pencil · the Text tool drops a box you can type in · the lasso moves, resizes and recolours what you've written · the page rail adds, copies, reorders and re-papers pages · scroll to turn one page · pinch, or ⌘+scroll, to zoom in and write smaller"
               : "Tap the tabs or a day to jump around · write with your Apple Pencil on the paper · the Text tool drops a box you can type in — tabs and margins stay clear · the lasso picks writing up to move or recolour · scroll, or pick the hand and tap the side edges, to turn one page · pinch to zoom in"}
+        </span>
       </p>
 
       {setupFor && (

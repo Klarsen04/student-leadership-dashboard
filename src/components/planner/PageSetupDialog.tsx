@@ -47,6 +47,7 @@ import {
   type PageMeta,
   type PatternOverrides,
 } from "@/lib/planner-pages";
+import { ColorPickerButton } from "@/components/planner/ColorPicker";
 import {
   deleteUserTemplate,
   importTemplateFile,
@@ -340,18 +341,17 @@ export function PageSetupDialog({
                     )}
                   </button>
                 ))}
-                <label
-                  className="w-6 h-6 rounded-full ring-1 ring-black/10 overflow-hidden relative cursor-pointer"
+                {/* Any colour at all. Only the paper changes — the template, the ruling
+                    and everything written on the page are untouched. */}
+                <ColorPickerButton
+                  name="page"
                   title="Any colour"
-                  style={{ background: "conic-gradient(#f87171,#fbbf24,#34d399,#60a5fa,#a78bfa,#f87171)" }}
-                >
-                  <input
-                    type="color"
-                    value={/^#[0-9a-f]{6}$/i.test(paper) ? paper : "#ffffff"}
-                    onChange={(e) => setColor(e.target.value)}
-                    className="absolute inset-0 opacity-0 cursor-pointer"
-                  />
-                </label>
+                  label="Page colour"
+                  color={paper}
+                  onChange={setColor}
+                  presets={PAGE_COLORS.map((c) => c.value)}
+                  className="w-6 h-6 rounded-full ring-1 ring-black/10 flex items-center justify-center hover:scale-110 transition-transform"
+                />
               </div>
             </Field>
 
@@ -407,11 +407,14 @@ export function PageSetupDialog({
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] text-black/45">Ruling colour</span>
                       <div className="flex items-center gap-1.5">
-                        <input
-                          type="color"
-                          value={overrides.patternColor ?? template.patternColor ?? "#C7D5E2"}
-                          onChange={(e) => setOverrides((o) => ({ ...o, patternColor: e.target.value }))}
-                          className="w-6 h-6 rounded-full overflow-hidden border border-black/10 bg-white"
+                        <ColorPickerButton
+                          name="ruling"
+                          title="Ruling colour"
+                          label="Ruling colour"
+                          color={overrides.patternColor ?? template.patternColor ?? "#C7D5E2"}
+                          onChange={(c) => setOverrides((o) => ({ ...o, patternColor: c }))}
+                          presets={["#C7D5E2", "#D9D9D9", "#E7D6C3", "#C9E2D0", "#E2C9DC", "#9AA6B2", "#5A6472"]}
+                          className="w-6 h-6 rounded-full ring-1 ring-black/10 flex items-center justify-center hover:scale-110 transition-transform"
                         />
                         <button
                           onClick={() => setOverrides({})}

@@ -16,6 +16,7 @@
 // page is ~1500 dots, which as individual elements would be a 50 KB data URL
 // re-parsed on every page flip.
 
+import { luminance, normalizeHex } from "@/lib/planner-color";
 import { LAYOUT_TEMPLATES, drawLayout } from "@/lib/planner-layouts";
 
 // ---- page geometry ---------------------------------------------------------------
@@ -108,11 +109,7 @@ export const colorPreset = (value: string) =>
 export function isDarkPaper(value: string): boolean {
   const preset = colorPreset(value);
   if (preset) return Boolean(preset.dark);
-  const hex = value.replace("#", "");
-  if (hex.length !== 6 && hex.length !== 3) return false;
-  const full = hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex;
-  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255);
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5;
+  return normalizeHex(value) ? luminance(value) < 0.5 : false;
 }
 
 /** Ink that reads on this paper — used as the default pen colour on dark pages. */
