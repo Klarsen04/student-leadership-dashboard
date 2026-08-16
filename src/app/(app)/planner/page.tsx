@@ -33,6 +33,9 @@ import {
   AlignCenter,
   AlignRight,
   MoreHorizontal,
+  Lock,
+  Plus,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Hotspot, Rect } from "@/lib/planner";
@@ -43,6 +46,7 @@ import {
   DEFAULT_CATEGORY,
   imageSrc,
   isPdfBacked,
+  isPaperBacked,
   fetchPlannerIndex,
   fetchPlannerManifest,
   getSelectedPlannerId,
@@ -74,12 +78,23 @@ import {
   type UserPlanner,
   PdfRenderer,
   USER_CATEGORY,
+  addPages,
+  createBlankNotebook,
   deleteUserPlanner,
   duplicatePlanner,
   importPdf,
+  isOwned,
   listUserPlanners,
   renameUserPlanner,
+  suggestedCopyName,
 } from "@/lib/planner-library";
+import {
+  DEFAULT_PAPER,
+  PAPER_SIZES,
+  PAPER_TINTS,
+  PAPER_TYPES,
+  paperSrc,
+} from "@/lib/planner-paper";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
 
@@ -201,7 +216,20 @@ function PlannerRoot() {
     return <PlannerLibrary planners={planners} onOpen={openPlanner} onChanged={reload} />;
   }
 
-  return <PlannerViewer key={active.id} planner={active} onLibrary={() => router.replace("/planner?library=1", { scroll: false })} />;
+  return (
+    <PlannerViewer
+      key={active.id}
+      planner={active}
+      onLibrary={() => router.replace("/planner?library=1", { scroll: false })}
+      onOpenPlanner={async (id, page) => {
+        // A notebook made from inside the viewer (e.g. "make a copy to write")
+        // has to reach the library list before the URL points at it.
+        await reload();
+        setSelectedPlannerId(id);
+        router.replace(`/planner?planner=${id}${page ? `&page=${page}` : ""}`, { scroll: false });
+      }}
+    />
+  );
 }
 
 // ---- library (planner picker) --------------------------------------------------
@@ -224,6 +252,15 @@ function PlannerLibrary({ planners, onOpen, onChanged }: {
   const [filter, setFilter] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  // One open dialog at a time: duplicate/rename take a name, delete confirms,
+  // "new" builds a blank notebook from a paper template.
+  const [dialog, setDialog] = useState<
+    | { mode: "duplicate"; planner: PlannerInfo; suggested: string }
+    | { mode: "rename"; planner: PlannerInfo }
+    | { mode: "delete"; planner: PlannerInfo }
+    | { mode: "new" }
+    | null
+  >(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => setSelectedId(getSelectedPlannerId()), []);
@@ -260,30 +297,52 @@ function PlannerLibrary({ planners, onOpen, onChanged }: {
     }
   };
 
-  const onDuplicate = async (p: PlannerInfo) => {
+  // Duplicating asks for a name first, so a copy doesn't arrive as "(copy 4)".
+  const askDuplicate = async (p: PlannerInfo) => {
+    setDialog({ mode: "duplicate", planner: p, suggested: await suggestedCopyName(p) });
+  };
+
+  const doDuplicate = async (p: PlannerInfo, name: string, withInk: boolean) => {
     const t = toast.loading("Making a copy…");
     try {
-      const meta = await duplicatePlanner(p);
+      const meta = await duplicatePlanner(p, { name, withInk });
       await onChanged();
-      toast.success(`Created “${meta.name}”`, { id: t, description: "A blank copy — write freely." });
+      toast.success(`Created “${meta.name}”`, {
+        id: t,
+        description: withInk ? "Your handwriting came with it — edit freely." : "A blank copy — write freely.",
+      });
+      return meta;
     } catch (e: any) {
       toast.error("Couldn't duplicate", { id: t, description: e?.message });
+      return null;
     }
   };
 
-  const onDelete = async (p: PlannerInfo) => {
-    if (!confirm(`Delete “${p.name}” from this device? Its handwriting stays in your account.`)) return;
+  const doDelete = async (p: PlannerInfo) => {
     await deleteUserPlanner(p.id);
     if (getSelectedPlannerId() === p.id) setSelectedPlannerId(null);
     await onChanged();
-    toast.success("Deleted from this device");
+    toast.success(`Deleted “${p.name}”`, { description: "Removed from this device." });
   };
 
-  const onRename = async (p: PlannerInfo) => {
-    const name = prompt("Rename notebook", p.name)?.trim();
+  const doRename = async (p: PlannerInfo, name: string) => {
     if (!name || name === p.name) return;
     await renameUserPlanner(p.id, name.slice(0, 80));
     await onChanged();
+    toast.success("Renamed");
+  };
+
+  const doCreate = async (opts: { name: string; paper: string; aspect: number; pages: number; tint: string }) => {
+    const t = toast.loading("Creating notebook…");
+    try {
+      const meta = await createBlankNotebook(opts);
+      await onChanged();
+      toast.success(`Created “${meta.name}”`, { id: t, description: `${meta.pages} blank pages — add more any time.` });
+      setSelectedPlannerId(meta.id);
+      onOpen(meta.id);
+    } catch (e: any) {
+      toast.error("Couldn't create that notebook", { id: t, description: e?.message });
+    }
   };
 
   return (
@@ -322,10 +381,18 @@ function PlannerLibrary({ planners, onOpen, onChanged }: {
       </div>
 
       {planners.length === 0 ? (
-        <div className="px-4 md:px-8">
+        <div className="px-4 md:px-8 grid gap-3 sm:grid-cols-2">
+          <button
+            onClick={() => setDialog({ mode: "new" })}
+            className="rounded-3xl bg-white border-2 border-dashed border-black/10 p-10 text-center text-black/50 hover:border-[#7FB800]/60 hover:text-black/70 transition-colors"
+          >
+            <Plus className="w-8 h-8 mx-auto mb-3 text-[#7FB800]" />
+            <span className="font-semibold" style={MARKER}>New blank notebook</span>
+            <p className="text-[12px] mt-1">Pick lined, grid, dotted or Cornell paper and start writing.</p>
+          </button>
           <button
             onClick={() => fileInput.current?.click()}
-            className="w-full rounded-3xl bg-white border-2 border-dashed border-black/10 p-10 text-center text-black/50 hover:border-[#8A6DE9]/50 hover:text-black/70 transition-colors"
+            className="rounded-3xl bg-white border-2 border-dashed border-black/10 p-10 text-center text-black/50 hover:border-[#8A6DE9]/50 hover:text-black/70 transition-colors"
           >
             <FilePlus2 className="w-8 h-8 mx-auto mb-3 text-[#8A6DE9]" />
             <span className="font-semibold" style={MARKER}>Import a PDF planner</span>
@@ -353,9 +420,9 @@ function PlannerLibrary({ planners, onOpen, onChanged }: {
                       accent={accent}
                       current={p.id === selectedId}
                       onOpen={() => onOpen(p.id)}
-                      onDuplicate={() => onDuplicate(p)}
-                      onDelete={"kind" in p ? () => onDelete(p) : undefined}
-                      onRename={"kind" in p ? () => onRename(p) : undefined}
+                      onDuplicate={() => askDuplicate(p)}
+                      onDelete={isOwned(p) ? () => setDialog({ mode: "delete", planner: p }) : undefined}
+                      onRename={isOwned(p) ? () => setDialog({ mode: "rename", planner: p }) : undefined}
                     />
                   ))}
                 </div>
@@ -375,6 +442,13 @@ function PlannerLibrary({ planners, onOpen, onChanged }: {
       />
       <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 px-2 py-2 rounded-full bg-white/85 backdrop-blur border border-black/5 shadow-lg">
         <button
+          onClick={() => setDialog({ mode: "new" })}
+          className="flex items-center gap-2 px-3.5 py-2 rounded-full text-[13px] font-semibold text-black/70 hover:bg-black/5 transition-colors"
+          style={MARKER}
+        >
+          <Plus className="w-4 h-4 text-[#7FB800]" /> New notebook
+        </button>
+        <button
           onClick={() => fileInput.current?.click()}
           disabled={importing}
           className="flex items-center gap-2 px-3.5 py-2 rounded-full text-[13px] font-semibold text-black/70 hover:bg-black/5 transition-colors disabled:opacity-50"
@@ -390,7 +464,296 @@ function PlannerLibrary({ planners, onOpen, onChanged }: {
           <Home className="w-4 h-4 text-[#c98a00]" /> Dashboard
         </a>
       </div>
+
+      {dialog?.mode === "new" && (
+        <NewNotebookDialog onClose={() => setDialog(null)} onCreate={async (o) => { setDialog(null); await doCreate(o); }} />
+      )}
+      {dialog?.mode === "duplicate" && (
+        <DuplicateDialog
+          planner={dialog.planner}
+          suggested={dialog.suggested}
+          onClose={() => setDialog(null)}
+          onConfirm={async (name, withInk) => { setDialog(null); await doDuplicate(dialog.planner, name, withInk); }}
+        />
+      )}
+      {dialog?.mode === "rename" && (
+        <NameDialog
+          title="Rename notebook"
+          confirmLabel="Save"
+          initial={dialog.planner.name}
+          onClose={() => setDialog(null)}
+          onConfirm={async (name) => { setDialog(null); await doRename(dialog.planner, name); }}
+        />
+      )}
+      {dialog?.mode === "delete" && (
+        <ConfirmDialog
+          title={`Delete “${dialog.planner.name}”?`}
+          // An import can be brought back — the ink is filed under the planner id
+          // and re-importing the same PDF finds it again. A copy or a blank
+          // notebook can't: its id disappears with it, so say so plainly.
+          body={
+            (dialog.planner as UserPlanner).kind === "import"
+              ? "This removes the notebook from this device. Your handwriting stays in your account, so re-importing the same PDF brings it back."
+              : "This removes the notebook and everything written in it. That can't be undone."
+          }
+          confirmLabel="Delete"
+          danger
+          onClose={() => setDialog(null)}
+          onConfirm={async () => { setDialog(null); await doDelete(dialog.planner); }}
+        />
+      )}
     </div>
+  );
+}
+
+// ---- dialogs -------------------------------------------------------------------
+// Native prompt()/confirm() are blocked or ugly on iPad — where this app is
+// mostly used — so naming and confirming happen in real dialogs.
+
+function DialogShell({ title, onClose, children, wide }: {
+  title: string; onClose: () => void; children: React.ReactNode; wide?: boolean;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className={`w-full ${wide ? "max-w-2xl" : "max-w-sm"} max-h-[90vh] overflow-y-auto rounded-3xl bg-white shadow-2xl p-5`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <h2 className="text-lg font-bold text-black leading-tight" style={MARKER}>{title}</h2>
+          <button onClick={onClose} className="p-1 rounded-lg text-black/40 hover:bg-black/5 shrink-0" title="Close">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function DialogButtons({ onClose, onConfirm, confirmLabel, danger, disabled }: {
+  onClose: () => void; onConfirm: () => void; confirmLabel: string; danger?: boolean; disabled?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-end gap-2 mt-5">
+      <button onClick={onClose} className="px-4 py-2 rounded-full text-[13px] font-semibold text-black/60 hover:bg-black/5" style={MARKER}>
+        Cancel
+      </button>
+      <button
+        onClick={onConfirm}
+        disabled={disabled}
+        className="px-4 py-2 rounded-full text-[13px] font-semibold text-black disabled:opacity-40 hover:brightness-105 transition-all"
+        style={{ ...MARKER, background: danger ? "#ef4444" : "#FFB400", color: danger ? "#fff" : "#000" }}
+      >
+        {confirmLabel}
+      </button>
+    </div>
+  );
+}
+
+function NameDialog({ title, initial, confirmLabel, onClose, onConfirm }: {
+  title: string; initial: string; confirmLabel: string; onClose: () => void; onConfirm: (name: string) => void;
+}) {
+  const [name, setName] = useState(initial);
+  const submit = () => { const n = name.trim(); if (n) onConfirm(n); };
+  return (
+    <DialogShell title={title} onClose={onClose}>
+      <input
+        autoFocus
+        value={name}
+        maxLength={80}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+        className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-[14px] text-black outline-none focus:border-[#FFB400]"
+        placeholder="Notebook name"
+      />
+      <DialogButtons onClose={onClose} onConfirm={submit} confirmLabel={confirmLabel} disabled={!name.trim()} />
+    </DialogShell>
+  );
+}
+
+function ConfirmDialog({ title, body, confirmLabel, danger, onClose, onConfirm }: {
+  title: string; body: string; confirmLabel: string; danger?: boolean; onClose: () => void; onConfirm: () => void;
+}) {
+  return (
+    <DialogShell title={title} onClose={onClose}>
+      <p className="text-[13px] text-black/55 leading-relaxed">{body}</p>
+      <DialogButtons onClose={onClose} onConfirm={onConfirm} confirmLabel={confirmLabel} danger={danger} />
+    </DialogShell>
+  );
+}
+
+/** Duplicate: name the copy, and choose whether the handwriting comes along. */
+function DuplicateDialog({ planner, suggested, onClose, onConfirm }: {
+  planner: PlannerInfo; suggested: string; onClose: () => void; onConfirm: (name: string, withInk: boolean) => void;
+}) {
+  const [name, setName] = useState(suggested);
+  const [withInk, setWithInk] = useState(true);
+  const submit = () => { const n = name.trim(); if (n) onConfirm(n, withInk); };
+  return (
+    <DialogShell title={`Duplicate “${planner.name}”`} onClose={onClose}>
+      <label className="block text-[12px] font-semibold text-black/50 mb-1.5" style={MARKER}>Name</label>
+      <input
+        autoFocus
+        value={name}
+        maxLength={80}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+        className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-[14px] text-black outline-none focus:border-[#FFB400]"
+      />
+      <div className="mt-3 space-y-2">
+        <RadioRow
+          checked={withInk}
+          onSelect={() => setWithInk(true)}
+          title="Copy my handwriting too"
+          hint="Everything already written in it comes across."
+        />
+        <RadioRow
+          checked={!withInk}
+          onSelect={() => setWithInk(false)}
+          title="Start blank"
+          hint="Same pages, nothing written on them."
+        />
+      </div>
+      <DialogButtons onClose={onClose} onConfirm={submit} confirmLabel="Duplicate" disabled={!name.trim()} />
+    </DialogShell>
+  );
+}
+
+function RadioRow({ checked, onSelect, title, hint }: {
+  checked: boolean; onSelect: () => void; title: string; hint: string;
+}) {
+  return (
+    <button
+      onClick={onSelect}
+      className={`flex items-start gap-2.5 w-full text-left p-2.5 rounded-xl border transition-colors ${
+        checked ? "border-[#FFB400] bg-[#FFB400]/[0.08]" : "border-black/10 hover:bg-black/[0.02]"
+      }`}
+    >
+      <span className={`mt-0.5 w-4 h-4 rounded-full border-2 shrink-0 ${checked ? "border-[#c98a00]" : "border-black/25"}`}>
+        {checked && <span className="block w-2 h-2 m-[3px] rounded-full bg-[#c98a00]" />}
+      </span>
+      <span>
+        <span className="block text-[13px] font-semibold text-black/80">{title}</span>
+        <span className="block text-[11.5px] text-black/45">{hint}</span>
+      </span>
+    </button>
+  );
+}
+
+/** New blank notebook: paper template, page shape, tint and how many pages. */
+function NewNotebookDialog({ onClose, onCreate }: {
+  onClose: () => void;
+  onCreate: (o: { name: string; paper: string; aspect: number; pages: number; tint: string }) => void;
+}) {
+  const [name, setName] = useState("New notebook");
+  const [paper, setPaper] = useState(DEFAULT_PAPER);
+  const [size, setSize] = useState(PAPER_SIZES[0]);
+  const [tint, setTint] = useState(PAPER_TINTS[0].value);
+  const [pages, setPages] = useState(20);
+
+  const submit = () => {
+    const n = name.trim();
+    if (n) onCreate({ name: n, paper, aspect: size.aspect, pages, tint });
+  };
+
+  return (
+    <DialogShell title="New notebook" onClose={onClose} wide>
+      <label className="block text-[12px] font-semibold text-black/50 mb-1.5" style={MARKER}>Name</label>
+      <input
+        autoFocus
+        value={name}
+        maxLength={80}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+        className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-[14px] text-black outline-none focus:border-[#FFB400]"
+      />
+
+      <label className="block text-[12px] font-semibold text-black/50 mt-4 mb-1.5" style={MARKER}>Paper</label>
+      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+        {PAPER_TYPES.map((p) => (
+          <button
+            key={p.key}
+            onClick={() => setPaper(p.key)}
+            title={p.hint}
+            className={`rounded-xl border-2 p-1.5 transition-colors ${paper === p.key ? "border-[#FFB400]" : "border-black/[0.07] hover:border-black/20"}`}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={paperSrc(p.key, 0.72, tint)}
+              alt={p.name}
+              className="w-full rounded-md border border-black/[0.06]"
+              style={{ aspectRatio: "0.72", objectFit: "cover" }}
+            />
+            <span className="block text-[11px] font-semibold text-black/65 mt-1 truncate">{p.name}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-4 mt-4">
+        <div>
+          <label className="block text-[12px] font-semibold text-black/50 mb-1.5" style={MARKER}>Page shape</label>
+          <div className="flex flex-wrap gap-1.5">
+            {PAPER_SIZES.map((s) => (
+              <button
+                key={s.key}
+                onClick={() => setSize(s)}
+                className={`px-2.5 py-1.5 rounded-full text-[12px] font-semibold transition-colors ${
+                  size.key === s.key ? "bg-[#FFB400]/25 text-black" : "text-black/50 hover:bg-black/5"
+                }`}
+                style={MARKER}
+              >
+                {s.name}
+              </button>
+            ))}
+          </div>
+
+          <label className="block text-[12px] font-semibold text-black/50 mt-3 mb-1.5" style={MARKER}>Paper colour</label>
+          <div className="flex items-center gap-2">
+            {PAPER_TINTS.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setTint(t.value)}
+                title={t.name}
+                className={`w-7 h-7 rounded-full border transition-transform ${
+                  tint === t.value ? "ring-2 ring-offset-1 ring-[#c98a00] scale-110" : "border-black/15 hover:scale-105"
+                }`}
+                style={{ background: t.value }}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[12px] font-semibold text-black/50 mb-1.5" style={MARKER}>Pages</label>
+          <div className="flex flex-wrap gap-1.5">
+            {[1, 20, 60, 120].map((n) => (
+              <button
+                key={n}
+                onClick={() => setPages(n)}
+                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold transition-colors ${
+                  pages === n ? "bg-[#FFB400]/25 text-black" : "text-black/50 hover:bg-black/5"
+                }`}
+                style={MARKER}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11.5px] text-black/40 mt-2 leading-relaxed">
+            You can add more pages from inside the notebook at any time.
+          </p>
+        </div>
+      </div>
+
+      <DialogButtons onClose={onClose} onConfirm={submit} confirmLabel="Create" disabled={!name.trim()} />
+    </DialogShell>
   );
 }
 
@@ -416,20 +779,27 @@ function PlannerCard({ planner, accent, current, onOpen, onDuplicate, onDelete, 
   onDuplicate: () => void; onDelete?: () => void; onRename?: () => void;
 }) {
   const [menu, setMenu] = useState(false);
-  const owned = "kind" in planner; // a user notebook (import or copy)
-  const isImport = (planner as UserPlanner).kind === "import";
+  const owned = isOwned(planner); // an import, a copy, or a blank notebook
+  const kind = (planner as UserPlanner).kind;
+  const pdfCover = Boolean(planner.pdfKey);
   const [cover, setCover] = useState<string | null>(null);
 
-  // A duplicate reuses its source's WebP cover; an import has to render page 1.
+  // A duplicate reuses its source's WebP cover; a PDF has to render page 1.
   useEffect(() => {
-    if (!isImport || !planner.pdfKey) return;
+    if (!pdfCover || !planner.pdfKey) return;
     let url: string | null = null;
     const renderer = new PdfRenderer(planner.pdfKey, 480);
     renderer.page(1).then((u) => { url = u; setCover(u); }).catch(() => {});
     return () => { renderer.destroy(); if (url) setCover(null); };
-  }, [isImport, planner.pdfKey]);
+  }, [pdfCover, planner.pdfKey]);
 
-  const coverSrc = isImport ? cover : imageSrc(planner, 1);
+  const coverSrc = isPaperBacked(planner)
+    ? paperSrc(planner.paper, planner.aspect, planner.tint)
+    : pdfCover
+      ? cover
+      : imageSrc(planner, 1);
+  const badge = kind === "import" ? "Imported" : kind === "copy" ? "Copy" : kind === "blank" ? "Notebook" : null;
+  const BadgeIcon = kind === "import" ? FilePlus2 : kind === "copy" ? Copy : NotebookPen;
 
   return (
     <div
@@ -449,13 +819,22 @@ function PlannerCard({ planner, accent, current, onOpen, onDuplicate, onDelete, 
           ) : (
             <div className="w-6 h-6 rounded-full border-2 border-black/10 border-t-[#8A6DE9] animate-spin" />
           )}
-          {owned && (
+          {owned && badge ? (
             <span
               className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold text-white"
               style={{ background: accent }}
             >
-              {isImport ? <FilePlus2 className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-              {isImport ? "Imported" : "Copy"}
+              <BadgeIcon className="w-3 h-3" />
+              {badge}
+            </span>
+          ) : (
+            // Shipped planners are shared by everyone, so they're read-only —
+            // the card says so before you open it and find the pen disabled.
+            <span
+              className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-black/55 text-white"
+              title="Built-in planner — duplicate it to write in it"
+            >
+              <Lock className="w-3 h-3" /> Built-in
             </span>
           )}
           {/* Page dots, echoing the stack of pages inside */}
@@ -502,10 +881,19 @@ function PlannerCard({ planner, accent, current, onOpen, onDuplicate, onDelete, 
         <MoreHorizontal className="w-4 h-4" />
       </button>
       {menu && (
-        <div className="absolute top-12 right-4 z-10 w-40 rounded-xl bg-white border border-black/10 shadow-lg py-1 text-[13px]">
-          <MenuItem icon={<Copy className="w-3.5 h-3.5" />} label="Duplicate" onClick={() => { setMenu(false); onDuplicate(); }} />
+        <div className="absolute top-12 right-4 z-10 w-48 rounded-xl bg-white border border-black/10 shadow-lg py-1 text-[13px]">
+          <MenuItem
+            icon={<Copy className="w-3.5 h-3.5" />}
+            label={owned ? "Duplicate" : "Make an editable copy"}
+            onClick={() => { setMenu(false); onDuplicate(); }}
+          />
           {onRename && <MenuItem icon={<Pencil className="w-3.5 h-3.5" />} label="Rename" onClick={() => { setMenu(false); onRename(); }} />}
           {onDelete && <MenuItem icon={<Trash2 className="w-3.5 h-3.5" />} label="Delete" danger onClick={() => { setMenu(false); onDelete(); }} />}
+          {!owned && (
+            <p className="px-3 pt-1.5 pb-1 text-[11px] text-black/40 leading-snug border-t border-black/5 mt-1">
+              Built-in planners can&apos;t be edited or deleted.
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -525,11 +913,24 @@ function MenuItem({ icon, label, onClick, danger }: { icon: React.ReactNode; lab
 }
 
 // ---- viewer --------------------------------------------------------------------
-function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLibrary: () => void }) {
+function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
+  planner: PlannerManifest;
+  onLibrary: () => void;
+  onOpenPlanner: (id: string, page?: number) => Promise<void>;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const plannerId = planner.id;
   const template = planner.template ? PLANNER_TEMPLATES[planner.template] : undefined;
   const pdfBacked = isPdfBacked(planner);
+  const paperBacked = isPaperBacked(planner);
+  // Shipped planners are shared by every user, so they're read-only: you take a
+  // copy to write in one. Anything already written in one still shows, so ink
+  // from before this rule isn't hidden — it just can't be changed here.
+  const readOnly = !isOwned(planner);
+  // Only paper-backed notebooks can grow: everything else has exactly as many
+  // pages as the file or folder it renders from.
+  const canAddPages = paperBacked && !readOnly;
 
   const initialPage = (() => {
     const p = parseInt(searchParams.get("page") || "", 10);
@@ -539,7 +940,11 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
   const debug = searchParams.get("debug") === "1";
 
   const [page, setPage] = useState(initialPage);
-  const [tool, setTool] = useState<Tool>("hand");
+  const [pages, setPages] = useState(planner.pages);
+  // Hand first, because most planners are things you tap around before you write
+  // in — except a blank notebook, which has nothing to navigate to.
+  const [tool, setTool] = useState<Tool>(paperBacked ? "pen" : "hand");
+  const [copying, setCopying] = useState(false);
   const [color, setColor] = useState(PEN_COLORS[0]);
   const [size, setSize] = useState(PEN_SIZES[1]);
   const [font, setFont] = useState(PLANNER_FONTS[0].key);
@@ -587,6 +992,13 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
   writeAreaRef.current = writeArea;
 
   const label = template ? template.label(page) : `Page ${page}`;
+
+  // Every page of a blank notebook is the same sheet of paper, so it's drawn once
+  // and reused — no fetch, no preload, nothing to cache per page.
+  const paperUrl = useMemo(
+    () => (paperBacked ? paperSrc(planner.paper, planner.aspect, planner.tint) : null),
+    [paperBacked, planner.paper, planner.aspect, planner.tint],
+  );
 
   /** Ink is allowed on paper only: inside the write area and clear of the tabs. */
   const inkAllowed = useCallback((x: number, y: number) => {
@@ -677,6 +1089,7 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
   }, [planner.id, saveNow]);
 
   const setElements = useCallback((next: PageElement[], { history = true }: { history?: boolean } = {}) => {
+    if (readOnly) return; // built-in planner: nothing here is editable
     if (history) {
       undoRef.current.push(elementsRef.current);
       if (undoRef.current.length > 60) undoRef.current.shift();
@@ -687,7 +1100,7 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
     scheduleSave(page);
     redraw();
     rerender();
-  }, [page, redraw, rerender, scheduleSave]);
+  }, [page, readOnly, redraw, rerender, scheduleSave]);
 
   // Recover any pages a previous session couldn't sync.
   useEffect(() => {
@@ -771,20 +1184,29 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
     return () => { window.removeEventListener("pagehide", flush); flush(); };
   }, [page, planner.id]);
 
-  // Keep the URL shareable + preload neighbouring pages for snappy flips.
+  // Keep the URL shareable. Deliberately keyed on the planner *id*, not the
+  // planner object: reloading the library hands down a fresh object for the same
+  // notebook, and rewriting the URL then would stomp a navigation in flight (e.g.
+  // "make a copy to write", which points the URL at the new notebook).
   useEffect(() => {
-    router.replace(`/planner?planner=${planner.id}&page=${page}`, { scroll: false });
+    router.replace(`/planner?planner=${plannerId}&page=${page}`, { scroll: false });
+  }, [page, plannerId, router]);
+
+  // Preload neighbouring pages for snappy flips.
+  useEffect(() => {
+    // Blank notebooks share one paper image across every page — nothing to fetch.
+    if (paperBacked) return;
     if (pdfBacked) {
-      for (const p of [page + 1, page - 1]) if (p >= 1 && p <= planner.pages) rendererRef.current?.page(p).catch(() => {});
+      for (const p of [page + 1, page - 1]) if (p >= 1 && p <= pages) rendererRef.current?.page(p).catch(() => {});
     } else {
       for (const p of [page - 1, page + 1]) {
-        if (p >= 1 && p <= planner.pages) { const img = new Image(); img.src = imageSrc(planner, p); }
+        if (p >= 1 && p <= pages) { const img = new Image(); img.src = imageSrc(planner, p); }
       }
     }
-  }, [page, planner, router, pdfBacked]);
+  }, [page, pages, planner, pdfBacked, paperBacked]);
 
   const go = useCallback((p: number) => {
-    if (p < 1 || p > planner.pages || p === page) return;
+    if (p < 1 || p > pages || p === page) return;
     // Persist the page we're leaving right away, keeping its mirror until acked.
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
@@ -792,7 +1214,7 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
       saveNow(page);
     }
     setPage(p);
-  }, [page, planner.pages, saveNow]);
+  }, [page, pages, saveNow]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -839,7 +1261,7 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
   };
 
   const shouldDraw = (e: React.PointerEvent) =>
-    e.pointerType === "pen" || (e.pointerType === "mouse" && toolRef.current !== "hand");
+    !readOnly && (e.pointerType === "pen" || (e.pointerType === "mouse" && toolRef.current !== "hand"));
 
   const eraseAt = useCallback((x: number, y: number) => {
     const R = 0.012; // eraser radius as a fraction of page width
@@ -856,6 +1278,12 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
 
   const onPointerDown = (e: React.PointerEvent) => {
     const [x, y] = norm(e);
+
+    // Read-only planner: every input is navigation, whatever the tool says.
+    if (readOnly) {
+      tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: false };
+      return;
+    }
 
     // Tapping the paper while a text box is selected just deselects it.
     if (selectedText) { setSelectedText(null); return; }
@@ -962,6 +1390,30 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
     rerender();
   };
 
+  // Read-only escape hatch: take an editable copy, carrying any ink already in
+  // it, and land on the page you were looking at.
+  const makeCopy = async () => {
+    setCopying(true);
+    const t = toast.loading(`Making your copy of “${planner.name}”…`);
+    try {
+      const meta = await duplicatePlanner(planner, { withInk: true });
+      toast.success(`Created “${meta.name}”`, { id: t, description: "This one's yours — write anywhere." });
+      await onOpenPlanner(meta.id, page);
+    } catch (e: any) {
+      toast.error("Couldn't make a copy", { id: t, description: e?.message });
+    } finally {
+      setCopying(false);
+    }
+  };
+
+  const onAddPage = async () => {
+    const next = await addPages(planner.id, 1);
+    if (!next) return;
+    setPages(next);
+    toast.success(`Page ${next} added`);
+    setPage(next);
+  };
+
   const ToolButton = ({ t, icon, title }: { t: Tool; icon: React.ReactNode; title: string }) => (
     <button
       onClick={() => { setTool(t); setSelectedText(null); }}
@@ -985,13 +1437,33 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
         <span className="text-sm font-bold mr-1 text-black" style={MARKER}>{planner.name}</span>
         <span className="text-xs text-black/45 mr-2 hidden sm:inline">{label}</span>
 
-        <div className="flex items-center gap-0.5 rounded-2xl bg-black/[0.04] p-0.5">
-          <ToolButton t="hand" icon={<Hand className="w-4 h-4" />} title="Navigate (tap tabs & days)" />
-          <ToolButton t="pen" icon={<Pen className="w-4 h-4" />} title="Pen" />
-          <ToolButton t="highlighter" icon={<Highlighter className="w-4 h-4" />} title="Highlighter" />
-          <ToolButton t="text" icon={<Type className="w-4 h-4" />} title="Text box (tap the paper to type)" />
-          <ToolButton t="eraser" icon={<Eraser className="w-4 h-4" />} title="Eraser (removes whole strokes)" />
-        </div>
+        {readOnly ? (
+          <div className="flex items-center gap-2">
+            <span
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11.5px] font-semibold bg-black/[0.06] text-black/55"
+              title="Built-in planners are shared, so they stay as printed. Make a copy to write in one."
+              style={MARKER}
+            >
+              <Lock className="w-3.5 h-3.5" /> Read-only
+            </span>
+            <button
+              onClick={makeCopy}
+              disabled={copying}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold bg-[#8A6DE9] text-white hover:brightness-110 transition-all disabled:opacity-60"
+              style={MARKER}
+            >
+              <Copy className="w-3.5 h-3.5" /> {copying ? "Copying…" : "Make a copy to write"}
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-0.5 rounded-2xl bg-black/[0.04] p-0.5">
+            <ToolButton t="hand" icon={<Hand className="w-4 h-4" />} title="Navigate (tap tabs & days)" />
+            <ToolButton t="pen" icon={<Pen className="w-4 h-4" />} title="Pen" />
+            <ToolButton t="highlighter" icon={<Highlighter className="w-4 h-4" />} title="Highlighter" />
+            <ToolButton t="text" icon={<Type className="w-4 h-4" />} title="Text box (tap the paper to type)" />
+            <ToolButton t="eraser" icon={<Eraser className="w-4 h-4" />} title="Eraser (removes whole strokes)" />
+          </div>
+        )}
 
         {showInkControls && (
           <>
@@ -1057,21 +1529,27 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
           </div>
         )}
 
-        <div className="flex items-center ml-1">
-          <button onClick={undo} disabled={undoRef.current.length === 0} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Undo">
-            <Undo2 className="w-4 h-4" />
-          </button>
-          <button onClick={redo} disabled={redoRef.current.length === 0} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Redo">
-            <Redo2 className="w-4 h-4" />
-          </button>
-        </div>
+        {!readOnly && (
+          <div className="flex items-center ml-1">
+            <button onClick={undo} disabled={undoRef.current.length === 0} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Undo">
+              <Undo2 className="w-4 h-4" />
+            </button>
+            <button onClick={redo} disabled={redoRef.current.length === 0} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Redo">
+              <Redo2 className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         <div className="flex-1" />
 
-        <span className={`flex items-center gap-1 text-[10px] mr-2 ${saveState === "saved" ? "text-black/30" : "text-[#c98a00]"}`} title={saveState === "offline" ? "Saved on this device — will sync when you reconnect" : undefined}>
-          {saveState === "offline" && <CloudOff className="w-3 h-3" />}
-          {saveState === "saved" ? "Saved" : saveState === "saving" ? "Saving…" : saveState === "offline" ? "Offline" : "Unsaved"}
-        </span>
+        {/* Nothing can change in a read-only planner, so a save indicator would
+            only ever say "Saved" — it's noise. */}
+        {!readOnly && (
+          <span className={`flex items-center gap-1 text-[10px] mr-2 ${saveState === "saved" ? "text-black/30" : "text-[#c98a00]"}`} title={saveState === "offline" ? "Saved on this device — will sync when you reconnect" : undefined}>
+            {saveState === "offline" && <CloudOff className="w-3 h-3" />}
+            {saveState === "saved" ? "Saved" : saveState === "saving" ? "Saving…" : saveState === "offline" ? "Offline" : "Unsaved"}
+          </span>
+        )}
         <button onClick={() => go(1)} className="p-2 rounded-xl text-black/50 hover:bg-black/5" title="Cover">
           <Home className="w-4 h-4" />
         </button>
@@ -1089,10 +1567,19 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
           <button onClick={() => go(page - 1)} disabled={page <= 1} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Previous page">
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <span className="text-[11px] text-black/40 tabular-nums w-16 text-center">{page} / {planner.pages}</span>
-          <button onClick={() => go(page + 1)} disabled={page >= planner.pages} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Next page">
+          <span className="text-[11px] text-black/40 tabular-nums w-16 text-center">{page} / {pages}</span>
+          <button onClick={() => go(page + 1)} disabled={page >= pages} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Next page">
             <ChevronRight className="w-4 h-4" />
           </button>
+          {canAddPages && (
+            <button
+              onClick={onAddPage}
+              className="ml-0.5 p-2 rounded-xl text-black/50 hover:bg-black/5"
+              title="Add a page to the end of this notebook"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -1107,10 +1594,10 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
           onPointerUp={endStroke}
           onPointerCancel={endStroke}
         >
-          {(pdfBacked ? pdfSrc : imageSrc(planner, page)) ? (
+          {(paperUrl ?? (pdfBacked ? pdfSrc : imageSrc(planner, page))) ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={(pdfBacked ? pdfSrc : imageSrc(planner, page)) as string}
+              src={(paperUrl ?? (pdfBacked ? pdfSrc : imageSrc(planner, page))) as string}
               alt={label}
               className="absolute inset-0 w-full h-full pointer-events-none"
               draggable={false}
@@ -1129,7 +1616,7 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
               box={t}
               boxSize={boxSize}
               selected={selectedText === t.id}
-              editable={tool === "text"}
+              editable={tool === "text" && !readOnly}
               onSelect={() => setSelectedText(t.id)}
               onChange={(patch, history) => updateText(t.id, patch, history)}
               onBeginEdit={() => { undoRef.current.push(elementsRef.current); redoRef.current = []; }}
@@ -1158,7 +1645,11 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
       </div>
 
       <p className="text-center text-[11px] text-black/35 pb-2 px-4">
-        Tap the tabs or a day to jump around · write with your Apple Pencil on the paper · the Text tool drops a box you can type in — tabs and margins stay clear
+        {readOnly
+          ? "This is a built-in planner, so it stays as printed — tap the tabs or a day to look around, and make a copy when you want to write in it"
+          : paperBacked
+            ? "Write anywhere with your Apple Pencil · the Text tool drops a box you can type in · add pages with + when you run out"
+            : "Tap the tabs or a day to jump around · write with your Apple Pencil on the paper · the Text tool drops a box you can type in — tabs and margins stay clear"}
       </p>
     </div>
   );

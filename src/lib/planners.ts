@@ -29,10 +29,13 @@ export interface PlannerInfo {
   /**
    * Duplicates and imports (src/lib/planner-library.ts) reuse another
    * notebook's pages: `sourceId` is the folder to read renders from, `pdfKey`
-   * points at a PDF in IndexedDB rendered on demand instead.
+   * points at a PDF in IndexedDB rendered on demand instead, and `paper` draws
+   * the page from a template with no source file at all.
    */
   sourceId?: string;
   pdfKey?: string;
+  paper?: string;
+  tint?: string;
   /** Hotspots per page (1-based keys). Populated from the manifest or an import. */
   links?: Record<string, Hotspot[]>;
 }
@@ -127,6 +130,9 @@ export function imageSrc(planner: PlannerInfo, page: number): string {
 /** True when pages have to be rendered from a PDF in the browser. */
 export const isPdfBacked = (planner: PlannerInfo) => Boolean(planner.pdfKey);
 
+/** True when pages are drawn from a paper template (a blank notebook). */
+export const isPaperBacked = (planner: PlannerInfo) => Boolean(planner.paper);
+
 export async function fetchPlannerIndex(): Promise<PlannerInfo[]> {
   const res = await fetch("/planner/index.json");
   if (!res.ok) return [];
@@ -136,9 +142,10 @@ export async function fetchPlannerIndex(): Promise<PlannerInfo[]> {
 
 /** Per-planner manifest with link hotspots; falls back to the index entry. */
 export async function fetchPlannerManifest(info: PlannerInfo): Promise<PlannerManifest> {
-  // Imported PDFs carry their links in the index entry itself, and a duplicate
-  // reads the manifest of the planner it copied.
-  if (info.pdfKey) return info;
+  // Imported PDFs carry their links in the index entry itself, blank notebooks
+  // have no manifest to fetch, and a duplicate reads the manifest of the planner
+  // it copied.
+  if (info.pdfKey || info.paper) return info;
   try {
     const res = await fetch(`/planner/${info.sourceId ?? info.id}/manifest.json`);
     // The manifest repeats the source's identity, so the caller's id, name and

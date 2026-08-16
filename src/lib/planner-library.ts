@@ -14,10 +14,18 @@
 // on another device picks its ink back up.
 //
 // A "copy" stores no file at all — it points at the planner it was duplicated
-// from and only claims a fresh id, which is what gives it a blank ink layer.
+// from and only claims a fresh id, so it gets its own ink layer. A "blank"
+// notebook has no source at all: its pages are drawn from a paper template
+// (src/lib/planner-paper.ts).
+//
+// Only these three kinds are editable. The shipped planners are read-only — you
+// duplicate one to write in it — which is what keeps a stray stroke out of a
+// notebook every other user shares.
 
 import type { Hotspot } from "@/lib/planner";
 import type { PlannerInfo } from "@/lib/planners";
+import { clearLocalPlanner } from "@/lib/planner-ink";
+import { DEFAULT_PAPER, DEFAULT_TINT } from "@/lib/planner-paper";
 
 const DB_NAME = "leadora-planner-library";
 const DB_VERSION = 1;
@@ -32,13 +40,22 @@ export const MAX_IMPORT_BYTES = 100 * 1024 * 1024;
 
 export interface UserPlanner extends PlannerInfo {
   /** How this notebook came to exist. */
-  kind: "import" | "copy";
+  kind: "import" | "copy" | "blank";
   createdAt: number;
   /** import: key of the PDF blob in IndexedDB. */
   pdfKey?: string;
   /** copy: the planner id this was duplicated from. */
   sourceId?: string;
+  /** blank: paper template key + page tint (src/lib/planner-paper.ts). */
+  paper?: string;
+  tint?: string;
 }
+
+/**
+ * True for the user's own notebooks — the only ones that can be written in,
+ * renamed or deleted. Shipped planners have no `kind`.
+ */
+export const isOwned = (p: PlannerInfo): p is UserPlanner => "kind" in p;
 
 // ---- IndexedDB plumbing -----------------------------------------------------------
 
@@ -91,6 +108,11 @@ export async function renameUserPlanner(id: string, name: string) {
 /**
  * Remove a notebook. The PDF is only deleted once no other notebook still
  * points at it, so deleting an import that has copies doesn't break them.
+ *
+ * Handwriting: an import keeps its ink server-side, because re-importing the same
+ * PDF lands on the same notebook and picks it back up. A copy or a blank notebook
+ * has no way back — the id is gone — so its ink is deleted with it rather than
+ * left orphaned in the account.
  */
 export async function deleteUserPlanner(id: string) {
   const all = await listUserPlanners();
@@ -99,6 +121,11 @@ export async function deleteUserPlanner(id: string) {
   if (meta?.pdfKey) {
     const stillUsed = all.some((m) => m.id !== id && m.pdfKey === meta.pdfKey);
     if (!stillUsed) await tx(FILE_STORE, "readwrite", (s) => s.delete(meta.pdfKey!));
+  }
+  if (meta && meta.kind !== "import") {
+    clearLocalPlanner(id);
+    // Best-effort: the notebook is already gone from the library either way.
+    await fetch(`/api/planner?planner=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
   }
 }
 
@@ -120,7 +147,7 @@ export async function getFile(key: string): Promise<Blob | null> {
  * A planner id doubles as the ink namespace, so it has to satisfy the API's
  * `^[a-z0-9][a-z0-9-]{0,39}$` and never collide with an existing notebook.
  */
-function newId(prefix: "u" | "c", taken: Set<string>): string {
+function newId(prefix: "u" | "c" | "b", taken: Set<string>): string {
   for (let i = 0; i < 50; i++) {
     const id = `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
     if (!taken.has(id)) return id;
@@ -156,44 +183,82 @@ function loadPdfjs(): Promise<Pdfjs> {
   return pdfjsPromise;
 }
 
-async function openPdf(data: ArrayBuffer) {
+/**
+ * Open a PDF, returning the document and the call that shuts its worker down.
+ *
+ * The teardown is separate because pdf.js 6 removed `destroy()` from the document
+ * itself — only the loading task can end the worker — and forgetting to call it
+ * leaks a worker thread per import.
+ */
+async function openPdf(data: ArrayBuffer): Promise<{ doc: any; close: () => Promise<void> }> {
   const pdfjs = await loadPdfjs();
   // No isEvalSupported here: pdf.js 6 dropped that option along with the
   // eval-based path it guarded — the fix for GHSA-hq66-cqwq-w95j. The bundle and
   // worker carry no eval at all now, so this runs under the production CSP,
   // which grants no 'unsafe-eval'.
-  return pdfjs.getDocument({ data }).promise;
+  const task = pdfjs.getDocument({ data }) as { promise: Promise<any>; destroy(): Promise<void> };
+  return { doc: await task.promise, close: () => task.destroy() };
 }
 
-/** Pull the PDF's own hyperlinks out as normalised hotspots, keyed by page. */
-async function extractLinks(doc: Awaited<ReturnType<typeof openPdf>>, pages: number) {
+/**
+ * Pull the PDF's own hyperlinks out as normalised hotspots, keyed by page — this
+ * is what makes an imported planner's month tabs tappable.
+ *
+ * Annotation rects are in PDF user space: y runs bottom-up, the crop box need
+ * not start at the origin, and the page may declare a rotation. Rather than
+ * reimplement that, both corners go through the page's own viewport transform,
+ * which lands them in the same top-left pixel space as the rendered image.
+ */
+async function extractLinks(doc: any, pages: number, onPage?: (done: number) => void) {
   const links: Record<string, Hotspot[]> = {};
   for (let p = 1; p <= pages; p++) {
     const page = await doc.getPage(p);
-    const [, , W, H] = page.view;
+    const viewport = page.getViewport({ scale: 1 });
+    const { width: W, height: H } = viewport;
     const spots: Hotspot[] = [];
     for (const a of (await page.getAnnotations()) as any[]) {
       if (a.subtype !== "Link" || !a.rect) continue;
-      let target: number | null = null;
-      try {
-        const dest = a.dest ? (typeof a.dest === "string" ? await doc.getDestination(a.dest) : a.dest) : null;
-        if (dest?.[0]) target = (await doc.getPageIndex(dest[0])) + 1;
-      } catch {}
-      if (!target) continue;
-      const [x1, y1, x2, y2] = a.rect; // PDF coords have their origin bottom-left
-      spots.push({
-        x: Math.min(x1, x2) / W,
-        y: 1 - Math.max(y1, y2) / H,
-        w: Math.abs(x2 - x1) / W,
-        h: Math.abs(y2 - y1) / H,
-        page: target,
-        label: `p${target}`,
-      });
+      const target = await destinationPage(doc, a);
+      if (!target || target < 1 || target > pages) continue;
+      const [ax1, ay1, ax2, ay2] = a.rect;
+      const [vx1, vy1] = viewport.convertToViewportPoint(ax1, ay1);
+      const [vx2, vy2] = viewport.convertToViewportPoint(ax2, ay2);
+      const x = Math.min(vx1, vx2) / W;
+      const y = Math.min(vy1, vy2) / H;
+      const w = Math.abs(vx2 - vx1) / W;
+      const h = Math.abs(vy2 - vy1) / H;
+      // A degenerate or page-sized rect is a scanning artefact, not a tab, and
+      // would swallow every tap on the page.
+      if (w < 0.004 || h < 0.004 || (w > 0.96 && h > 0.96)) continue;
+      spots.push({ x, y, w, h, page: target, label: `Page ${target}` });
     }
     if (spots.length) links[String(p)] = spots;
+    page.cleanup();
+    // Yield periodically so importing a 500-page PDF doesn't freeze the tab.
+    if (p % 20 === 0) {
+      onPage?.(p);
+      await new Promise((r) => setTimeout(r, 0));
+    }
   }
+  onPage?.(pages);
   return links;
 }
+
+/** 1-based page a link annotation points at, or null if it leaves the document. */
+async function destinationPage(doc: any, a: any): Promise<number | null> {
+  try {
+    const dest = a.dest ? (typeof a.dest === "string" ? await doc.getDestination(a.dest) : a.dest) : null;
+    const ref = dest?.[0];
+    if (ref == null) return null;
+    // An explicit destination names a page by reference; some PDFs store a plain
+    // page index instead.
+    if (typeof ref === "number") return ref + 1;
+    return (await doc.getPageIndex(ref)) + 1;
+  } catch {
+    return null;
+  }
+}
+
 
 export interface ImportProgress {
   (stage: "reading" | "links", done: number, total: number): void;
@@ -207,19 +272,26 @@ export async function importPdf(file: File, onProgress?: ImportProgress): Promis
   onProgress?.("reading", 0, 1);
   const bytes = await file.arrayBuffer();
   // pdf.js takes ownership of the buffer it parses, so keep a copy for storage.
-  const doc = await openPdf(bytes.slice(0));
-  const pages = doc.numPages;
-  if (!pages) throw new Error("That PDF has no pages.");
-  if (pages > MAX_IMPORT_PAGES) {
-    throw new Error(`That PDF has ${pages} pages — the limit is ${MAX_IMPORT_PAGES}.`);
+  const { doc, close } = await openPdf(bytes.slice(0));
+  let W: number, H: number, pages: number, links: Record<string, Hotspot[]>;
+  try {
+    pages = doc.numPages;
+    if (!pages) throw new Error("That PDF has no pages.");
+    if (pages > MAX_IMPORT_PAGES) {
+      throw new Error(`That PDF has ${pages} pages — the limit is ${MAX_IMPORT_PAGES}.`);
+    }
+
+    // Viewport rather than `view`: it accounts for the crop-box origin and any
+    // declared page rotation, so a landscape scan doesn't come out portrait.
+    const first = await doc.getPage(1);
+    ({ width: W, height: H } = first.getViewport({ scale: 1 }));
+
+    onProgress?.("links", 0, pages);
+    links = await extractLinks(doc, pages, (done) => onProgress?.("links", done, pages));
+  } finally {
+    // Always let the worker go, including on a rejected import.
+    await close().catch(() => {});
   }
-
-  const first = await doc.getPage(1);
-  const [, , W, H] = first.view;
-
-  onProgress?.("links", 0, pages);
-  const links = await extractLinks(doc, pages);
-  doc.destroy();
 
   const existing = await listUserPlanners();
   const id = newId("u", new Set(existing.map((m) => m.id)));
@@ -246,11 +318,36 @@ export async function importPdf(file: File, onProgress?: ImportProgress): Promis
   return meta;
 }
 
+/** Name a copy would get by default, so the rename box can be pre-filled. */
+export async function suggestedCopyName(source: PlannerInfo): Promise<string> {
+  const existing = await listUserPlanners();
+  const base = stripCopySuffix(source.name);
+  const taken = new Set(existing.map((m) => m.name));
+  if (!taken.has(`${base} (copy)`)) return `${base} (copy)`;
+  for (let n = 2; n < 200; n++) {
+    if (!taken.has(`${base} (copy ${n})`)) return `${base} (copy ${n})`;
+  }
+  return `${base} (copy)`;
+}
+
+export interface DuplicateOptions {
+  /** Overrides the suggested "(copy)" name. */
+  name?: string;
+  /** Carry the source's handwriting into the copy (default: yes). */
+  withInk?: boolean;
+}
+
 /**
- * Duplicate a notebook. The copy shares its source's pages — and its PDF, if it
- * has one — but takes a new id, so it starts with a blank writing layer.
+ * Duplicate a notebook. The copy reuses its source's pages — and its PDF, if it
+ * has one — but takes a new id, which is what gives it an independent ink layer.
+ *
+ * Handwriting lives server-side keyed by planner id, so copying it is a separate
+ * request the caller makes; `withInk: false` skips it for a clean start.
  */
-export async function duplicatePlanner(source: PlannerInfo | UserPlanner): Promise<UserPlanner> {
+export async function duplicatePlanner(
+  source: PlannerInfo | UserPlanner,
+  opts: DuplicateOptions = {},
+): Promise<UserPlanner> {
   const existing = await listUserPlanners();
   const id = newId("c", new Set(existing.map((m) => m.id)));
   const src = source as UserPlanner;
@@ -258,23 +355,100 @@ export async function duplicatePlanner(source: PlannerInfo | UserPlanner): Promi
   // Copying a copy points at the original rather than building a chain.
   const sourceId = src.kind === "copy" && src.sourceId ? src.sourceId : source.id;
   const base = existing.find((m) => m.id === sourceId) ?? source;
+  const name = opts.name?.trim().slice(0, 80) || (await suggestedCopyName(source));
+  const withInk = opts.withInk !== false;
 
-  const nth = existing.filter((m) => m.sourceId === sourceId).length + 2;
   const meta: UserPlanner = {
     ...base,
     id,
     kind: "copy",
     sourceId,
-    name: `${stripCopySuffix(source.name)} (copy${nth > 2 ? ` ${nth - 1}` : ""})`,
+    name,
     category: USER_CATEGORY,
-    description: `Blank copy of ${stripCopySuffix(source.name)} — its own handwriting, same pages.`,
+    description: withInk
+      ? `Your copy of ${stripCopySuffix(source.name)} — edit freely.`
+      : `Blank copy of ${stripCopySuffix(source.name)} — its own handwriting, same pages.`,
     createdAt: Date.now(),
+  };
+  await putMeta(meta);
+  if (withInk) await copyInk(sourceId, id);
+  return meta;
+}
+
+/**
+ * Ask the server to clone one notebook's ink onto another id. Best-effort: a
+ * failure leaves a usable blank copy rather than blocking the duplicate, so the
+ * caller only needs to tell the user what happened.
+ */
+export async function copyInk(from: string, to: string): Promise<{ pages: number } | null> {
+  try {
+    const res = await fetch("/api/planner/duplicate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to }),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+const stripCopySuffix = (name: string) => name.replace(/\s*\(copy(?:\s+\d+)?\)$/, "");
+
+// ---- blank notebooks --------------------------------------------------------------
+
+export interface NewNotebook {
+  name: string;
+  paper: string;
+  aspect: number;
+  pages: number;
+  tint?: string;
+}
+
+/** Create an empty notebook from a paper template. */
+export async function createBlankNotebook(opts: NewNotebook): Promise<UserPlanner> {
+  const existing = await listUserPlanners();
+  const id = newId("b", new Set(existing.map((m) => m.id)));
+  const pages = Math.max(1, Math.min(MAX_IMPORT_PAGES, Math.round(opts.pages) || 1));
+  const meta: UserPlanner = {
+    id,
+    kind: "blank",
+    name: opts.name.trim().slice(0, 80) || "New notebook",
+    description: `${pages} ${pages === 1 ? "page" : "pages"} · add more any time`,
+    category: USER_CATEGORY,
+    pages,
+    aspect: Number(opts.aspect.toFixed(5)),
+    createdAt: Date.now(),
+    paper: opts.paper || DEFAULT_PAPER,
+    tint: opts.tint || DEFAULT_TINT,
   };
   await putMeta(meta);
   return meta;
 }
 
-const stripCopySuffix = (name: string) => name.replace(/\s*\(copy(?:\s+\d+)?\)$/, "");
+/**
+ * Append pages to a notebook whose pages are drawn from a paper template — a
+ * blank notebook, or a copy of one. Nothing else can grow: an import and a
+ * duplicate have exactly as many pages as their source file.
+ *
+ * Only appending is offered: inserting in the middle would renumber every page
+ * after it, and ink is stored per page number, so it would silently shuffle
+ * handwriting onto the wrong pages.
+ */
+export async function addPages(id: string, count = 1): Promise<number | null> {
+  const all = await listUserPlanners();
+  const meta = all.find((m) => m.id === id);
+  if (!meta?.paper) return null;
+  const pages = Math.min(MAX_IMPORT_PAGES, meta.pages + Math.max(1, count));
+  if (pages === meta.pages) return meta.pages;
+  await putMeta({
+    ...meta,
+    pages,
+    description: `${pages} ${pages === 1 ? "page" : "pages"} · add more any time`,
+  });
+  return pages;
+}
 
 /** Folder the page images come from: a copy reads its source's renders. */
 export const imageBaseId = (p: PlannerInfo) => (p as UserPlanner).sourceId ?? p.id;
@@ -287,7 +461,7 @@ export const imageBaseId = (p: PlannerInfo) => (p as UserPlanner).sourceId ?? p.
  * and evicted oldest-first so a 700-page notebook can't grow without bound.
  */
 export class PdfRenderer {
-  private docPromise: Promise<any> | null = null;
+  private docPromise: Promise<{ doc: any; close: () => Promise<void> }> | null = null;
   private cache = new Map<number, string>();
   private order: number[] = [];
   private readonly limit = 12;
@@ -307,7 +481,7 @@ export class PdfRenderer {
   async page(n: number): Promise<string> {
     const hit = this.cache.get(n);
     if (hit) return hit;
-    const doc = await this.doc();
+    const { doc } = await this.doc();
     const page = await doc.getPage(n);
     const base = page.getViewport({ scale: 1 });
     const viewport = page.getViewport({ scale: Math.min(4, this.targetWidth / base.width) });
@@ -337,7 +511,7 @@ export class PdfRenderer {
     for (const url of this.cache.values()) URL.revokeObjectURL(url);
     this.cache.clear();
     this.order = [];
-    this.docPromise?.then((d) => d.destroy()).catch(() => {});
+    this.docPromise?.then(({ close }) => close()).catch(() => {});
     this.docPromise = null;
   }
 }
