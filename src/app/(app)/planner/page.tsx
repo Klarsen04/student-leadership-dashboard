@@ -1102,6 +1102,15 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
 
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  /**
+   * Committed strokes are painted once to this offscreen canvas and blitted each frame;
+   * only the live stroke is repainted on top. Without it, drawing on a page that already
+   * holds thousands of strokes repaints every one of them on every pointer move. It's
+   * rebuilt (flagged by `inkCacheDirty`) only when the committed set, the page size or
+   * the zoom actually changes.
+   */
+  const inkCacheRef = useRef<HTMLCanvasElement | null>(null);
+  const inkCacheDirty = useRef(true);
   /** The background <img>, so a page can be captured as a template. */
   const bgImgRef = useRef<HTMLImageElement>(null);
   const pageRef = useRef(page);
@@ -1326,25 +1335,58 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     // it rather than being a magnified bitmap. `inkPixelRatio` caps that.
     const rect = box.getBoundingClientRect();
     const dpr = inkPixelRatio(rect.width, rect.height, window.devicePixelRatio || 1);
-    if (canvas.width !== Math.round(rect.width * dpr) || canvas.height !== Math.round(rect.height * dpr)) {
-      canvas.width = Math.round(rect.width * dpr);
-      canvas.height = Math.round(rect.height * dpr);
+    const pw = Math.round(rect.width * dpr);
+    const ph = Math.round(rect.height * dpr);
+    if (canvas.width !== pw || canvas.height !== ph) {
+      canvas.width = pw;
+      canvas.height = ph;
+      inkCacheDirty.current = true; // a resize invalidates the cached bitmap
     }
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    // Clip strokes to the writable paper so one that strays into the tabs or the outer
+    // margin is trimmed rather than painted over the furniture. Text boxes are DOM
+    // overlays and clip themselves.
+    const wa = writeAreaRef.current;
+    const clipPaper = (c: CanvasRenderingContext2D) => {
+      c.beginPath();
+      c.rect(wa.x * rect.width, wa.y * rect.height, wa.w * rect.width, wa.h * rect.height);
+      c.clip();
+    };
+
+    // Rebuild the committed-stroke cache only when something it depends on changed.
+    if (inkCacheDirty.current) {
+      let cache = inkCacheRef.current;
+      if (!cache) { cache = document.createElement("canvas"); inkCacheRef.current = cache; }
+      if (cache.width !== pw || cache.height !== ph) { cache.width = pw; cache.height = ph; }
+      const cc = cache.getContext("2d");
+      if (cc) {
+        cc.setTransform(dpr, 0, 0, dpr, 0, 0);
+        cc.clearRect(0, 0, rect.width, rect.height);
+        cc.save();
+        clipPaper(cc);
+        for (const el of elementsRef.current) if (isStroke(el)) drawStroke(cc, el, rect.width, rect.height);
+        cc.restore();
+      }
+      inkCacheDirty.current = false;
+    }
+
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, rect.width, rect.height);
-    // Clip strokes to the writable paper so one that strays into the tabs or the
-    // outer margin is trimmed rather than painted over the furniture. Text boxes
-    // are DOM overlays and clip themselves.
-    const wa = writeAreaRef.current;
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(wa.x * rect.width, wa.y * rect.height, wa.w * rect.width, wa.h * rect.height);
-    ctx.clip();
-    for (const el of elementsRef.current) if (isStroke(el)) drawStroke(ctx, el, rect.width, rect.height);
-    if (liveRef.current) drawStroke(ctx, liveRef.current, rect.width, rect.height);
-    ctx.restore();
+    // Blit the cached committed strokes 1:1 in device pixels, then paint only the live
+    // stroke on top — the whole point of the cache.
+    if (inkCacheRef.current) {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(inkCacheRef.current, 0, 0);
+      ctx.restore();
+    }
+    if (liveRef.current) {
+      ctx.save();
+      clipPaper(ctx);
+      drawStroke(ctx, liveRef.current, rect.width, rect.height);
+      ctx.restore();
+    }
 
     // Selection furniture, drawn outside the clip: a lasso often strays over a
     // margin on its way round a word, and cutting it off there looks broken.
@@ -1505,6 +1547,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     }
     elementsRef.current = next;
     cacheRef.current.set(forSlot, next);
+    inkCacheDirty.current = true; // committed set changed — the cached bitmap is stale
     scheduleSave(forSlot);
     redraw();
     rerender();
@@ -1533,6 +1576,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     setSelection(selectionRef.current);
     textHeights.current.clear();
     burstRef.current = null; // a typing session doesn't span pages
+    inkCacheDirty.current = true; // a new page's strokes need a fresh cache
 
     const cached = cacheRef.current.get(slot);
     if (cached) {
@@ -1564,6 +1608,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
         const parsed = parseElements(data.strokes);
         cacheRef.current.set(slot, parsed);
         elementsRef.current = parsed;
+        inkCacheDirty.current = true; // the fetched strokes replace the empty page
         redraw();
         rerender();
       } catch {}
