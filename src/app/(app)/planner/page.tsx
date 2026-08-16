@@ -13,19 +13,27 @@ import {
   Redo2,
   CalendarDays,
   Home,
+  Library,
+  NotebookPen,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  PLANNER_PAGE_COUNT,
-  PLANNER_ASPECT,
-  plannerImageSrc,
   hotspotsForPage,
   pageLabel,
   todayPage,
   monthlyPage,
   SECTION_PAGES,
-  type Hotspot,
+  PLANNER_YEAR,
 } from "@/lib/planner";
+import {
+  type PlannerInfo,
+  type PlannerManifest,
+  imageSrc,
+  fetchPlannerIndex,
+  fetchPlannerManifest,
+  getSelectedPlannerId,
+  setSelectedPlannerId,
+} from "@/lib/planners";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
 
@@ -83,19 +91,130 @@ function drawStroke(ctx: CanvasRenderingContext2D, s: Stroke, W: number, H: numb
 export default function PlannerPage() {
   return (
     <Suspense fallback={null}>
-      <PlannerInner />
+      <PlannerRoot />
     </Suspense>
   );
 }
 
-function PlannerInner() {
+function PlannerRoot() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const urlPlanner = searchParams.get("planner");
+  const showLibrary = searchParams.get("library") === "1";
+
+  const [planners, setPlanners] = useState<PlannerInfo[] | null>(null);
+  const [active, setActive] = useState<PlannerManifest | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const list = await fetchPlannerIndex();
+      setPlanners(list);
+    })();
+  }, []);
+
+  // Resolve which planner to open: URL param → stored choice → the only one.
+  useEffect(() => {
+    if (!planners || showLibrary) {
+      setActive(null);
+      return;
+    }
+    const wanted = urlPlanner || getSelectedPlannerId() || (planners.length === 1 ? planners[0].id : null);
+    const info = planners.find((p) => p.id === wanted);
+    if (!info) {
+      setActive(null);
+      return;
+    }
+    let cancelled = false;
+    fetchPlannerManifest(info).then((m) => {
+      if (!cancelled) setActive(m);
+    });
+    return () => { cancelled = true; };
+  }, [planners, urlPlanner, showLibrary]);
+
+  if (!planners) {
+    return (
+      <div className="min-h-screen -m-4 md:-m-8 flex items-center justify-center relative z-20" style={{ background: "#F2E8DC" }}>
+        <div className="w-8 h-8 rounded-full border-2 border-[#FFE39A] border-t-[#FFB400] animate-spin" />
+      </div>
+    );
+  }
+
+  const openPlanner = (id: string) => {
+    setSelectedPlannerId(id);
+    router.replace(`/planner?planner=${id}`, { scroll: false });
+  };
+
+  if (showLibrary || !active) {
+    // Still resolving the manifest for a known selection? Avoid a picker flash.
+    const pending = !showLibrary && (urlPlanner || getSelectedPlannerId() || (planners.length === 1 ? planners[0].id : null));
+    if (pending && planners.some((p) => p.id === pending)) {
+      return (
+        <div className="min-h-screen -m-4 md:-m-8 flex items-center justify-center relative z-20" style={{ background: "#F2E8DC" }}>
+          <div className="w-8 h-8 rounded-full border-2 border-[#FFE39A] border-t-[#FFB400] animate-spin" />
+        </div>
+      );
+    }
+    return <PlannerLibrary planners={planners} onOpen={openPlanner} />;
+  }
+
+  return <PlannerViewer key={active.id} planner={active} onLibrary={() => router.replace("/planner?library=1", { scroll: false })} />;
+}
+
+// ---- library (planner picker) --------------------------------------------------
+function PlannerLibrary({ planners, onOpen }: { planners: PlannerInfo[]; onOpen: (id: string) => void }) {
+  return (
+    <div className="min-h-screen -m-4 md:-m-8 p-6 md:p-10 relative z-20" style={{ background: "#F2E8DC" }}>
+      <div className="max-w-4xl mx-auto">
+        <div className="flex items-center gap-3 mb-1">
+          <NotebookPen className="w-7 h-7 text-[#c98a00]" />
+          <h1 className="text-3xl font-bold text-black" style={MARKER}>Your planners</h1>
+        </div>
+        <p className="text-black/50 text-sm mb-8">Pick a notebook — each one keeps its own handwriting.</p>
+
+        {planners.length === 0 ? (
+          <div className="rounded-3xl bg-white border border-black/5 p-10 text-center text-black/50">
+            No planners installed yet. Add one with <code className="text-xs bg-black/5 rounded px-1.5 py-0.5">node scripts/add-planner.mjs &lt;pdf&gt; &lt;id&gt; &quot;Name&quot;</code>.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {planners.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => onOpen(p.id)}
+                className="group text-left rounded-3xl bg-white border border-black/5 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all overflow-hidden"
+              >
+                <div className="relative w-full bg-black/[0.03]" style={{ aspectRatio: `${p.aspect}` }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={imageSrc(p, 1)} alt={p.name} className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+                </div>
+                <div className="p-4">
+                  <h2 className="font-bold text-black" style={MARKER}>{p.name}</h2>
+                  {p.description && <p className="text-xs text-black/50 mt-1 leading-relaxed">{p.description}</p>}
+                  <p className="text-[11px] text-black/35 mt-2">{p.pages} pages</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---- viewer --------------------------------------------------------------------
+function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLibrary: () => void }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const isCollanote = planner.template === "collanote-2026";
+
   const initialPage = (() => {
     const p = parseInt(searchParams.get("page") || "", 10);
-    if (p >= 1 && p <= PLANNER_PAGE_COUNT) return p;
-    const now = new Date();
-    return now.getFullYear() === 2026 ? monthlyPage(now.getMonth() + 1) : SECTION_PAGES.cover;
+    if (p >= 1 && p <= planner.pages) return p;
+    if (isCollanote) {
+      const now = new Date();
+      return now.getFullYear() === PLANNER_YEAR ? monthlyPage(now.getMonth() + 1) : SECTION_PAGES.cover;
+    }
+    return 1;
   })();
   const debug = searchParams.get("debug") === "1";
 
@@ -119,7 +238,12 @@ function PlannerInner() {
   const toolRef = useRef(tool);
   toolRef.current = tool;
 
-  const hotspots = useMemo(() => hotspotsForPage(page), [page]);
+  const hotspots = useMemo(() => {
+    if (isCollanote) return hotspotsForPage(page);
+    return planner.links?.[String(page)] ?? [];
+  }, [isCollanote, planner.links, page]);
+
+  const label = isCollanote ? pageLabel(page) : `Page ${page}`;
 
   // ---- rendering ----
   const redraw = useCallback(() => {
@@ -158,7 +282,7 @@ function PlannerInner() {
         const res = await fetch("/api/planner", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ page: forPage, strokes: JSON.stringify(cacheRef.current.get(forPage) ?? []) }),
+          body: JSON.stringify({ planner: planner.id, page: forPage, strokes: JSON.stringify(cacheRef.current.get(forPage) ?? []) }),
         });
         if (!res.ok) throw new Error();
         setSaveState("saved");
@@ -167,7 +291,7 @@ function PlannerInner() {
         toast.error("Couldn't save your ink — it will retry on your next stroke.");
       }
     }, 1200);
-  }, []);
+  }, [planner.id]);
 
   const commit = useCallback((next: Stroke[]) => {
     undoRef.current.push(strokesRef.current);
@@ -196,7 +320,7 @@ function PlannerInner() {
     redraw();
     (async () => {
       try {
-        const res = await fetch(`/api/planner?page=${page}`);
+        const res = await fetch(`/api/planner?planner=${planner.id}&page=${page}`);
         if (!res.ok) return;
         const data = await res.json();
         if (cancelled) return;
@@ -207,21 +331,21 @@ function PlannerInner() {
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [page, redraw]);
+  }, [page, planner.id, redraw]);
 
   // Keep the URL shareable + preload neighbouring pages for snappy flips.
   useEffect(() => {
-    router.replace(`/planner?page=${page}`, { scroll: false });
+    router.replace(`/planner?planner=${planner.id}&page=${page}`, { scroll: false });
     for (const p of [page - 1, page + 1]) {
-      if (p >= 1 && p <= PLANNER_PAGE_COUNT) {
+      if (p >= 1 && p <= planner.pages) {
         const img = new Image();
-        img.src = plannerImageSrc(p);
+        img.src = imageSrc(planner, p);
       }
     }
-  }, [page, router]);
+  }, [page, planner, router]);
 
   const go = useCallback((p: number) => {
-    if (p < 1 || p > PLANNER_PAGE_COUNT) return;
+    if (p < 1 || p > planner.pages) return;
     // Flush any pending save for the page we're leaving.
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
@@ -231,11 +355,11 @@ function PlannerInner() {
       fetch("/api/planner", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ page: leaving, strokes }),
+        body: JSON.stringify({ planner: planner.id, page: leaving, strokes }),
       }).then(() => setSaveState("saved")).catch(() => {});
     }
     setPage(p);
-  }, [page]);
+  }, [page, planner.id, planner.pages]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -263,11 +387,11 @@ function PlannerInner() {
     const R = 0.012; // eraser radius as a fraction of page width
     const before = strokesRef.current;
     const after = before.filter((s) => !s.points.some(([px, py]) => {
-      const dx = px - x, dy = (py - y) / PLANNER_ASPECT;
+      const dx = px - x, dy = (py - y) / planner.aspect;
       return dx * dx + dy * dy < R * R;
     }));
     if (after.length !== before.length) commit(after);
-  }, [commit]);
+  }, [commit, planner.aspect]);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.pointerType === "touch") {
@@ -375,8 +499,11 @@ function PlannerInner() {
     <div className="min-h-screen -m-4 md:-m-8 flex flex-col relative z-20" style={{ background: "#F2E8DC" }}>
       {/* Toolbar */}
       <div className="flex items-center gap-1 px-3 py-2 flex-wrap bg-white/80 backdrop-blur border-b border-black/5 sticky top-0 z-30">
-        <span className="text-sm font-bold mr-1 text-black" style={MARKER}>Planner</span>
-        <span className="text-xs text-black/45 mr-2 hidden sm:inline">{pageLabel(page)}</span>
+        <button onClick={onLibrary} className="p-2 rounded-xl text-black/50 hover:bg-black/5" title="All planners">
+          <Library className="w-4 h-4" />
+        </button>
+        <span className="text-sm font-bold mr-1 text-black" style={MARKER}>{planner.name}</span>
+        <span className="text-xs text-black/45 mr-2 hidden sm:inline">{label}</span>
 
         <div className="flex items-center gap-0.5 rounded-2xl bg-black/[0.04] p-0.5">
           <ToolButton t="hand" icon={<Hand className="w-4 h-4" />} title="Navigate (tap tabs & days)" />
@@ -424,23 +551,25 @@ function PlannerInner() {
         <span className={`text-[10px] mr-2 ${saveState === "saved" ? "text-black/30" : "text-[#c98a00]"}`}>
           {saveState === "saved" ? "Saved" : saveState === "saving" ? "Saving…" : "Unsaved"}
         </span>
-        <button onClick={() => go(SECTION_PAGES.cover)} className="p-2 rounded-xl text-black/50 hover:bg-black/5" title="Cover">
+        <button onClick={() => go(1)} className="p-2 rounded-xl text-black/50 hover:bg-black/5" title="Cover">
           <Home className="w-4 h-4" />
         </button>
-        <button
-          onClick={() => go(todayPage())}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold bg-[#7FB800] text-black hover:brightness-105 transition-all"
-          style={MARKER}
-          title="Jump to today's daily page"
-        >
-          <CalendarDays className="w-3.5 h-3.5" /> Today
-        </button>
+        {isCollanote && (
+          <button
+            onClick={() => go(todayPage())}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold bg-[#7FB800] text-black hover:brightness-105 transition-all"
+            style={MARKER}
+            title="Jump to today's daily page"
+          >
+            <CalendarDays className="w-3.5 h-3.5" /> Today
+          </button>
+        )}
         <div className="flex items-center ml-1">
           <button onClick={() => go(page - 1)} disabled={page <= 1} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Previous page">
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <span className="text-[11px] text-black/40 tabular-nums w-16 text-center">{page} / {PLANNER_PAGE_COUNT}</span>
-          <button onClick={() => go(page + 1)} disabled={page >= PLANNER_PAGE_COUNT} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Next page">
+          <span className="text-[11px] text-black/40 tabular-nums w-16 text-center">{page} / {planner.pages}</span>
+          <button onClick={() => go(page + 1)} disabled={page >= planner.pages} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Next page">
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
@@ -451,7 +580,7 @@ function PlannerInner() {
         <div
           ref={boxRef}
           className="relative w-full max-h-full shadow-xl rounded-lg overflow-hidden select-none"
-          style={{ aspectRatio: `${PLANNER_ASPECT}`, maxWidth: `min(100%, calc((100vh - 120px) * ${PLANNER_ASPECT}))`, touchAction: "none" }}
+          style={{ aspectRatio: `${planner.aspect}`, maxWidth: `min(100%, calc((100vh - 120px) * ${planner.aspect}))`, touchAction: "none" }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endStroke}
@@ -459,8 +588,8 @@ function PlannerInner() {
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={plannerImageSrc(page)}
-            alt={pageLabel(page)}
+            src={imageSrc(planner, page)}
+            alt={label}
             className="absolute inset-0 w-full h-full pointer-events-none"
             draggable={false}
           />

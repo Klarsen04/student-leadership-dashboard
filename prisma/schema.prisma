@@ -150,6 +150,7 @@ model DailyCheckIn {
 // at any zoom and stay small on the wire.
 model PlannerInk {
   id        String   @id @default(cuid())
+  plannerId String   @default("collanote-2026") // which notebook (public/planner/<id>)
   page      Int // 1-based planner page number
   strokes   String // JSON array of {tool,color,size,points:[[x,y,pressure],...]}
   userId    String
@@ -157,7 +158,7 @@ model PlannerInk {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([userId, page])
+  @@unique([userId, plannerId, page])
 }
 
 model Reflection {

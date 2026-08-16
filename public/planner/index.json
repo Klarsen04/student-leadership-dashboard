@@ -1,0 +1,19 @@
+{
+  "planners": [
+    {
+      "id": "collanote-2026",
+      "name": "2026 New Year Planner",
+      "description": "Floral CollaNote planner — monthly, weekly & daily pages with habit, mood and budget trackers.",
+      "pages": 513,
+      "aspect": 1.33347,
+      "template": "collanote-2026"
+    },
+    {
+      "id": "remarkably-2026",
+      "name": "Minimal 2026 Planner",
+      "description": "Clean e-ink style planner (Remarkably Organized, MIT) — yearly, quarterly, monthly & weekly pages with dotted notes.",
+      "pages": 488,
+      "aspect": 0.77273
+    }
+  ]
+}

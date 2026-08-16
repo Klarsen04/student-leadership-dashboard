@@ -3,13 +3,19 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-const MAX_PAGE = 513;
+const MAX_PAGE = 2000;
+const PLANNER_ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 // Generous per-page cap; vector strokes are small, so hitting this means
 // something is wrong client-side.
 const MAX_STROKES_BYTES = 2_000_000;
 
-// GET /api/planner?page=N  → ink for one page
-// GET /api/planner?pages=all → list of page numbers that have ink (for dots/UI)
+function parsePlannerId(raw: string | null | undefined): string | null {
+  const id = raw || "collanote-2026";
+  return PLANNER_ID_RE.test(id) ? id : null;
+}
+
+// GET /api/planner?planner=<id>&page=N  → ink for one page
+// GET /api/planner?planner=<id>&pages=all → page numbers that have ink
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
@@ -17,10 +23,12 @@ export async function GET(req: NextRequest) {
   }
 
   const { searchParams } = new URL(req.url);
+  const plannerId = parsePlannerId(searchParams.get("planner"));
+  if (!plannerId) return NextResponse.json({ error: "Invalid planner id" }, { status: 400 });
 
   if (searchParams.get("pages") === "all") {
     const rows = await prisma.plannerInk.findMany({
-      where: { userId: session.user.id },
+      where: { userId: session.user.id, plannerId },
       select: { page: true },
     });
     return NextResponse.json({ pages: rows.map((r) => r.page) });
@@ -32,13 +40,13 @@ export async function GET(req: NextRequest) {
   }
 
   const ink = await prisma.plannerInk.findUnique({
-    where: { userId_page: { userId: session.user.id, page } },
+    where: { userId_plannerId_page: { userId: session.user.id, plannerId, page } },
   });
   return NextResponse.json({ page, strokes: ink?.strokes ?? "[]" });
 }
 
-// POST { page, strokes } — full replace of the page's ink (client is source of
-// truth; strokes are the page's entire vector state after each edit burst).
+// POST { planner, page, strokes } — full replace of the page's ink (client is
+// source of truth; strokes are the page's entire vector state per edit burst).
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
@@ -46,8 +54,10 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => null);
+  const plannerId = parsePlannerId(body?.planner);
   const page = parseInt(body?.page, 10);
   const strokes = body?.strokes;
+  if (!plannerId) return NextResponse.json({ error: "Invalid planner id" }, { status: 400 });
   if (!page || page < 1 || page > MAX_PAGE || typeof strokes !== "string") {
     return NextResponse.json({ error: "page and strokes (JSON string) required" }, { status: 400 });
   }
@@ -61,9 +71,9 @@ export async function POST(req: NextRequest) {
   }
 
   const ink = await prisma.plannerInk.upsert({
-    where: { userId_page: { userId: session.user.id, page } },
+    where: { userId_plannerId_page: { userId: session.user.id, plannerId, page } },
     update: { strokes },
-    create: { userId: session.user.id, page, strokes },
+    create: { userId: session.user.id, plannerId, page, strokes },
   });
   return NextResponse.json({ page: ink.page, updatedAt: ink.updatedAt });
 }
