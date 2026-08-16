@@ -41,6 +41,14 @@ import {
   ZoomIn,
   ZoomOut,
   X,
+  Lasso,
+  SquareDashed,
+  Scissors,
+  ClipboardPaste,
+  CopyPlus,
+  BringToFront,
+  SendToBack,
+  RotateCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Hotspot, Rect } from "@/lib/planner";
@@ -130,6 +138,37 @@ import {
   templateImageUrlNow,
 } from "@/lib/planner-user-templates";
 import {
+  type Bounds,
+  type Handle,
+  type PageGeom,
+  type Region,
+  type SelectMode,
+  HANDLES,
+  HANDLE_CURSOR,
+  addCopies,
+  angleTo,
+  boundsContain,
+  clampMove,
+  clipboardSize,
+  elementBounds,
+  elementId,
+  getClipboard,
+  handleAt,
+  pick,
+  pickAt,
+  recolor,
+  remove as removeSelected,
+  reorder,
+  resizeScale,
+  rotate as rotateSelection,
+  scale as scaleSelection,
+  selectedElements,
+  selectionBounds,
+  setClipboard,
+  snapAngle,
+  translate,
+} from "@/lib/planner-select";
+import {
   type Viewport,
   FIT,
   MAX_ZOOM,
@@ -149,7 +188,7 @@ const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-s
 // ---- page content ------------------------------------------------------------
 // Strokes and text boxes are normalised to the page (0..1 in both axes) so
 // content stays put at any screen size. See src/lib/planner-ink.ts.
-type Tool = "hand" | "pen" | "highlighter" | "eraser" | "text";
+type Tool = "hand" | "pen" | "highlighter" | "eraser" | "text" | "select";
 
 /**
  * One undoable step.
@@ -1048,6 +1087,9 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
    */
   const [view, setView] = useState<Viewport>(FIT);
   const [selectedText, setSelectedText] = useState<string | null>(null);
+  /** What the selection tool has picked out, by element id. */
+  const [selection, setSelection] = useState<ReadonlySet<string>>(() => new Set());
+  const [selMode, setSelMode] = useState<SelectMode>("lasso");
   const [pdfSrc, setPdfSrc] = useState<string | null>(null);
   const [, forceRender] = useState(0);
   const rerender = useCallback(() => forceRender((n) => n + 1), []);
@@ -1091,6 +1133,28 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const pointers = useRef<Map<number, { x: number; y: number; type: string }>>(new Map());
   /** The pinch in progress: the last finger separation and midpoint. */
   const pinch = useRef<{ dist: number; x: number; y: number } | null>(null);
+  const selectionRef = useRef<ReadonlySet<string>>(selection);
+  selectionRef.current = selection;
+  /** The loop or rectangle being swept right now. Drawn on the ink canvas. */
+  const marquee = useRef<Region | null>(null);
+  /**
+   * A transform in progress. `from` is the page as it was when the gesture started
+   * and every frame is computed from it, so a long drag can't accumulate rounding
+   * error and letting go needs no fix-up pass.
+   */
+  const dragSel = useRef<
+    | {
+        kind: "move" | "scale" | "rotate";
+        handle?: Handle;
+        from: PageElement[];
+        bounds: Bounds;
+        x: number;
+        y: number;
+      }
+    | null
+  >(null);
+  /** Wrapped heights of the text boxes, reported by the DOM, as page fractions. */
+  const textHeights = useRef<Map<string, number>>(new Map());
   // Edge taps and swipes only turn the page when nothing else wants the gesture:
   // the hand tool (and a read-only planner, where every tool is a hand) navigates
   // instead of drawing. Zoomed in, those same drags pan the page instead — there's
@@ -1221,6 +1285,15 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     return !hotspotsRef.current.some((h) => h.kind === "chrome" && inside(h, x, y));
   }, []);
 
+  /**
+   * What the selection maths needs to know about this page: its shape, and how tall
+   * each text box's text has actually wrapped to.
+   */
+  const pageGeom = useCallback((): PageGeom => ({
+    aspect: aspectRef.current,
+    textHeight: (t) => textHeights.current.get(t.id),
+  }), []);
+
   // ---- rendering ----
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -1250,7 +1323,45 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     for (const el of elementsRef.current) if (isStroke(el)) drawStroke(ctx, el, rect.width, rect.height);
     if (liveRef.current) drawStroke(ctx, liveRef.current, rect.width, rect.height);
     ctx.restore();
-  }, []);
+
+    // Selection furniture, drawn outside the clip: a lasso often strays over a
+    // margin on its way round a word, and cutting it off there looks broken.
+    const W = rect.width, H = rect.height;
+    const sel = selectionRef.current;
+    if (sel.size) {
+      // Every picked element gets its own outline, so it's clear *what* is coming
+      // along, and one box round the lot for the handles to sit on.
+      ctx.save();
+      ctx.strokeStyle = "#8A6DE9";
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.5;
+      ctx.setLineDash([3, 3]);
+      for (const el of elementsRef.current) {
+        if (isText(el) || !sel.has(elementId(el))) continue; // text boxes outline themselves
+        const b = elementBounds(el, pageGeom());
+        ctx.strokeRect(b.x * W, b.y * H, b.w * W, b.h * H);
+      }
+      ctx.restore();
+    }
+    const m = marquee.current;
+    if (m) {
+      ctx.save();
+      ctx.strokeStyle = "#8A6DE9";
+      ctx.fillStyle = "rgba(138,109,233,0.10)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      if (m.mode === "rect") {
+        ctx.rect(m.a[0] * W, m.a[1] * H, (m.b[0] - m.a[0]) * W, (m.b[1] - m.a[1]) * H);
+      } else {
+        m.points.forEach(([x, y], i) => (i ? ctx.lineTo(x * W, y * H) : ctx.moveTo(x * W, y * H)));
+        ctx.closePath();
+      }
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+  }, [pageGeom]);
 
   // The page box's *layout* size — its size at zoom 1, which is what normalised
   // coordinates are a fraction of. Deliberately not the bounding rect: that one
@@ -1394,6 +1505,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     let cancelled = false;
     liveRef.current = null;
     setSelectedText(null);
+    // A selection is a set of things on *this* page, and the measured text heights
+    // go with them.
+    selectionRef.current = new Set();
+    setSelection(selectionRef.current);
+    textHeights.current.clear();
     burstRef.current = null; // a typing session doesn't span pages
 
     const cached = cacheRef.current.get(slot);
@@ -1505,24 +1621,6 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     setPage(p);
   }, [page, pages, flushPending]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement;
-      if (t?.tagName === "INPUT" || t?.tagName === "TEXTAREA" || t?.isContentEditable) return;
-      // ⌘/ctrl with +, − and 0, as every document viewer does it.
-      if (e.metaKey || e.ctrlKey) {
-        if (e.key === "+" || e.key === "=") { e.preventDefault(); zoomTo(stepZoom(viewRef.current.z, 1)); }
-        else if (e.key === "-" || e.key === "_") { e.preventDefault(); zoomTo(stepZoom(viewRef.current.z, -1)); }
-        else if (e.key === "0") { e.preventDefault(); setView(FIT); }
-        return;
-      }
-      if (e.key === "ArrowLeft") go(page - 1);
-      if (e.key === "ArrowRight") go(page + 1);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [page, go, zoomTo]);
-
   // ---- text boxes ----
   /** Start treating the edits that follow as one undo step. */
   const beginBurst = useCallback(() => {
@@ -1553,6 +1651,135 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     setElements([...elementsRef.current, box]);
     setSelectedText(id);
   }, [color, font, textSize, setElements]);
+
+  // ---- selection ----
+  // A selection is a set of element identities, and every action on it rewrites
+  // those elements: a moved word is still a stroke with pressure behind it, so it
+  // stays sharp at any zoom, can be moved again, recoloured, or undone. Nothing is
+  // ever flattened to a picture. See src/lib/planner-select.ts.
+
+  /** Change the selection, keeping the ref in step so `redraw` sees it at once. */
+  const applySelection = useCallback((ids: ReadonlySet<string>) => {
+    selectionRef.current = ids;
+    setSelection(ids);
+    redraw();
+  }, [redraw]);
+
+  const selBoundsNow = useCallback(
+    () => (selectionRef.current.size ? selectionBounds(elementsRef.current, selectionRef.current, pageGeom()) : null),
+    [pageGeom],
+  );
+
+  /** A text box reporting how tall it wrapped to. */
+  const measureText = useCallback((id: string, height: number) => {
+    const prev = textHeights.current.get(id);
+    if (prev !== undefined && Math.abs(prev - height) < 1e-4) return;
+    textHeights.current.set(id, height);
+    // Only worth a repaint if it changes a box that's currently outlined.
+    if (selectionRef.current.has(id)) { redraw(); rerender(); }
+  }, [redraw, rerender]);
+
+  /** Nudge the selection by a fraction of the page, as the arrow keys do. */
+  const nudgeSelection = useCallback((dx: number, dy: number) => {
+    const ids = selectionRef.current;
+    const b = selBoundsNow();
+    if (!ids.size || !b) return;
+    const d = clampMove(b, dx, dy, writeAreaRef.current);
+    setElements(translate(elementsRef.current, ids, d.dx, d.dy));
+  }, [selBoundsNow, setElements]);
+
+  type SelAction = "duplicate" | "copy" | "cut" | "paste" | "delete" | "front" | "back";
+
+  const selAction = useCallback((action: SelAction) => {
+    const ids = selectionRef.current;
+    const els = elementsRef.current;
+    if (action === "paste") {
+      const clip = getClipboard();
+      if (!clip.length) return;
+      const { elements, ids: pasted } = addCopies(els, clip, { dx: 0.02, dy: 0.02 });
+      setElements(elements);
+      applySelection(pasted);
+      return;
+    }
+    if (!ids.size) return;
+    const picked = selectedElements(els, ids);
+    switch (action) {
+      case "duplicate": {
+        const { elements, ids: copies } = addCopies(els, picked, { dx: 0.02, dy: 0.02 });
+        setElements(elements);
+        applySelection(copies);
+        return;
+      }
+      case "copy":
+        setClipboard(picked);
+        rerender(); // the paste button lights up
+        return;
+      case "cut":
+        setClipboard(picked);
+        setElements(removeSelected(els, ids));
+        applySelection(new Set());
+        return;
+      case "delete":
+        setElements(removeSelected(els, ids));
+        applySelection(new Set());
+        return;
+      case "front":
+      case "back":
+        setElements(reorder(els, ids, action));
+        return;
+    }
+  }, [applySelection, rerender, setElements]);
+
+  const recolorSelection = useCallback((c: string) => {
+    if (!selectionRef.current.size) return;
+    setElements(recolor(elementsRef.current, selectionRef.current, c));
+  }, [setElements]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (t?.tagName === "INPUT" || t?.tagName === "TEXTAREA" || t?.isContentEditable) return;
+      const picked = selectionRef.current.size > 0;
+      // ⌘/ctrl with +, − and 0, as every document viewer does it — and the
+      // clipboard keys, which act on the selection.
+      if (e.metaKey || e.ctrlKey) {
+        const key = e.key.toLowerCase();
+        if (e.key === "+" || e.key === "=") { e.preventDefault(); zoomTo(stepZoom(viewRef.current.z, 1)); }
+        else if (e.key === "-" || e.key === "_") { e.preventDefault(); zoomTo(stepZoom(viewRef.current.z, -1)); }
+        else if (e.key === "0") { e.preventDefault(); setView(FIT); }
+        else if (key === "c" && picked) { e.preventDefault(); selAction("copy"); }
+        else if (key === "x" && picked) { e.preventDefault(); selAction("cut"); }
+        else if (key === "v" && !readOnly) { e.preventDefault(); setTool("select"); selAction("paste"); }
+        else if (key === "a" && !readOnly && elementsRef.current.length) {
+          e.preventDefault();
+          setTool("select");
+          applySelection(new Set(elementsRef.current.map(elementId)));
+        }
+        return;
+      }
+      if (picked) {
+        if (e.key === "Escape") { applySelection(new Set()); return; }
+        if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); selAction("delete"); return; }
+        // Arrows nudge what's selected instead of turning the page: with something
+        // in hand, that's what they're for.
+        const step = e.shiftKey ? 0.02 : 0.004;
+        if (e.key === "ArrowLeft") { e.preventDefault(); nudgeSelection(-step, 0); return; }
+        if (e.key === "ArrowRight") { e.preventDefault(); nudgeSelection(step, 0); return; }
+        if (e.key === "ArrowUp") { e.preventDefault(); nudgeSelection(0, -step * aspectRef.current); return; }
+        if (e.key === "ArrowDown") { e.preventDefault(); nudgeSelection(0, step * aspectRef.current); return; }
+      }
+      if (e.key === "ArrowLeft") go(page - 1);
+      if (e.key === "ArrowRight") go(page + 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [page, go, zoomTo, readOnly, selAction, nudgeSelection, applySelection]);
+
+  // The selection belongs to the tool that made it: switching away lets it go, so
+  // no invisible handles are left holding a page's ink.
+  useEffect(() => {
+    if (tool !== "select" && selectionRef.current.size) applySelection(new Set());
+  }, [tool, applySelection]);
 
   // ---- pointer handling ----
   // GoodNotes-style input routing: Apple Pencil (pointerType "pen") draws on
@@ -1594,6 +1821,43 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (!isFit(viewRef.current)) boxRef.current?.setPointerCapture(e.pointerId);
   };
 
+  /** Recompute a transform in progress from the snapshot it started with. */
+  const applyDrag = (x: number, y: number, shift: boolean) => {
+    const g = dragSel.current;
+    const ids = selectionRef.current;
+    if (!g || !ids.size) return;
+    if (g.kind === "move") {
+      const { dx, dy } = clampMove(g.bounds, x - g.x, y - g.y, writeAreaRef.current);
+      setElements(translate(g.from, ids, dx, dy), { history: false });
+      return;
+    }
+    if (g.kind === "scale") {
+      setElements(scaleSelection(g.from, ids, resizeScale(g.bounds, g.handle!, x, y)), { history: false });
+      return;
+    }
+    const geom = pageGeom();
+    const centre = { x: g.bounds.x + g.bounds.w / 2, y: g.bounds.y + g.bounds.h / 2 };
+    let angle = angleTo(centre, x, y, geom.aspect) - angleTo(centre, g.x, g.y, geom.aspect);
+    if (shift) angle = snapAngle(angle);
+    setElements(rotateSelection(g.from, ids, centre, angle, geom), { history: false });
+  };
+
+  /**
+   * A resize or rotate handle taking over. Capture goes to the page box, so the rest
+   * of the gesture arrives at the handlers below however far it strays.
+   */
+  const startHandle = (e: React.PointerEvent, kind: "scale" | "rotate", handle?: Handle) => {
+    const b = selBoundsNow();
+    if (!b) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const [x, y] = norm(e);
+    boxRef.current?.setPointerCapture(e.pointerId);
+    drawingPointer.current = e.pointerId;
+    beginBurst(); // the whole gesture is one undo step
+    dragSel.current = { kind, handle, from: elementsRef.current, bounds: b, x, y };
+  };
+
   const onPointerDown = (e: React.PointerEvent) => {
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
 
@@ -1615,6 +1879,25 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     // Read-only planner: every input is navigation, whatever the tool says.
     if (readOnly) {
       beginTap(e, { chromeOnly: false, flip: true });
+      return;
+    }
+
+    // Selection tool: grab what's already picked to move it, or sweep a new region.
+    // Fingers are left out deliberately — they go on panning and tapping tabs, so
+    // the page never feels locked while the tool is armed.
+    if (toolRef.current === "select" && shouldDraw(e)) {
+      e.preventDefault();
+      boxRef.current?.setPointerCapture(e.pointerId);
+      drawingPointer.current = e.pointerId; // also makes a resting hand a no-op
+      const b = selBoundsNow();
+      if (b && boundsContain(b, x, y, 0.008)) {
+        beginBurst();
+        dragSel.current = { kind: "move", from: elementsRef.current, bounds: b, x, y };
+        return;
+      }
+      marquee.current =
+        selMode === "rect" ? { mode: "rect", a: [x, y], b: [x, y] } : { mode: "lasso", points: [[x, y]] };
+      redraw();
       return;
     }
 
@@ -1682,6 +1965,21 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       return;
     }
 
+    // A selection gesture: sweeping a region, or transforming what's picked.
+    if (drawingPointer.current === e.pointerId && (marquee.current || dragSel.current)) {
+      e.preventDefault();
+      const [x, y] = norm(e);
+      const m = marquee.current;
+      if (m) {
+        if (m.mode === "rect") marquee.current = { mode: "rect", a: m.a, b: [x, y] };
+        else m.points.push([x, y]);
+        redraw();
+        return;
+      }
+      applyDrag(x, y, e.shiftKey);
+      return;
+    }
+
     // Zoomed in, a navigating pointer drags the page about.
     const tap = tapStart.current;
     if (tap && !isFit(viewRef.current)) {
@@ -1720,6 +2018,35 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (pinch.current) {
       if ([...pointers.current.values()].filter((p) => p.type === "touch").length < 2) pinch.current = null;
       tapStart.current = null;
+      return;
+    }
+
+    // A selection gesture finishing.
+    if (marquee.current || dragSel.current) {
+      const m = marquee.current;
+      const transform = dragSel.current;
+      marquee.current = null;
+      dragSel.current = null;
+      if (drawingPointer.current === e.pointerId) drawingPointer.current = null;
+      if (transform) {
+        endBurst(); // the next gesture is a new undo step
+        redraw();
+        return;
+      }
+      if (!m) return;
+      const [x, y] = norm(e);
+      const travel =
+        m.mode === "rect"
+          ? Math.hypot(m.b[0] - m.a[0], m.b[1] - m.a[1])
+          : m.points.reduce((d, p, i) => (i ? d + Math.hypot(p[0] - m.points[i - 1][0], p[1] - m.points[i - 1][1]) : 0), 0);
+      // A tap rather than a sweep: take whatever is under it — or nothing, which is
+      // how you let a selection go.
+      if (travel < 0.015) {
+        const hit = pickAt(elementsRef.current, x, y, pageGeom());
+        applySelection(hit ? new Set([hit]) : new Set());
+        return;
+      }
+      applySelection(pick(elementsRef.current, m, pageGeom()));
       return;
     }
 
@@ -2034,6 +2361,16 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
 
   const textBoxes = elementsRef.current.filter(isText);
   const showInkControls = tool === "pen" || tool === "highlighter";
+  // The box round the selection, in page coordinates: where the handles and the
+  // action bar hang. Recomputed each render, so it follows a drag frame by frame.
+  const selBounds = tool === "select" && selection.size ? selectionBounds(elementsRef.current, selection, pageGeom()) : null;
+  /**
+   * Selection furniture counter-scales with the zoom, so a handle stays the size of
+   * a finger at 6× instead of covering a quarter of the page. `scale()` comes first
+   * in the transform so the offsets after it are scaled too — that's what keeps a
+   * handle centred on its corner and the bar a constant gap above the box.
+   */
+  const unzoom = (offset: string) => `scale(${1 / view.z}) ${offset}`;
 
   return (
     // The viewer owns the viewport: a definite height is what lets the page rail
@@ -2084,6 +2421,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
             <ToolButton t="pen" icon={<Pen className="w-4 h-4" />} title="Pen" />
             <ToolButton t="highlighter" icon={<Highlighter className="w-4 h-4" />} title="Highlighter" />
             <ToolButton t="text" icon={<Type className="w-4 h-4" />} title="Text box (tap the paper to type)" />
+            <ToolButton t="select" icon={<Lasso className="w-4 h-4" />} title="Select — move, resize, recolour or copy what you've written" />
             <ToolButton t="eraser" icon={<Eraser className="w-4 h-4" />} title="Eraser (removes whole strokes)" />
           </div>
         )}
@@ -2114,6 +2452,36 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
               ))}
             </div>
           </>
+        )}
+
+        {tool === "select" && (
+          <div className="flex items-center gap-1 ml-1">
+            <div className="flex items-center gap-0.5 rounded-xl bg-black/[0.04] p-0.5">
+              {([["lasso", Lasso, "Lasso — draw a loop round what you want"], ["rect", SquareDashed, "Box — drag a rectangle over it"]] as const).map(
+                ([m, Icon, title]) => (
+                  <button
+                    key={m}
+                    onClick={() => setSelMode(m)}
+                    title={title}
+                    className={`p-1.5 rounded-lg transition-colors ${selMode === m ? "bg-white shadow-sm text-black/70" : "text-black/40 hover:bg-black/5"}`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                  </button>
+                ),
+              )}
+            </div>
+            <button
+              onClick={() => selAction("paste")}
+              disabled={clipboardSize() === 0}
+              className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30"
+              title="Paste (⌘V) — works across pages and notebooks"
+            >
+              <ClipboardPaste className="w-4 h-4" />
+            </button>
+            <span className="text-[11px] text-black/35 hidden lg:inline">
+              {selection.size ? `${selection.size} selected` : "draw round some writing to pick it up"}
+            </span>
+          </div>
         )}
 
         {tool === "text" && (
@@ -2256,6 +2624,8 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
                 scale={view.z}
                 selected={selectedText === t.id}
                 editable={tool === "text" && !readOnly}
+                outlined={selection.has(t.id)}
+                onMeasure={measureText}
                 onSelect={() => setSelectedText(t.id)}
                 onChange={(patch, history) => {
                   // An empty patch with `history` is a gesture letting go: the burst
@@ -2268,6 +2638,93 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
                 onRemove={() => removeText(t.id)}
               />
             ))}
+
+            {/* What's selected: a box, resize handles, a rotate knob, and the
+                actions for it. Every one of these edits the objects themselves —
+                the page is never flattened into a picture to move a word. */}
+            {selBounds && (
+              <>
+                <div
+                  className="absolute pointer-events-none border border-[#8A6DE9]/70 rounded-[3px]"
+                  style={{
+                    left: `${selBounds.x * 100}%`,
+                    top: `${selBounds.y * 100}%`,
+                    width: `${selBounds.w * 100}%`,
+                    height: `${selBounds.h * 100}%`,
+                  }}
+                />
+                {HANDLES.map((h) => {
+                  const at = handleAt(h);
+                  return (
+                    <div
+                      key={h}
+                      onPointerDown={(e) => startHandle(e, "scale", h)}
+                      className="absolute w-3.5 h-3.5 rounded-sm bg-white border border-[#8A6DE9] shadow-sm touch-none z-10"
+                      style={{
+                        left: `${(selBounds.x + selBounds.w * at.x) * 100}%`,
+                        top: `${(selBounds.y + selBounds.h * at.y) * 100}%`,
+                        transform: unzoom("translate(-50%, -50%)"),
+                        cursor: HANDLE_CURSOR[h],
+                      }}
+                      title="Drag to resize — corners keep the proportions"
+                    />
+                  );
+                })}
+                <div
+                  onPointerDown={(e) => startHandle(e, "rotate")}
+                  className="absolute w-7 h-7 flex items-center justify-center rounded-full bg-white border border-[#8A6DE9] text-[#8A6DE9] shadow-sm touch-none cursor-grab z-10"
+                  style={{
+                    left: `${(selBounds.x + selBounds.w / 2) * 100}%`,
+                    top: `${(selBounds.y + selBounds.h) * 100}%`,
+                    transform: unzoom("translate(-50%, 60%)"),
+                  }}
+                  title="Drag to rotate — hold shift to snap to 15°"
+                >
+                  <RotateCw className="w-3.5 h-3.5" />
+                </div>
+
+                <div
+                  className="absolute flex items-center gap-0.5 px-1 py-1 rounded-xl bg-white border border-black/10 shadow-lg z-20 whitespace-nowrap"
+                  style={{
+                    left: `${(selBounds.x + selBounds.w / 2) * 100}%`,
+                    top: `${selBounds.y * 100}%`,
+                    transform: unzoom("translate(-50%, -120%)"),
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  <button onClick={() => selAction("duplicate")} className="p-1.5 rounded-lg text-black/60 hover:bg-black/5" title="Duplicate">
+                    <CopyPlus className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => selAction("copy")} className="p-1.5 rounded-lg text-black/60 hover:bg-black/5" title="Copy (⌘C)">
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => selAction("cut")} className="p-1.5 rounded-lg text-black/60 hover:bg-black/5" title="Cut (⌘X)">
+                    <Scissors className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="w-px h-4 bg-black/10 mx-0.5" />
+                  {PEN_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => recolorSelection(c)}
+                      className="w-4 h-4 rounded-full hover:scale-110 transition-transform"
+                      style={{ background: c }}
+                      title="Recolour"
+                    />
+                  ))}
+                  <span className="w-px h-4 bg-black/10 mx-0.5" />
+                  <button onClick={() => selAction("front")} className="p-1.5 rounded-lg text-black/60 hover:bg-black/5" title="Bring to front">
+                    <BringToFront className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => selAction("back")} className="p-1.5 rounded-lg text-black/60 hover:bg-black/5" title="Send to back">
+                    <SendToBack className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="w-px h-4 bg-black/10 mx-0.5" />
+                  <button onClick={() => selAction("delete")} className="p-1.5 rounded-lg text-red-600 hover:bg-red-50" title="Delete (⌫)">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </>
+            )}
 
             {/* Which edges will turn the page. Purely a hint — the tap itself is
                 handled by endStroke, so these must never eat the pointer (a month
@@ -2381,9 +2838,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       <p className="text-center text-[11px] text-black/35 pb-1.5 pt-1 px-4 line-clamp-2 md:line-clamp-none">
         {readOnly
           ? "This is a built-in planner, so it stays as printed — tap the tabs or a day to look around, and make a copy when you want to write in it · tap the side edges, swipe or scroll to turn one page · pinch to zoom in"
-          : paperBacked
-            ? "Write anywhere with your Apple Pencil · the Text tool drops a box you can type in · the page rail adds, copies, reorders and re-papers pages · scroll to turn one page · pinch, or ⌘+scroll, to zoom in and write smaller"
-            : "Tap the tabs or a day to jump around · write with your Apple Pencil on the paper · the Text tool drops a box you can type in — tabs and margins stay clear · scroll, or pick the hand and tap the side edges, to turn one page · pinch to zoom in"}
+          : tool === "select"
+            ? "Draw a loop round some writing (or drag a box) to pick it up · drag it to move, the handles to resize, the knob to rotate · ⌘C, ⌘X and ⌘V move it between pages · ⌫ deletes it · Esc lets it go"
+            : paperBacked
+              ? "Write anywhere with your Apple Pencil · the Text tool drops a box you can type in · the lasso moves, resizes and recolours what you've written · the page rail adds, copies, reorders and re-papers pages · scroll to turn one page · pinch, or ⌘+scroll, to zoom in and write smaller"
+              : "Tap the tabs or a day to jump around · write with your Apple Pencil on the paper · the Text tool drops a box you can type in — tabs and margins stay clear · the lasso picks writing up to move or recolour · scroll, or pick the hand and tap the side edges, to turn one page · pinch to zoom in"}
       </p>
 
       {setupFor && (
@@ -2409,25 +2868,43 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
 // text; the Text tool turns it into an editable textarea with a drag handle, a
 // width handle, and a small format bar. Font size is a fraction of page height so
 // it scales with the page.
-function TextBoxView({ box, boxSize, scale, selected, editable, onSelect, onChange, onBeginEdit, onRemove }: {
+function TextBoxView({ box, boxSize, scale, selected, editable, outlined, onSelect, onChange, onBeginEdit, onRemove, onMeasure }: {
   box: TextBox;
   boxSize: { w: number; h: number };
   /** The viewer's zoom. The box itself is scaled by it; its handles aren't. */
   scale: number;
   selected: boolean;
   editable: boolean;
+  /** Picked out by the selection tool. */
+  outlined?: boolean;
   onSelect: () => void;
   onChange: (patch: Partial<TextBox>, history?: boolean) => void;
   onBeginEdit: () => void;
   onRemove: () => void;
+  /** Report the box's wrapped height (a fraction of page height) for selection. */
+  onMeasure?: (id: string, height: number) => void;
 }) {
   const areaRef = useRef<HTMLTextAreaElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ px: number; py: number; x: number; y: number } | null>(null);
   const widthDrag = useRef<{ px: number; w: number } | null>(null);
 
   useEffect(() => {
     if (selected && editable) areaRef.current?.focus();
   }, [selected, editable]);
+
+  // How tall the text actually wraps to is something only the DOM knows, and the
+  // selection tool needs it to draw a box that fits. Layout height, so the viewer's
+  // zoom doesn't come into it.
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || !boxSize.h || !onMeasure) return;
+    const report = () => onMeasure(box.id, el.offsetHeight / boxSize.h);
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [box.id, boxSize.h, onMeasure]);
 
   const fontPx = box.size * boxSize.h;
   const common: React.CSSProperties = {
@@ -2442,6 +2919,10 @@ function TextBoxView({ box, boxSize, scale, selected, editable, onSelect, onChan
   const left = `${box.x * 100}%`;
   const top = `${box.y * 100}%`;
   const width = `${box.w * 100}%`;
+  // Rotated by the selection tool: still live text, turned about its own middle.
+  const spin: React.CSSProperties = box.rot
+    ? { transform: `rotate(${box.rot}rad)`, transformOrigin: "center center" }
+    : {};
 
   const startDrag = (e: React.PointerEvent) => {
     e.stopPropagation();
@@ -2482,8 +2963,9 @@ function TextBoxView({ box, boxSize, scale, selected, editable, onSelect, onChan
     // Static text. Clickable to select when the Text tool is active.
     return (
       <div
-        className="absolute whitespace-pre-wrap break-words"
-        style={{ left, top, width, ...common, pointerEvents: editable ? "auto" : "none" }}
+        ref={rootRef}
+        className={`absolute whitespace-pre-wrap break-words ${outlined ? "outline-dashed outline-1 outline-[#8A6DE9]/70" : ""}`}
+        style={{ left, top, width, ...common, ...spin, pointerEvents: editable ? "auto" : "none" }}
         onPointerDown={editable ? (e) => { e.stopPropagation(); onSelect(); } : undefined}
       >
         {box.text || (editable ? "" : "")}
@@ -2492,7 +2974,7 @@ function TextBoxView({ box, boxSize, scale, selected, editable, onSelect, onChan
   }
 
   return (
-    <div className="absolute" style={{ left, top, width }} onPointerDown={(e) => e.stopPropagation()}>
+    <div ref={rootRef} className="absolute" style={{ left, top, width, ...spin }} onPointerDown={(e) => e.stopPropagation()}>
       {/* Format bar. Counter-scaled, along with the handles below: the text should
           grow with the zoom, but the furniture for editing it stays the size your
           finger is. */}
