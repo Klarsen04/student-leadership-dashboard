@@ -49,6 +49,7 @@ import {
   BringToFront,
   SendToBack,
   RotateCw,
+  Shapes,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Hotspot, Rect } from "@/lib/planner";
@@ -87,6 +88,7 @@ import {
   simplifyStroke,
   writeLocal,
 } from "@/lib/planner-ink";
+import { SHAPE_LABEL, snapStroke } from "@/lib/planner-shapes";
 import {
   type UserPlanner,
   PdfRenderer,
@@ -188,7 +190,7 @@ const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-s
 // ---- page content ------------------------------------------------------------
 // Strokes and text boxes are normalised to the page (0..1 in both axes) so
 // content stays put at any screen size. See src/lib/planner-ink.ts.
-type Tool = "hand" | "pen" | "highlighter" | "eraser" | "text" | "select";
+type Tool = "hand" | "pen" | "highlighter" | "eraser" | "text" | "select" | "shape";
 
 /**
  * One undoable step.
@@ -1137,6 +1139,10 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   selectionRef.current = selection;
   /** The loop or rectangle being swept right now. Drawn on the ink canvas. */
   const marquee = useRef<Region | null>(null);
+  /** Set when the stroke being drawn is one the Shapes tool will snap on release. */
+  const snapping = useRef(false);
+  const [snapped, setSnapped] = useState<string | null>(null);
+  const snapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
    * A transform in progress. `from` is the page as it was when the gesture started
    * and every frame is computed from it, so a long drag can't accumulate rounding
@@ -1781,6 +1787,8 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (tool !== "select" && selectionRef.current.size) applySelection(new Set());
   }, [tool, applySelection]);
 
+  useEffect(() => () => { if (snapTimer.current) clearTimeout(snapTimer.current); }, []);
+
   // ---- pointer handling ----
   // GoodNotes-style input routing: Apple Pencil (pointerType "pen") draws on
   // paper and taps tabs; fingers always navigate (tap hotspots); the mouse
@@ -1932,6 +1940,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     }
     drawingPointer.current = e.pointerId;
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    snapping.current = activeTool === "shape";
     liveRef.current = {
       tool: activeTool === "highlighter" ? "highlighter" : "pen",
       color, size,
@@ -2053,9 +2062,19 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (drawingPointer.current === e.pointerId) {
       drawingPointer.current = null;
       if (liveRef.current) {
-        const s = simplifyStroke(liveRef.current);
+        const live = liveRef.current;
         liveRef.current = null;
-        setElements([...elementsRef.current, s]);
+        // The Shapes tool: if the path was meant to be a circle, a box, a line or an
+        // arrow, commit the ideal one instead. It's still a stroke either way — see
+        // src/lib/planner-shapes.ts — so nothing downstream can tell the difference.
+        const snap = snapping.current ? snapStroke(live, aspectRef.current) : null;
+        snapping.current = false;
+        if (snap?.kind) {
+          setSnapped(SHAPE_LABEL[snap.kind]);
+          if (snapTimer.current) clearTimeout(snapTimer.current);
+          snapTimer.current = setTimeout(() => setSnapped(null), 1200);
+        }
+        setElements([...elementsRef.current, snap?.kind ? snap.stroke : simplifyStroke(live)]);
       }
       return;
     }
@@ -2360,7 +2379,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   );
 
   const textBoxes = elementsRef.current.filter(isText);
-  const showInkControls = tool === "pen" || tool === "highlighter";
+  const showInkControls = tool === "pen" || tool === "highlighter" || tool === "shape";
   // The box round the selection, in page coordinates: where the handles and the
   // action bar hang. Recomputed each render, so it follows a drag frame by frame.
   const selBounds = tool === "select" && selection.size ? selectionBounds(elementsRef.current, selection, pageGeom()) : null;
@@ -2420,6 +2439,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
             <ToolButton t="hand" icon={<Hand className="w-4 h-4" />} title="Navigate (tap tabs & days)" />
             <ToolButton t="pen" icon={<Pen className="w-4 h-4" />} title="Pen" />
             <ToolButton t="highlighter" icon={<Highlighter className="w-4 h-4" />} title="Highlighter" />
+            <ToolButton t="shape" icon={<Shapes className="w-4 h-4" />} title="Shapes — draw roughly and it snaps to a circle, box, triangle, line or arrow" />
             <ToolButton t="text" icon={<Type className="w-4 h-4" />} title="Text box (tap the paper to type)" />
             <ToolButton t="select" icon={<Lasso className="w-4 h-4" />} title="Select — move, resize, recolour or copy what you've written" />
             <ToolButton t="eraser" icon={<Eraser className="w-4 h-4" />} title="Eraser (removes whole strokes)" />
@@ -2452,6 +2472,15 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
               ))}
             </div>
           </>
+        )}
+
+        {tool === "shape" && (
+          <span
+            className={`ml-1 text-[11px] font-semibold px-2 py-1 rounded-full transition-opacity ${snapped ? "bg-[#8A6DE9]/12 text-[#6F55C7] opacity-100" : "text-black/35 opacity-100"}`}
+            style={MARKER}
+          >
+            {snapped ?? "draw roughly — it'll snap"}
+          </span>
         )}
 
         {tool === "select" && (
@@ -2838,7 +2867,9 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       <p className="text-center text-[11px] text-black/35 pb-1.5 pt-1 px-4 line-clamp-2 md:line-clamp-none">
         {readOnly
           ? "This is a built-in planner, so it stays as printed — tap the tabs or a day to look around, and make a copy when you want to write in it · tap the side edges, swipe or scroll to turn one page · pinch to zoom in"
-          : tool === "select"
+          : tool === "shape"
+            ? "Draw a shape roughly and let go — a rough circle, box, triangle, line or one-stroke arrow snaps to a clean one · it stays ink, so the lasso can still move, resize and recolour it · anything that isn't a shape is kept exactly as you drew it"
+            : tool === "select"
             ? "Draw a loop round some writing (or drag a box) to pick it up · drag it to move, the handles to resize, the knob to rotate · ⌘C, ⌘X and ⌘V move it between pages · ⌫ deletes it · Esc lets it go"
             : paperBacked
               ? "Write anywhere with your Apple Pencil · the Text tool drops a box you can type in · the lasso moves, resizes and recolours what you've written · the page rail adds, copies, reorders and re-papers pages · scroll to turn one page · pinch, or ⌘+scroll, to zoom in and write smaller"
