@@ -37,6 +37,9 @@ import {
   Plus,
   PanelLeft,
   LayoutTemplate,
+  Maximize2,
+  ZoomIn,
+  ZoomOut,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -126,6 +129,18 @@ import {
   templateImageUrl,
   templateImageUrlNow,
 } from "@/lib/planner-user-templates";
+import {
+  type Viewport,
+  FIT,
+  MAX_ZOOM,
+  clampViewport,
+  inkPixelRatio,
+  isFit,
+  moved as viewMoved,
+  panBy,
+  stepZoom,
+  zoomAbout,
+} from "@/lib/planner-viewport";
 import { PageSidebar, THUMB_H } from "@/components/planner/PageSidebar";
 import { PageSetupDialog } from "@/components/planner/PageSetupDialog";
 
@@ -1027,6 +1042,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const [textSize, setTextSize] = useState(TEXT_SIZES[1]);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "unsaved" | "offline">("saved");
   const [boxSize, setBoxSize] = useState({ w: 0, h: 0 });
+  /**
+   * How much of the page is in view. A pure view transform — see
+   * src/lib/planner-viewport.ts — so nothing here is ever written to a page.
+   */
+  const [view, setView] = useState<Viewport>(FIT);
   const [selectedText, setSelectedText] = useState<string | null>(null);
   const [pdfSrc, setPdfSrc] = useState<string | null>(null);
   const [, forceRender] = useState(0);
@@ -1052,8 +1072,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   // A pending tap. `chromeOnly` taps came from a stylus landing on page
   // furniture, so they may only activate tabs — never a writable day cell.
   // `flip` marks the pointer as one that's navigating rather than writing, so an
-  // edge tap or a sideways drag may turn the page.
-  const tapStart = useRef<{ x: number; y: number; t: number; chromeOnly: boolean; flip: boolean } | null>(null);
+  // edge tap or a sideways drag may turn the page. `lx`/`ly` are where the pointer
+  // was last seen, which is what a drag pans by while zoomed in.
+  const tapStart = useRef<
+    { x: number; y: number; t: number; chromeOnly: boolean; flip: boolean; lx: number; ly: number } | null
+  >(null);
   const toolRef = useRef(tool);
   toolRef.current = tool;
   const slotRef = useRef(slot);
@@ -1062,10 +1085,17 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   indexRef.current = index;
   /** Wheel travel banked since the last flip, so a trackpad's dribble of small deltas adds up. */
   const wheelAccum = useRef(0);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  /** Pointers currently down, so two fingers can be recognised as a pinch. */
+  const pointers = useRef<Map<number, { x: number; y: number; type: string }>>(new Map());
+  /** The pinch in progress: the last finger separation and midpoint. */
+  const pinch = useRef<{ dist: number; x: number; y: number } | null>(null);
   // Edge taps and swipes only turn the page when nothing else wants the gesture:
   // the hand tool (and a read-only planner, where every tool is a hand) navigates
-  // instead of drawing.
-  const flipGestures = readOnly || tool === "hand";
+  // instead of drawing. Zoomed in, those same drags pan the page instead — there's
+  // more page than frame, so getting around it is what the gesture is for.
+  const flipGestures = (readOnly || tool === "hand") && isFit(view);
 
   // Link-based planners get their tab strips inferred from the link geometry.
   const pageLinks = planner.links?.[String(page)];
@@ -1162,6 +1192,29 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     return () => { alive = false; };
   }, [plannerId]);
 
+  // A pointer let go of outside the page box never reaches the handlers below, and
+  // a finger left behind in the list would make the next single touch look like a
+  // pinch. Watching the window as well is what keeps that list honest.
+  useEffect(() => {
+    const forget = (e: PointerEvent) => {
+      pointers.current.delete(e.pointerId);
+      if (pinch.current && [...pointers.current.values()].filter((p) => p.type === "touch").length < 2) {
+        pinch.current = null;
+      }
+    };
+    window.addEventListener("pointerup", forget);
+    window.addEventListener("pointercancel", forget);
+    return () => {
+      window.removeEventListener("pointerup", forget);
+      window.removeEventListener("pointercancel", forget);
+    };
+  }, []);
+
+  // Opening a different notebook starts fitted. Turning a page deliberately does
+  // *not*: staying zoomed is what lets you write the same corner of one page after
+  // another without setting the zoom up again each time.
+  useEffect(() => { setView(FIT); }, [plannerId]);
+
   /** Ink is allowed on paper only: inside the write area and clear of the tabs. */
   const inkAllowed = useCallback((x: number, y: number) => {
     if (!inside(writeAreaRef.current, x, y)) return false;
@@ -1173,8 +1226,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     const canvas = canvasRef.current;
     const box = boxRef.current;
     if (!canvas || !box) return;
+    // The *displayed* size, zoom included: the canvas is sized to how big the page
+    // currently is on screen, so ink zoomed into stays as sharp as the paper behind
+    // it rather than being a magnified bitmap. `inkPixelRatio` caps that.
     const rect = box.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = inkPixelRatio(rect.width, rect.height, window.devicePixelRatio || 1);
     if (canvas.width !== Math.round(rect.width * dpr) || canvas.height !== Math.round(rect.height * dpr)) {
       canvas.width = Math.round(rect.width * dpr);
       canvas.height = Math.round(rect.height * dpr);
@@ -1196,12 +1252,18 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     ctx.restore();
   }, []);
 
+  // The page box's *layout* size — its size at zoom 1, which is what normalised
+  // coordinates are a fraction of. Deliberately not the bounding rect: that one
+  // carries the zoom transform, and a text box's font size would then be scaled
+  // twice. ResizeObserver reports the layout box, so a zoom doesn't fire it.
   useEffect(() => {
     const box = boxRef.current;
     if (!box) return;
     const apply = () => {
-      const r = box.getBoundingClientRect();
-      setBoxSize({ w: r.width, h: r.height });
+      const w = box.offsetWidth, h = box.offsetHeight;
+      setBoxSize({ w, h });
+      // A window resize changes how far the page may be panned.
+      setView((v) => clampViewport(v, { w, h }));
       redraw();
     };
     apply();
@@ -1209,6 +1271,19 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     ro.observe(box);
     return () => ro.disconnect();
   }, [redraw]);
+
+  // Zoom changes the canvas's displayed size without touching its layout size, so
+  // the observer above can't see it: resize the backing store here instead.
+  useEffect(() => { redraw(); }, [view.z, redraw]);
+
+  /** The page box's layout size: what the pan limits are measured against. */
+  const layout = () => ({ w: boxRef.current?.offsetWidth ?? 0, h: boxRef.current?.offsetHeight ?? 0 });
+
+  /** Zoom, keeping the given page point (default: the middle) where it is. */
+  const zoomTo = useCallback((z: number, at: { x: number; y: number } = { x: 0.5, y: 0.5 }) => {
+    const box = { w: boxRef.current?.offsetWidth ?? 0, h: boxRef.current?.offsetHeight ?? 0 };
+    setView((v) => zoomAbout(v, z, box, at));
+  }, []);
 
   // ---- persistence ----
   // Every edit is mirrored to localStorage *before* the network call and the
@@ -1434,12 +1509,19 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (t?.tagName === "INPUT" || t?.tagName === "TEXTAREA" || t?.isContentEditable) return;
+      // ⌘/ctrl with +, − and 0, as every document viewer does it.
+      if (e.metaKey || e.ctrlKey) {
+        if (e.key === "+" || e.key === "=") { e.preventDefault(); zoomTo(stepZoom(viewRef.current.z, 1)); }
+        else if (e.key === "-" || e.key === "_") { e.preventDefault(); zoomTo(stepZoom(viewRef.current.z, -1)); }
+        else if (e.key === "0") { e.preventDefault(); setView(FIT); }
+        return;
+      }
       if (e.key === "ArrowLeft") go(page - 1);
       if (e.key === "ArrowRight") go(page + 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [page, go]);
+  }, [page, go, zoomTo]);
 
   // ---- text boxes ----
   /** Start treating the edits that follow as one undo step. */
@@ -1476,10 +1558,15 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   // GoodNotes-style input routing: Apple Pencil (pointerType "pen") draws on
   // paper and taps tabs; fingers always navigate (tap hotspots); the mouse
   // follows the selected tool.
-  const norm = (e: React.PointerEvent): [number, number] => {
+  //
+  // Zoom needs no term in any of this. It's a CSS transform on the page box, so
+  // the box's bounding rect is already the zoomed rect and a client point divided
+  // by it is still the page coordinate — see src/lib/planner-viewport.ts.
+  const norm = (e: { clientX: number; clientY: number }): [number, number] => {
     const rect = boxRef.current!.getBoundingClientRect();
     return [(e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height];
   };
+
 
   const shouldDraw = (e: React.PointerEvent) =>
     !readOnly && (e.pointerType === "pen" || (e.pointerType === "mouse" && toolRef.current !== "hand"));
@@ -1499,12 +1586,35 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (after.length !== before.length) setElements(after);
   }, [setElements]);
 
+  /** A pending tap from this pointer, recorded so a drag can pan and a tap can navigate. */
+  const beginTap = (e: React.PointerEvent, opts: { chromeOnly: boolean; flip: boolean }) => {
+    tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), lx: e.clientX, ly: e.clientY, ...opts };
+    // Zoomed in this pointer is going to pan, and a pan mustn't stop the moment it
+    // leaves the page box.
+    if (!isFit(viewRef.current)) boxRef.current?.setPointerCapture(e.pointerId);
+  };
+
   const onPointerDown = (e: React.PointerEvent) => {
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
+
+    // A second finger is a pinch, not a tap: two fingers zoom and pan the page.
+    const touches = [...pointers.current.values()].filter((p) => p.type === "touch");
+    if (touches.length >= 2) {
+      tapStart.current = null;
+      const [a, b] = touches;
+      pinch.current = { dist: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      return;
+    }
+
+    // A finger or palm landing while the pen is writing is the hand resting on the
+    // page. Ignoring it outright is what stops a stroke turning into a page flip.
+    if (drawingPointer.current !== null && e.pointerType === "touch") return;
+
     const [x, y] = norm(e);
 
     // Read-only planner: every input is navigation, whatever the tool says.
     if (readOnly) {
-      tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: false, flip: true };
+      beginTap(e, { chromeOnly: false, flip: true });
       return;
     }
 
@@ -1514,18 +1624,19 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     // Text tool: a tap on the paper drops a new box; taps elsewhere navigate.
     if (toolRef.current === "text") {
       if (inkAllowed(x, y)) { e.preventDefault(); addTextAt(x, y); }
-      else tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: e.pointerType === "pen", flip: false };
+      else beginTap(e, { chromeOnly: e.pointerType === "pen", flip: false });
       return;
     }
 
     if (e.pointerType === "touch" || !shouldDraw(e)) {
-      // Fingers and the hand tool navigate anywhere on the page.
-      tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: false, flip: true };
+      // Fingers and the hand tool navigate anywhere on the page — and pan it when
+      // there's more page than frame.
+      beginTap(e, { chromeOnly: false, flip: true });
       return;
     }
     if (!inkAllowed(x, y)) {
       // Landed on a tab or the outer margin: no ink here, but a tab tap counts.
-      tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: true, flip: false };
+      beginTap(e, { chromeOnly: true, flip: false });
       return;
     }
     e.preventDefault();
@@ -1547,6 +1658,40 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    const tracked = pointers.current.get(e.pointerId);
+    if (tracked) { tracked.x = e.clientX; tracked.y = e.clientY; }
+
+    // Two fingers: the change in their separation zooms about their midpoint, and
+    // the midpoint's own travel pans. Both are measured against the last frame, so
+    // the gesture follows the fingers however it's combined.
+    if (pinch.current) {
+      const touches = [...pointers.current.values()].filter((p) => p.type === "touch");
+      if (touches.length < 2) return;
+      const [a, b] = touches;
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const prev = pinch.current;
+      pinch.current = { dist, x: mx, y: my };
+      if (prev.dist > 8 && dist > 8) {
+        const box = layout();
+        const [ax, ay] = norm({ clientX: mx, clientY: my });
+        setView((v) =>
+          panBy(zoomAbout(v, v.z * (dist / prev.dist), box, { x: ax, y: ay }), mx - prev.x, my - prev.y, box),
+        );
+      }
+      return;
+    }
+
+    // Zoomed in, a navigating pointer drags the page about.
+    const tap = tapStart.current;
+    if (tap && !isFit(viewRef.current)) {
+      const dx = e.clientX - tap.lx, dy = e.clientY - tap.ly;
+      tap.lx = e.clientX;
+      tap.ly = e.clientY;
+      if (dx || dy) setView((v) => panBy(v, dx, dy, layout()));
+      return;
+    }
+
     if (drawingPointer.current !== e.pointerId) return;
     e.preventDefault();
     // Coalesced events give the full high-frequency pen path; some inputs and
@@ -1570,6 +1715,14 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   };
 
   const endStroke = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId);
+    // A pinch ends when a finger lifts, and the finger still down isn't a tap.
+    if (pinch.current) {
+      if ([...pointers.current.values()].filter((p) => p.type === "touch").length < 2) pinch.current = null;
+      tapStart.current = null;
+      return;
+    }
+
     if (drawingPointer.current === e.pointerId) {
       drawingPointer.current = null;
       if (liveRef.current) {
@@ -1587,9 +1740,12 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     const dy = e.clientY - start.y;
     const moved = Math.hypot(dx, dy);
     const [x, y] = norm(e);
+    // Zoomed in, that drag was a pan and the edges are somewhere off-screen, so
+    // neither gesture turns the page — the arrows and the page rail still do.
+    const flip = start.flip && isFit(viewRef.current);
 
     // A sideways drag turns the page, the way you'd flick a paper one over.
-    if (start.flip && Math.abs(dx) >= SWIPE_FLIP_PX && Math.abs(dx) > Math.abs(dy)) {
+    if (flip && Math.abs(dx) >= SWIPE_FLIP_PX && Math.abs(dx) > Math.abs(dy)) {
       go(dx < 0 ? page + 1 : page - 1);
       return;
     }
@@ -1599,26 +1755,61 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     // Nothing to jump to here. A tap on the outer edge turns the page — checked
     // after the hotspots, because tab strips run down the edges too and a tab
     // has to win.
-    if (start.flip) {
+    if (flip) {
       if (x >= 1 - EDGE_FLIP) go(page + 1);
       else if (x <= EDGE_FLIP) go(page - 1);
     }
   };
 
-  // Scrolling over the page turns it. Trackpads deliver a continuous stream of
-  // small deltas, so wait until one flick's worth has accumulated.
-  const onWheel = (e: React.WheelEvent) => {
-    if (drawingPointer.current !== null) return;
-    if (Math.abs(e.deltaY) < Math.abs(e.deltaX)) return; // sideways scroll: not ours
-    // Don't yank the page out from under someone scrolling a text box they're typing in.
-    if ((e.target as HTMLElement)?.closest?.("textarea, input, [contenteditable='true']")) return;
-    if (wheelAccum.current !== 0 && Math.sign(e.deltaY) !== Math.sign(wheelAccum.current)) wheelAccum.current = 0;
-    wheelAccum.current += e.deltaY;
-    if (Math.abs(wheelAccum.current) < WHEEL_FLIP_PX) return;
-    const forward = wheelAccum.current > 0;
-    wheelAccum.current = 0;
-    go(forward ? page + 1 : page - 1);
-  };
+  // Wheel and trackpad: pinch (which arrives as ctrl+wheel) and ⌘/ctrl+scroll
+  // zoom about the pointer; plain scrolling pans a zoomed page and turns a fitted
+  // one. Attached natively rather than through React's onWheel because React's is
+  // passive, and preventDefault is what stops the browser zooming the whole app
+  // instead — and the page behind from scrolling as you pan.
+  useEffect(() => {
+    const box = boxRef.current;
+    if (!box) return;
+    const onWheel = (e: WheelEvent) => {
+      if (drawingPointer.current !== null) return;
+      // Don't yank the page out from under someone scrolling a text box they're typing in.
+      if ((e.target as HTMLElement)?.closest?.("textarea, input, [contenteditable='true']")) return;
+
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const rect = box.getBoundingClientRect();
+        // Exponential so each notch is the same proportional change, and the same
+        // gesture zooms by the same amount from 1× as from 4×.
+        zoomTo(viewRef.current.z * Math.exp(-e.deltaY / 240), {
+          x: (e.clientX - rect.left) / rect.width,
+          y: (e.clientY - rect.top) / rect.height,
+        });
+        return;
+      }
+
+      // Zoomed in, scrolling moves about the page. Only once it can't move any
+      // further in that direction does the scroll go on to turn the page, so
+      // reaching the bottom and carrying on lands you on the next page.
+      if (!isFit(viewRef.current)) {
+        const next = panBy(viewRef.current, -e.deltaX, -e.deltaY, { w: box.offsetWidth, h: box.offsetHeight });
+        if (viewMoved(next, viewRef.current)) {
+          e.preventDefault();
+          wheelAccum.current = 0;
+          setView(next);
+          return;
+        }
+      }
+
+      if (Math.abs(e.deltaY) < Math.abs(e.deltaX)) return; // sideways scroll: not ours
+      if (wheelAccum.current !== 0 && Math.sign(e.deltaY) !== Math.sign(wheelAccum.current)) wheelAccum.current = 0;
+      wheelAccum.current += e.deltaY;
+      if (Math.abs(wheelAccum.current) < WHEEL_FLIP_PX) return;
+      const forward = wheelAccum.current > 0;
+      wheelAccum.current = 0;
+      go(forward ? pageRef.current + 1 : pageRef.current - 1);
+    };
+    box.addEventListener("wheel", onWheel, { passive: false });
+    return () => box.removeEventListener("wheel", onWheel);
+  }, [go, zoomTo]);
 
   // ---- undo / redo ----
   // One history for the whole notebook, holding operations rather than snapshots:
@@ -1995,33 +2186,6 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
             <CalendarDays className="w-3.5 h-3.5" /> Today
           </button>
         )}
-        <div className="flex items-center ml-1">
-          <button onClick={() => go(page - 1)} disabled={page <= 1} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Previous page">
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <span className="text-[11px] text-black/40 tabular-nums w-16 text-center">{page} / {pages}</span>
-          <button onClick={() => go(page + 1)} disabled={page >= pages} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Next page">
-            <ChevronRight className="w-4 h-4" />
-          </button>
-          {canEditPages && (
-            <>
-              <button
-                onClick={() => setSetupFor({ positions: [page], mode: "apply" })}
-                className="ml-0.5 p-2 rounded-xl text-black/50 hover:bg-black/5"
-                title="Change this page's paper, colour or size"
-              >
-                <LayoutTemplate className="w-4 h-4" />
-              </button>
-              <button
-                onClick={onAddPage}
-                className="p-2 rounded-xl text-black/50 hover:bg-black/5"
-                title="Add a page like this one, straight after it"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </>
-          )}
-        </div>
       </div>
 
       {/* Page rail + page */}
@@ -2053,15 +2217,19 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
             // viewer's own height, so it's right on a phone too.
             style={{
               aspectRatio: `${aspect}`,
-              maxWidth: `min(100%, calc((var(--planner-vh) - 120px) * ${aspect}))`,
+              maxWidth: `min(100%, calc((var(--planner-vh) - 150px) * ${aspect}))`,
               touchAction: "none",
               background: "#fff",
+              // Zoom and pan are one composited transform on the whole page, paper,
+              // ink and text boxes together — so panning is smooth, and normalised
+              // coordinates go on meaning the same thing at any zoom.
+              transform: `translate(${view.x}px, ${view.y}px) scale(${view.z})`,
+              transformOrigin: "center center",
             }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={endStroke}
             onPointerCancel={endStroke}
-            onWheel={onWheel}
           >
             {bgSrc ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -2085,6 +2253,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
                 key={t.id}
                 box={t}
                 boxSize={boxSize}
+                scale={view.z}
                 selected={selectedText === t.id}
                 editable={tool === "text" && !readOnly}
                 onSelect={() => setSelectedText(t.id)}
@@ -2143,12 +2312,78 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
         </div>
       </div>
 
-      <p className="text-center text-[11px] text-black/35 pb-2 px-4">
+      {/* Page navigation and zoom, at the bottom where a thumb can reach them. */}
+      <div className="shrink-0 flex items-center gap-1 px-2 md:px-3 py-1 bg-white/80 backdrop-blur border-t border-black/5 relative z-30">
+        <button onClick={() => go(page - 1)} disabled={page <= 1} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Previous page">
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <span className="text-[11px] text-black/45 tabular-nums w-16 text-center">{page} / {pages}</span>
+        <button onClick={() => go(page + 1)} disabled={page >= pages} className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30" title="Next page">
+          <ChevronRight className="w-4 h-4" />
+        </button>
+        {canEditPages && (
+          <>
+            <button
+              onClick={() => setSetupFor({ positions: [page], mode: "apply" })}
+              className="p-2 rounded-xl text-black/50 hover:bg-black/5"
+              title="Change this page's paper, colour or size"
+            >
+              <LayoutTemplate className="w-4 h-4" />
+            </button>
+            <button
+              onClick={onAddPage}
+              className="p-2 rounded-xl text-black/50 hover:bg-black/5"
+              title="Add a page like this one, straight after it"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </>
+        )}
+
+        <div className="flex-1" />
+
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => zoomTo(stepZoom(view.z, -1))}
+            disabled={isFit(view)}
+            className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30"
+            title="Zoom out (⌘−)"
+          >
+            <ZoomOut className="w-4 h-4" />
+          </button>
+          {/* One tap in and back out again — the two zooms people actually want. */}
+          <button
+            onClick={() => (isFit(view) ? zoomTo(2) : setView(FIT))}
+            className="text-[11px] text-black/45 tabular-nums w-12 text-center py-1.5 rounded-lg hover:bg-black/5"
+            title={isFit(view) ? "Zoom to 200%" : "Back to the whole page (⌘0)"}
+          >
+            {Math.round(view.z * 100)}%
+          </button>
+          <button
+            onClick={() => zoomTo(stepZoom(view.z, 1))}
+            disabled={view.z >= MAX_ZOOM - 1e-3}
+            className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30"
+            title="Zoom in (⌘+)"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setView(FIT)}
+            disabled={isFit(view)}
+            className="p-2 rounded-xl text-black/50 hover:bg-black/5 disabled:opacity-30"
+            title="Fit the whole page (⌘0)"
+          >
+            <Maximize2 className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      <p className="text-center text-[11px] text-black/35 pb-1.5 pt-1 px-4 line-clamp-2 md:line-clamp-none">
         {readOnly
-          ? "This is a built-in planner, so it stays as printed — tap the tabs or a day to look around, and make a copy when you want to write in it · tap the side edges, swipe or scroll to turn one page"
+          ? "This is a built-in planner, so it stays as printed — tap the tabs or a day to look around, and make a copy when you want to write in it · tap the side edges, swipe or scroll to turn one page · pinch to zoom in"
           : paperBacked
-            ? "Write anywhere with your Apple Pencil · the Text tool drops a box you can type in · the page rail adds, copies, reorders and re-papers pages · scroll to turn one page"
-            : "Tap the tabs or a day to jump around · write with your Apple Pencil on the paper · the Text tool drops a box you can type in — tabs and margins stay clear · scroll, or pick the hand and tap the side edges, to turn one page"}
+            ? "Write anywhere with your Apple Pencil · the Text tool drops a box you can type in · the page rail adds, copies, reorders and re-papers pages · scroll to turn one page · pinch, or ⌘+scroll, to zoom in and write smaller"
+            : "Tap the tabs or a day to jump around · write with your Apple Pencil on the paper · the Text tool drops a box you can type in — tabs and margins stay clear · scroll, or pick the hand and tap the side edges, to turn one page · pinch to zoom in"}
       </p>
 
       {setupFor && (
@@ -2174,9 +2409,11 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
 // text; the Text tool turns it into an editable textarea with a drag handle, a
 // width handle, and a small format bar. Font size is a fraction of page height so
 // it scales with the page.
-function TextBoxView({ box, boxSize, selected, editable, onSelect, onChange, onBeginEdit, onRemove }: {
+function TextBoxView({ box, boxSize, scale, selected, editable, onSelect, onChange, onBeginEdit, onRemove }: {
   box: TextBox;
   boxSize: { w: number; h: number };
+  /** The viewer's zoom. The box itself is scaled by it; its handles aren't. */
+  scale: number;
   selected: boolean;
   editable: boolean;
   onSelect: () => void;
@@ -2213,10 +2450,15 @@ function TextBoxView({ box, boxSize, selected, editable, onSelect, onChange, onB
     onBeginEdit();
     drag.current = { px: e.clientX, py: e.clientY, x: box.x, y: box.y };
   };
+  // Screen pixels per page unit: the box's layout size times the viewer's zoom, so
+  // dragging tracks the pointer whether the page is fitted or zoomed into.
+  const perX = boxSize.w * scale;
+  const perY = boxSize.h * scale;
+
   const onDragMove = (e: React.PointerEvent) => {
-    if (!drag.current || !boxSize.w) return;
-    const nx = drag.current.x + (e.clientX - drag.current.px) / boxSize.w;
-    const ny = drag.current.y + (e.clientY - drag.current.py) / boxSize.h;
+    if (!drag.current || !perX) return;
+    const nx = drag.current.x + (e.clientX - drag.current.px) / perX;
+    const ny = drag.current.y + (e.clientY - drag.current.py) / perY;
     onChange({ x: Math.max(0, Math.min(1 - box.w, nx)), y: Math.max(0, Math.min(0.98, ny)) }, false);
   };
   const endDrag = (e: React.PointerEvent) => {
@@ -2231,8 +2473,8 @@ function TextBoxView({ box, boxSize, selected, editable, onSelect, onChange, onB
     widthDrag.current = { px: e.clientX, w: box.w };
   };
   const onWidthMove = (e: React.PointerEvent) => {
-    if (!widthDrag.current || !boxSize.w) return;
-    const nw = widthDrag.current.w + (e.clientX - widthDrag.current.px) / boxSize.w;
+    if (!widthDrag.current || !perX) return;
+    const nw = widthDrag.current.w + (e.clientX - widthDrag.current.px) / perX;
     onChange({ w: Math.max(0.08, Math.min(1 - box.x, nw)) }, false);
   };
 
@@ -2251,8 +2493,13 @@ function TextBoxView({ box, boxSize, selected, editable, onSelect, onChange, onB
 
   return (
     <div className="absolute" style={{ left, top, width }} onPointerDown={(e) => e.stopPropagation()}>
-      {/* Format bar */}
-      <div className="absolute -top-10 left-0 flex items-center gap-0.5 px-1 py-1 rounded-xl bg-white border border-black/10 shadow-lg z-10 whitespace-nowrap">
+      {/* Format bar. Counter-scaled, along with the handles below: the text should
+          grow with the zoom, but the furniture for editing it stays the size your
+          finger is. */}
+      <div
+        className="absolute -top-10 left-0 flex items-center gap-0.5 px-1 py-1 rounded-xl bg-white border border-black/10 shadow-lg z-10 whitespace-nowrap"
+        style={{ transform: `scale(${1 / scale})`, transformOrigin: "left bottom" }}
+      >
         <button onMouseDown={(e) => e.preventDefault()} onClick={() => onChange({ bold: !box.bold }, true)} className={`p-1.5 rounded-lg ${box.bold ? "bg-black/10" : "hover:bg-black/5"}`} title="Bold"><Bold className="w-3.5 h-3.5" /></button>
         <button onMouseDown={(e) => e.preventDefault()} onClick={() => onChange({ italic: !box.italic }, true)} className={`p-1.5 rounded-lg ${box.italic ? "bg-black/10" : "hover:bg-black/5"}`} title="Italic"><Italic className="w-3.5 h-3.5" /></button>
         <span className="w-px h-4 bg-black/10 mx-0.5" />
@@ -2267,6 +2514,7 @@ function TextBoxView({ box, boxSize, selected, editable, onSelect, onChange, onB
       {/* Move handle */}
       <div
         className="absolute -left-3 top-0 w-6 h-6 -mt-1 flex items-center justify-center rounded-full bg-[#8A6DE9] text-white shadow cursor-move touch-none z-10"
+        style={{ transform: `scale(${1 / scale})`, transformOrigin: "top right" }}
         onPointerDown={startDrag}
         onPointerMove={onDragMove}
         onPointerUp={endDrag}
@@ -2293,6 +2541,7 @@ function TextBoxView({ box, boxSize, selected, editable, onSelect, onChange, onB
       {/* Width handle */}
       <div
         className="absolute top-1/2 -right-2 w-4 h-8 -mt-4 flex items-center justify-center rounded bg-white border border-black/10 shadow cursor-ew-resize touch-none z-10"
+        style={{ transform: `scale(${1 / scale})`, transformOrigin: "left center" }}
         onPointerDown={startWidth}
         onPointerMove={onWidthMove}
         onPointerUp={endDrag}
