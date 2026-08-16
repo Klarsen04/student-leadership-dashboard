@@ -58,10 +58,12 @@ export async function POST() {
       await prisma.$executeRawUnsafe(`ALTER TABLE "Reflection" ADD COLUMN "questions" TEXT`);
     }
 
-    // PlannerInk: handwritten strokes for the /planner notebook pages.
+    // PlannerInk: handwritten strokes for the /planner notebook pages,
+    // keyed per planner so multiple notebooks keep separate ink.
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "PlannerInk" (
         "id" TEXT NOT NULL PRIMARY KEY,
+        "plannerId" TEXT NOT NULL DEFAULT 'collanote-2026',
         "page" INTEGER NOT NULL,
         "strokes" TEXT NOT NULL,
         "userId" TEXT NOT NULL,
@@ -70,8 +72,15 @@ export async function POST() {
         CONSTRAINT "PlannerInk_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
       )
     `);
+    // If the table predates multi-planner support, add the column and swap the
+    // unique index to include plannerId.
+    const inkCols = await prisma.$queryRawUnsafe<any[]>(`PRAGMA table_info(PlannerInk)`);
+    if (!inkCols.map((c: any) => c.name).includes("plannerId")) {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "PlannerInk" ADD COLUMN "plannerId" TEXT NOT NULL DEFAULT 'collanote-2026'`);
+    }
+    await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "PlannerInk_userId_page_key"`);
     await prisma.$executeRawUnsafe(`
-      CREATE UNIQUE INDEX IF NOT EXISTS "PlannerInk_userId_page_key" ON "PlannerInk"("userId", "page")
+      CREATE UNIQUE INDEX IF NOT EXISTS "PlannerInk_userId_plannerId_page_key" ON "PlannerInk"("userId", "plannerId", "page")
     `);
 
     return NextResponse.json({ success: true, message: "Migration complete" });

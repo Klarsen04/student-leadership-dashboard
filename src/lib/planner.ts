@@ -21,19 +21,12 @@
 //   485–496  body measurement (per month)
 //   497–508  workout challenge (per month)
 //   509      mood tracker   510–512 notes   513 stickers
-export const PLANNER_PAGE_COUNT = 513;
 export const PLANNER_YEAR = 2026;
-/** Rendered page aspect ratio (3307 × 2480 pt spread). */
-export const PLANNER_ASPECT = 3307 / 2480;
 
 export const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
-
-export function plannerImageSrc(page: number): string {
-  return `/planner/p${String(page).padStart(3, "0")}.webp`;
-}
 
 // ---- page lookups -----------------------------------------------------------
 
