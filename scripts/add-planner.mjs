@@ -23,10 +23,10 @@ import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 
-const [, , pdfPath, id, name, description = ""] = process.argv;
+const [, , pdfPath, id, name, description = "", category = "Other Planners", credit = ""] = process.argv;
 
 if (!pdfPath || !id || !name) {
-  console.error('Usage: node scripts/add-planner.mjs <pdf-path> <id> "<Display Name>" ["Description"]');
+  console.error('Usage: node scripts/add-planner.mjs <pdf-path> <id> "<Display Name>" ["Description"] ["Category"] ["Credit"]');
   process.exit(1);
 }
 if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(id)) {
@@ -64,13 +64,22 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "planner-"));
 // ~2750px wide for a landscape A4-ish spread; scales with page size.
 const dpi = Math.max(40, Math.min(120, Math.round((2750 * 72) / parseFloat(sizeMatch[1]))));
 console.log(`Rendering at ${dpi} dpi …`);
+// Planner pages are either illustration-heavy (lossy wins) or flat line art
+// like dot grids and rules (lossless wins, often by 4x). Encode both and keep
+// the smaller file — line-art planners shrink dramatically and look sharper.
 for (let p = 1; p <= pages; p++) {
   const stem = path.join(tmp, `pg-${p}`);
-  execFileSync("pdftoppm", ["-jpeg", "-r", String(dpi), "-f", String(p), "-l", String(p), pdfPath, stem]);
-  const jpg = fs.readdirSync(tmp).find((f) => f.startsWith(`pg-${p}-`) && f.endsWith(".jpg"));
+  execFileSync("pdftoppm", ["-png", "-r", String(dpi), "-f", String(p), "-l", String(p), pdfPath, stem]);
+  const png = fs.readdirSync(tmp).find((f) => f.startsWith(`pg-${p}-`) && f.endsWith(".png"));
+  const src = path.join(tmp, png);
   const out = path.join(outDir, `p${String(p).padStart(pad, "0")}.webp`);
-  execFileSync("cwebp", ["-quiet", "-q", "75", path.join(tmp, jpg), "-o", out]);
-  fs.unlinkSync(path.join(tmp, jpg));
+  const lossy = path.join(tmp, "lossy.webp");
+  const lossless = path.join(tmp, "lossless.webp");
+  execFileSync("cwebp", ["-quiet", "-q", "78", src, "-o", lossy]);
+  execFileSync("cwebp", ["-quiet", "-lossless", "-z", "9", src, "-o", lossless]);
+  const pick = fs.statSync(lossless).size <= fs.statSync(lossy).size ? lossless : lossy;
+  fs.copyFileSync(pick, out);
+  for (const f of [src, lossy, lossless]) fs.rmSync(f, { force: true });
   if (p % 50 === 0 || p === pages) console.log(`  ${p}/${pages}`);
 }
 fs.rmSync(tmp, { recursive: true, force: true });
@@ -117,13 +126,20 @@ console.log(linkCount
   : "No internal links in this PDF — pages will navigate via the toolbar only.");
 
 // --- 4. write manifest + registry ----------------------------------------------
-const entry = { id, name, description, pages, aspect: Number(aspect.toFixed(5)) };
+const bytes = fs.readdirSync(outDir)
+  .filter((f) => f.endsWith(".webp"))
+  .reduce((n, f) => n + fs.statSync(path.join(outDir, f)).size, 0);
+const sizeMb = Number((bytes / 1024 / 1024).toFixed(1));
+
+const entry = { id, name, description, category, pages, aspect: Number(aspect.toFixed(5)), sizeMb };
+if (credit) entry.credit = credit;
 fs.writeFileSync(path.join(outDir, "manifest.json"), JSON.stringify({ ...entry, links }, null, 1));
 
+// Preserve any hand-authored fields already in the index (e.g. `template`).
 const index = fs.existsSync(indexPath) ? JSON.parse(fs.readFileSync(indexPath, "utf8")) : { planners: [] };
+const existing = index.planners.find((x) => x.id === id);
 index.planners = index.planners.filter((x) => x.id !== id);
-index.planners.push(entry);
+index.planners.push({ ...existing, ...entry });
 fs.writeFileSync(indexPath, JSON.stringify(index, null, 2) + "\n");
 
-const mb = (execFileSync("du", ["-sm", outDir], { encoding: "utf8" }).split("\t")[0] || "?").trim();
-console.log(`\nDone. ${pages} pages (${mb} MB) in public/planner/${id}/ — it now appears in the planner library.`);
+console.log(`\nDone. ${pages} pages (${sizeMb} MB) in public/planner/${id}/ — it now appears in the planner library.`);

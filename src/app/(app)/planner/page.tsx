@@ -15,24 +15,28 @@ import {
   Home,
   Library,
   NotebookPen,
+  GraduationCap,
+  Sparkles,
+  BookOpen,
+  LayoutGrid,
+  Layers,
+  FilePlus2,
+  Star,
 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  hotspotsForPage,
-  pageLabel,
-  todayPage,
-  monthlyPage,
-  SECTION_PAGES,
-  PLANNER_YEAR,
-} from "@/lib/planner";
+import type { Hotspot, Rect } from "@/lib/planner";
+import { PLANNER_TEMPLATES, templateOpeningPage } from "@/lib/planner-templates";
 import {
   type PlannerInfo,
   type PlannerManifest,
+  DEFAULT_CATEGORY,
   imageSrc,
   fetchPlannerIndex,
   fetchPlannerManifest,
   getSelectedPlannerId,
   setSelectedPlannerId,
+  groupByCategory,
+  deriveFurniture,
 } from "@/lib/planners";
 
 const MARKER = { fontFamily: "var(--font-fredoka), ui-rounded, system-ui, sans-serif" } as const;
@@ -87,6 +91,9 @@ function drawStroke(ctx: CanvasRenderingContext2D, s: Stroke, W: number, H: numb
   }
   ctx.restore();
 }
+
+const inside = (h: Hotspot | Rect, x: number, y: number) =>
+  x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h;
 
 export default function PlannerPage() {
   return (
@@ -161,43 +168,194 @@ function PlannerRoot() {
 }
 
 // ---- library (planner picker) --------------------------------------------------
-function PlannerLibrary({ planners, onOpen }: { planners: PlannerInfo[]; onOpen: (id: string) => void }) {
-  return (
-    <div className="min-h-screen -m-4 md:-m-8 p-6 md:p-10 relative z-20" style={{ background: "#F2E8DC" }}>
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-center gap-3 mb-1">
-          <NotebookPen className="w-7 h-7 text-[#c98a00]" />
-          <h1 className="text-3xl font-bold text-black" style={MARKER}>Your planners</h1>
-        </div>
-        <p className="text-black/50 text-sm mb-8">Pick a notebook — each one keeps its own handwriting.</p>
+// Shelf layout: a segmented category filter over full-bleed rows of covers, one
+// row per category with a coloured spine marking the section.
+const CATEGORY_STYLE: Record<string, { accent: string; icon: typeof CalendarDays }> = {
+  "365-Day Planners": { accent: "#E8705F", icon: CalendarDays },
+  "Study Planners": { accent: "#F2A93B", icon: GraduationCap },
+  "Minimal Planners": { accent: "#4EA8A0", icon: Sparkles },
+  "Journals & Notebooks": { accent: "#7FB800", icon: BookOpen },
+  [DEFAULT_CATEGORY]: { accent: "#D46A9F", icon: NotebookPen },
+};
 
-        {planners.length === 0 ? (
-          <div className="rounded-3xl bg-white border border-black/5 p-10 text-center text-black/50">
-            No planners installed yet. Add one with <code className="text-xs bg-black/5 rounded px-1.5 py-0.5">node scripts/add-planner.mjs &lt;pdf&gt; &lt;id&gt; &quot;Name&quot;</code>.
+const styleFor = (category: string) => CATEGORY_STYLE[category] ?? CATEGORY_STYLE[DEFAULT_CATEGORY];
+
+function PlannerLibrary({ planners, onOpen }: { planners: PlannerInfo[]; onOpen: (id: string) => void }) {
+  const [filter, setFilter] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => setSelectedId(getSelectedPlannerId()), []);
+
+  const sections = useMemo(() => groupByCategory(planners), [planners]);
+  const shown = filter ? sections.filter((s) => s.category === filter) : sections;
+
+  return (
+    <div className="min-h-screen -m-4 md:-m-8 pb-28 relative z-20" style={{ background: "#F2E8DC" }}>
+      {/* Header + segmented category filter */}
+      <div className="sticky top-0 z-30 px-4 md:px-8 pt-5 pb-3" style={{ background: "linear-gradient(#F2E8DC 70%, rgba(242,232,220,0.85))", backdropFilter: "blur(8px)" }}>
+        <div className="flex items-end justify-between gap-3 mb-3">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <NotebookPen className="w-6 h-6 text-[#c98a00]" />
+              <h1 className="text-2xl md:text-3xl font-bold text-black" style={MARKER}>Your planners</h1>
+            </div>
+            <p className="text-black/45 text-[13px] mt-1">Pick a notebook — each one keeps its own handwriting.</p>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {planners.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => onOpen(p.id)}
-                className="group text-left rounded-3xl bg-white border border-black/5 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all overflow-hidden"
-              >
-                <div className="relative w-full bg-black/[0.03]" style={{ aspectRatio: `${p.aspect}` }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={imageSrc(p, 1)} alt={p.name} className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
-                </div>
-                <div className="p-4">
-                  <h2 className="font-bold text-black" style={MARKER}>{p.name}</h2>
-                  {p.description && <p className="text-xs text-black/50 mt-1 leading-relaxed">{p.description}</p>}
-                  <p className="text-[11px] text-black/35 mt-2">{p.pages} pages</p>
-                </div>
-              </button>
-            ))}
+          <span className="text-[11px] text-black/35 shrink-0 pb-1">{planners.length} installed</span>
+        </div>
+
+        {sections.length > 1 && (
+          <div className="flex items-center gap-1 p-1 rounded-full bg-white/70 border border-black/5 w-fit max-w-full overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+            <SegmentButton active={filter === null} onClick={() => setFilter(null)} icon={<LayoutGrid className="w-4 h-4" />} label="All" accent="#c98a00" />
+            {sections.map((s) => {
+              const { accent, icon: Icon } = styleFor(s.category);
+              return (
+                <SegmentButton
+                  key={s.category}
+                  active={filter === s.category}
+                  onClick={() => setFilter(s.category)}
+                  icon={<Icon className="w-4 h-4" />}
+                  label={s.category.replace(/ Planners$/, "")}
+                  accent={accent}
+                />
+              );
+            })}
           </div>
         )}
       </div>
+
+      {planners.length === 0 ? (
+        <div className="px-4 md:px-8">
+          <div className="rounded-3xl bg-white border border-black/5 p-10 text-center text-black/50">
+            No planners installed yet. Add one with <code className="text-xs bg-black/5 rounded px-1.5 py-0.5">node scripts/add-planner.mjs &lt;pdf&gt; &lt;id&gt; &quot;Name&quot;</code>.
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-7 pt-2">
+          {shown.map((section) => {
+            const { accent } = styleFor(section.category);
+            return (
+              <section key={section.category}>
+                <div className="flex items-center gap-2.5 px-4 md:px-8 mb-3">
+                  <span className="w-1.5 h-6 rounded-full" style={{ background: accent }} />
+                  <h2 className="text-lg md:text-xl font-bold text-black/80" style={MARKER}>{section.category}</h2>
+                </div>
+                <div
+                  className="flex gap-4 overflow-x-auto snap-x snap-mandatory px-4 md:px-8 pb-3"
+                  style={{ scrollbarWidth: "none" }}
+                >
+                  {section.planners.map((p) => (
+                    <PlannerCard
+                      key={p.id}
+                      planner={p}
+                      accent={accent}
+                      current={p.id === selectedId}
+                      onOpen={() => onOpen(p.id)}
+                    />
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Floating dock */}
+      <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 px-2 py-2 rounded-full bg-white/85 backdrop-blur border border-black/5 shadow-lg">
+        <button
+          onClick={() => toast.info("Add a planner from a PDF", {
+            description: 'Run: node scripts/add-planner.mjs <pdf> <id> "Name" "Description" "Category"',
+            duration: 8000,
+          })}
+          className="flex items-center gap-2 px-3.5 py-2 rounded-full text-[13px] font-semibold text-black/70 hover:bg-black/5 transition-colors"
+          style={MARKER}
+        >
+          <FilePlus2 className="w-4 h-4 text-[#c98a00]" /> Import PDF
+        </button>
+        <a
+          href="/dashboard"
+          className="flex items-center gap-2 px-3.5 py-2 rounded-full text-[13px] font-semibold text-black/70 hover:bg-black/5 transition-colors"
+          style={MARKER}
+        >
+          <Home className="w-4 h-4 text-[#c98a00]" /> Dashboard
+        </a>
+      </div>
     </div>
+  );
+}
+
+function SegmentButton({ active, onClick, icon, label, accent }: {
+  active: boolean; onClick: () => void; icon: React.ReactNode; label: string; accent: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[13px] font-semibold whitespace-nowrap transition-colors ${
+        active ? "text-black shadow-sm" : "text-black/50 hover:bg-black/[0.04]"
+      }`}
+      style={{ ...MARKER, background: active ? `${accent}33` : undefined }}
+    >
+      <span style={{ color: active ? accent : undefined }}>{icon}</span>
+      {label}
+    </button>
+  );
+}
+
+function PlannerCard({ planner, accent, current, onOpen }: {
+  planner: PlannerInfo; accent: string; current: boolean; onOpen: () => void;
+}) {
+  return (
+    <button
+      onClick={onOpen}
+      title={planner.credit ? `${planner.name} — ${planner.credit}` : planner.name}
+      className="group snap-start shrink-0 w-[230px] sm:w-[248px] text-left rounded-3xl bg-white border border-black/5 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all p-3"
+    >
+      {/* Cover, contained so tall and wide planners both sit nicely */}
+      <div className="relative h-[190px] flex items-center justify-center rounded-2xl bg-black/[0.02] overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={imageSrc(planner, 1)}
+          alt={planner.name}
+          className="max-h-full max-w-full object-contain rounded-lg shadow-[0_2px_10px_rgba(0,0,0,0.12)]"
+          loading="lazy"
+        />
+        {/* Page dots, echoing the stack of pages inside */}
+        <div className="absolute bottom-2 left-0 right-0 flex items-center justify-center gap-1.5">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <span
+              key={i}
+              className="w-1.5 h-1.5 rounded-full"
+              style={{ background: i === 0 ? accent : "rgba(0,0,0,0.14)" }}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-start gap-1.5 mt-3">
+        <h3 className="flex-1 font-bold text-[15px] leading-snug text-black" style={MARKER}>{planner.name}</h3>
+        {current && (
+          <span title="Currently open" className="shrink-0 mt-0.5">
+            <Star className="w-4 h-4 text-[#FFB400] fill-[#FFB400]" />
+          </span>
+        )}
+      </div>
+      {planner.description && (
+        <p className="text-[11px] text-black/40 mt-1 leading-relaxed line-clamp-2">{planner.description}</p>
+      )}
+
+      <div className="flex items-center gap-3 mt-2.5 text-[12px] text-black/45">
+        <span className="flex items-center gap-1">
+          <Layers className="w-3.5 h-3.5" />{planner.pages}
+        </span>
+        {planner.template && (
+          <span className="flex items-center gap-1" title="Tappable tabs and day cells">
+            <Hand className="w-3.5 h-3.5" />Tabs
+          </span>
+        )}
+        <span className="flex-1" />
+        {planner.sizeMb ? <span className="text-black/30">{planner.sizeMb} MB</span> : null}
+      </div>
+    </button>
   );
 }
 
@@ -205,16 +363,12 @@ function PlannerLibrary({ planners, onOpen }: { planners: PlannerInfo[]; onOpen:
 function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLibrary: () => void }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const isCollanote = planner.template === "collanote-2026";
+  const template = planner.template ? PLANNER_TEMPLATES[planner.template] : undefined;
 
   const initialPage = (() => {
     const p = parseInt(searchParams.get("page") || "", 10);
     if (p >= 1 && p <= planner.pages) return p;
-    if (isCollanote) {
-      const now = new Date();
-      return now.getFullYear() === PLANNER_YEAR ? monthlyPage(now.getMonth() + 1) : SECTION_PAGES.cover;
-    }
-    return 1;
+    return planner.template ? templateOpeningPage(planner.template) : 1;
   })();
   const debug = searchParams.get("debug") === "1";
 
@@ -234,16 +388,36 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
   const cacheRef = useRef<Map<number, Stroke[]>>(new Map());
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const drawingPointer = useRef<number | null>(null);
-  const tapStart = useRef<{ x: number; y: number; t: number } | null>(null);
+  // A pending tap. `chromeOnly` taps came from a stylus landing on page
+  // furniture, so they may only activate tabs — never a writable day cell.
+  const tapStart = useRef<{ x: number; y: number; t: number; chromeOnly: boolean } | null>(null);
   const toolRef = useRef(tool);
   toolRef.current = tool;
 
-  const hotspots = useMemo(() => {
-    if (isCollanote) return hotspotsForPage(page);
-    return planner.links?.[String(page)] ?? [];
-  }, [isCollanote, planner.links, page]);
+  // Link-based planners get their tab strips inferred from the link geometry.
+  const pageLinks = planner.links?.[String(page)];
+  const furniture = useMemo(() => deriveFurniture(pageLinks), [pageLinks]);
 
-  const label = isCollanote ? pageLabel(page) : `Page ${page}`;
+  const hotspots = useMemo(() => {
+    if (template) return template.hotspots(page);
+    return (pageLinks ?? []).map((h) =>
+      h.kind ? h : { ...h, kind: furniture.isChrome(h) ? ("chrome" as const) : ("content" as const) });
+  }, [template, pageLinks, page, furniture]);
+  const hotspotsRef = useRef<Hotspot[]>(hotspots);
+  hotspotsRef.current = hotspots;
+
+  // Ink is fenced to the paper: the template's area, or the one inferred above.
+  const writeArea = template?.writeArea ?? furniture.writeArea;
+  const writeAreaRef = useRef(writeArea);
+  writeAreaRef.current = writeArea;
+
+  const label = template ? template.label(page) : `Page ${page}`;
+
+  /** Ink is allowed on paper only: inside the write area and clear of the tabs. */
+  const inkAllowed = useCallback((x: number, y: number) => {
+    if (!inside(writeAreaRef.current, x, y)) return false;
+    return !hotspotsRef.current.some((h) => h.kind === "chrome" && inside(h, x, y));
+  }, []);
 
   // ---- rendering ----
   const redraw = useCallback(() => {
@@ -260,8 +434,16 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, rect.width, rect.height);
+    // Clip to the writable paper so a stroke that strays into the tabs or the
+    // outer margin is trimmed rather than painted over the furniture.
+    const wa = writeAreaRef.current;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(wa.x * rect.width, wa.y * rect.height, wa.w * rect.width, wa.h * rect.height);
+    ctx.clip();
     for (const s of strokesRef.current) drawStroke(ctx, s, rect.width, rect.height);
     if (liveRef.current) drawStroke(ctx, liveRef.current, rect.width, rect.height);
+    ctx.restore();
   }, []);
 
   useEffect(() => {
@@ -372,8 +554,8 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
   }, [page, go]);
 
   // ---- pointer handling ----
-  // GoodNotes-style input routing: Apple Pencil (pointerType "pen") always
-  // draws; fingers always navigate (tap hotspots / swipe pages); the mouse
+  // GoodNotes-style input routing: Apple Pencil (pointerType "pen") draws on
+  // paper and taps tabs; fingers always navigate (tap hotspots); the mouse
   // follows the selected tool.
   const norm = (e: React.PointerEvent): [number, number] => {
     const rect = boxRef.current!.getBoundingClientRect();
@@ -394,17 +576,19 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
   }, [commit, planner.aspect]);
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (e.pointerType === "touch") {
-      tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now() };
+    const [x, y] = norm(e);
+    if (e.pointerType === "touch" || !shouldDraw(e)) {
+      // Fingers and the hand tool navigate anywhere on the page.
+      tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: false };
       return;
     }
-    if (!shouldDraw(e)) {
-      tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now() };
+    if (!inkAllowed(x, y)) {
+      // Landed on a tab or the outer margin: no ink here, but a tab tap counts.
+      tapStart.current = { x: e.clientX, y: e.clientY, t: Date.now(), chromeOnly: true };
       return;
     }
     e.preventDefault();
     const activeTool = e.pointerType === "pen" && toolRef.current === "hand" ? "pen" : toolRef.current;
-    const [x, y] = norm(e);
     if (activeTool === "eraser") {
       drawingPointer.current = e.pointerId;
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -425,7 +609,10 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
   const onPointerMove = (e: React.PointerEvent) => {
     if (drawingPointer.current !== e.pointerId) return;
     e.preventDefault();
-    const events = (e.nativeEvent as PointerEvent).getCoalescedEvents?.() ?? [e.nativeEvent as PointerEvent];
+    // Coalesced events give the full high-frequency pen path; some inputs and
+    // browsers hand back an empty list, so fall back to the event itself.
+    const coalesced = (e.nativeEvent as PointerEvent).getCoalescedEvents?.();
+    const events = coalesced?.length ? coalesced : [e.nativeEvent as PointerEvent];
     const rect = boxRef.current!.getBoundingClientRect();
     if (liveRef.current) {
       for (const ev of events) {
@@ -453,14 +640,14 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
       }
       return;
     }
-    // Tap navigation (finger, or mouse in hand mode).
+    // Tap navigation (finger, hand tool, or a stylus tap on a tab).
     const start = tapStart.current;
     tapStart.current = null;
     if (!start) return;
     const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y);
     if (moved > 12 || Date.now() - start.t > 600) return;
     const [x, y] = norm(e);
-    const hit = hotspots.find((h) => x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h);
+    const hit = hotspots.find((h) => inside(h, x, y) && (!start.chromeOnly || h.kind === "chrome"));
     if (hit) go(hit.page);
   };
 
@@ -554,12 +741,12 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
         <button onClick={() => go(1)} className="p-2 rounded-xl text-black/50 hover:bg-black/5" title="Cover">
           <Home className="w-4 h-4" />
         </button>
-        {isCollanote && (
+        {template && (
           <button
-            onClick={() => go(todayPage())}
+            onClick={() => go(template.today(new Date()))}
             className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold bg-[#7FB800] text-black hover:brightness-105 transition-all"
             style={MARKER}
-            title="Jump to today's daily page"
+            title="Jump to today's page"
           >
             <CalendarDays className="w-3.5 h-3.5" /> Today
           </button>
@@ -594,19 +781,28 @@ function PlannerViewer({ planner, onLibrary }: { planner: PlannerManifest; onLib
             draggable={false}
           />
           <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ cursor: tool === "hand" ? "pointer" : "crosshair" }} />
-          {debug && hotspots.map((h, i) => (
-            <div
-              key={i}
-              className="absolute border border-red-500/60 bg-red-500/10 pointer-events-none"
-              style={{ left: `${h.x * 100}%`, top: `${h.y * 100}%`, width: `${h.w * 100}%`, height: `${h.h * 100}%` }}
-              title={h.label}
-            />
-          ))}
+          {debug && (
+            <>
+              <div
+                className="absolute border-2 border-blue-500/70 pointer-events-none"
+                style={{ left: `${writeArea.x * 100}%`, top: `${writeArea.y * 100}%`, width: `${writeArea.w * 100}%`, height: `${writeArea.h * 100}%` }}
+                title="Write area"
+              />
+              {hotspots.map((h, i) => (
+                <div
+                  key={i}
+                  className={`absolute pointer-events-none ${h.kind === "chrome" ? "border border-amber-500/70 bg-amber-400/20" : "border border-red-500/60 bg-red-500/10"}`}
+                  style={{ left: `${h.x * 100}%`, top: `${h.y * 100}%`, width: `${h.w * 100}%`, height: `${h.h * 100}%` }}
+                  title={h.label}
+                />
+              ))}
+            </>
+          )}
         </div>
       </div>
 
       <p className="text-center text-[11px] text-black/35 pb-2 px-4">
-        Tap the month tabs or a day with your finger to jump around · write with your Apple Pencil anywhere · mouse draws when a pen tool is selected
+        Tap the tabs or a day to jump around · write with your Apple Pencil on the paper — the tabs and margins stay ink-free · mouse draws when a pen tool is selected
       </p>
     </div>
   );

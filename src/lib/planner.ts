@@ -78,7 +78,23 @@ export interface Hotspot {
   x: number; y: number; w: number; h: number; // fractions of the page
   page: number; // target page
   label: string;
+  /**
+   * "chrome" marks a tab or navigation button printed in the page furniture:
+   * it never accepts ink and a stylus tap on it navigates instead of drawing.
+   * "content" targets (day cells) sit on writable paper, so they only navigate
+   * from a finger tap or the hand tool. Defaults to "content".
+   */
+  kind?: "chrome" | "content";
 }
+
+/** Rectangle in page fractions. */
+export interface Rect { x: number; y: number; w: number; h: number }
+
+/**
+ * The only area of this template that accepts ink: everything inside the page
+ * excluding the top month-tab bar and the left-edge section tabs.
+ */
+export const WRITE_AREA: Rect = { x: 0.035, y: 0.052, w: 0.962, h: 0.945 };
 
 // Top month tab bar: JAN–JUNE across the left half, JULY–DEC across the right.
 const TAB_TOP = { y: 0, h: 0.048 };
@@ -101,12 +117,12 @@ export function chromeHotspots(): Hotspot[] {
   const spots: Hotspot[] = [];
   for (let i = 0; i < 6; i++) {
     const lw = (LEFT_TABS.x1 - LEFT_TABS.x0) / 6;
-    spots.push({ x: LEFT_TABS.x0 + i * lw, y: TAB_TOP.y, w: lw, h: TAB_TOP.h, page: monthlyPage(i + 1), label: MONTH_NAMES[i] });
+    spots.push({ x: LEFT_TABS.x0 + i * lw, y: TAB_TOP.y, w: lw, h: TAB_TOP.h, page: monthlyPage(i + 1), label: MONTH_NAMES[i], kind: "chrome" });
     const rw = (RIGHT_TABS.x1 - RIGHT_TABS.x0) / 6;
-    spots.push({ x: RIGHT_TABS.x0 + i * rw, y: TAB_TOP.y, w: rw, h: TAB_TOP.h, page: monthlyPage(i + 7), label: MONTH_NAMES[i + 6] });
+    spots.push({ x: RIGHT_TABS.x0 + i * rw, y: TAB_TOP.y, w: rw, h: TAB_TOP.h, page: monthlyPage(i + 7), label: MONTH_NAMES[i + 6], kind: "chrome" });
   }
   for (const t of SIDE_TABS) {
-    spots.push({ x: 0, y: t.y0, w: 0.033, h: t.y1 - t.y0, page: t.page, label: t.label });
+    spots.push({ x: 0, y: t.y0, w: 0.033, h: t.y1 - t.y0, page: t.page, label: t.label, kind: "chrome" });
   }
   return spots;
 }
@@ -150,7 +166,7 @@ export function monthHotspots(month: number): Hotspot[] {
     // W-strip → weekly page for that row's Sunday (or Jan 1 for the partial week).
     const rowStartDay = row * 7 - firstSundayOffset + 1;
     const wDate = new Date(PLANNER_YEAR, month - 1, Math.max(1, rowStartDay));
-    spots.push({ x: GRID.wStrip.x, y, w: GRID.wStrip.w, h: rowH, page: weeklyPage(wDate), label: `Week of ${MONTH_NAMES[month - 1]} ${Math.max(1, rowStartDay)}` });
+    spots.push({ x: GRID.wStrip.x, y, w: GRID.wStrip.w, h: rowH, page: weeklyPage(wDate), label: `Week of ${MONTH_NAMES[month - 1]} ${Math.max(1, rowStartDay)}`, kind: "chrome" });
 
     for (let col = 0; col < 7; col++) {
       const dayNum = row * 7 + col - firstSundayOffset + 1;
@@ -164,7 +180,7 @@ export function monthHotspots(month: number): Hotspot[] {
   }
 
   for (const b of MONTH_BUTTONS) {
-    spots.push({ x: 0.886, y: b.y0, w: 0.075, h: b.y1 - b.y0, page: b.page(month), label: b.label });
+    spots.push({ x: 0.886, y: b.y0, w: 0.075, h: b.y1 - b.y0, page: b.page(month), label: b.label, kind: "chrome" });
   }
   return spots;
 }
