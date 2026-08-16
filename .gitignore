@@ -10,3 +10,5 @@ build/
 tsconfig.tsbuildinfo
 node_modules
 .claude/
+public/pdf.worker.min.mjs
+public/pdf.min.mjs

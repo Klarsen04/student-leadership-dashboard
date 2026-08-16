@@ -104,7 +104,33 @@ finger tap or the hand tool. Ink is clipped to `writeArea`, so strokes never
 land on the tabs or outer margins. Add `?debug=1` to the URL to see the write
 area (blue) and hotspots (amber = chrome, red = content).
 
-Ink is stored per planner/page in the `PlannerInk` table via `/api/planner`.
+Pages hold **strokes and text boxes** (`PageElement` in `src/lib/planner-ink.ts`).
+The Text tool drops an editable, draggable, resizable text box; fonts come from
+`PLANNER_FONTS` (Inter/Instrument Serif/Fredoka/Caveat/Patrick Hand/mono, wired
+up as CSS variables in `src/app/layout.tsx`).
+
+Content is stored per planner/page in the `PlannerInk` table via `/api/planner`
+(the `strokes` column holds the serialized `PageElement[]`, text boxes included).
+Saving is **durable**: every edit is mirrored to `localStorage` before the POST
+and the mirror is cleared only on a 200, so a failed save degrades to "Offline"
+(and syncs on reconnect / next load) instead of losing ink. The API route
+self-heals a drifted `PlannerInk` table on a "no such table/column" error.
+
+### User notebooks (`src/lib/planner-library.ts`)
+Beyond the shipped planners, users can **import a PDF** or **duplicate** any
+notebook — both stored per-device in IndexedDB, listed under "My Notebooks".
+- An **import** keeps the original PDF in IndexedDB and renders pages on demand
+  with pdf.js (`PdfRenderer`); its links become tappable hotspots. `pdfKey` marks
+  a PDF-backed planner.
+- A **copy** stores no file — it points at its source via `sourceId` (reusing the
+  source's page images) and only claims a fresh id, giving it a blank ink layer.
+Ink still syncs to the account (keyed by planner id), so it isn't lost with the
+device.
+
+pdf.js is loaded at runtime as a native module from `/public` (`pdf.min.mjs` +
+`pdf.worker.min.mjs`, copied by `scripts/copy-pdf-worker.mjs` from
+predev/prebuild) with a `webpackIgnore` import — webpack's ESM interop mangles
+pdf.js. The public copies are gitignored and regenerated on each build.
 
 ## Key Patterns
 

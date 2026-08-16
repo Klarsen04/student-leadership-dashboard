@@ -26,12 +26,22 @@ export interface PlannerInfo {
   sizeMb?: number;
   /** Attribution shown on the library card (source project + licence). */
   credit?: string;
+  /**
+   * Duplicates and imports (src/lib/planner-library.ts) reuse another
+   * notebook's pages: `sourceId` is the folder to read renders from, `pdfKey`
+   * points at a PDF in IndexedDB rendered on demand instead.
+   */
+  sourceId?: string;
+  pdfKey?: string;
+  /** Hotspots per page (1-based keys). Populated from the manifest or an import. */
+  links?: Record<string, Hotspot[]>;
 }
 
 export const DEFAULT_CATEGORY = "Other Planners";
 
 /** Order categories appear in the library; anything else falls to the end. */
 const CATEGORY_ORDER = [
+  "My Notebooks",
   "365-Day Planners",
   "Study Planners",
   "Minimal Planners",
@@ -62,10 +72,7 @@ export function groupByCategory(planners: PlannerInfo[]): PlannerSection[] {
     .sort((a, b) => rank(a.category) - rank(b.category) || a.category.localeCompare(b.category));
 }
 
-export interface PlannerManifest extends PlannerInfo {
-  /** Hotspots per page (1-based, as strings after JSON round-trip). */
-  links?: Record<string, Hotspot[]>;
-}
+export type PlannerManifest = PlannerInfo;
 
 const SELECTED_KEY = "leadership-os-planner";
 
@@ -113,8 +120,12 @@ export function deriveFurniture(pageLinks?: Hotspot[]): Furniture {
 
 export function imageSrc(planner: PlannerInfo, page: number): string {
   const pad = Math.max(3, String(planner.pages).length);
-  return `/planner/${planner.id}/p${String(page).padStart(pad, "0")}.webp`;
+  // A duplicate has no renders of its own — it reads the originals.
+  return `/planner/${planner.sourceId ?? planner.id}/p${String(page).padStart(pad, "0")}.webp`;
 }
+
+/** True when pages have to be rendered from a PDF in the browser. */
+export const isPdfBacked = (planner: PlannerInfo) => Boolean(planner.pdfKey);
 
 export async function fetchPlannerIndex(): Promise<PlannerInfo[]> {
   const res = await fetch("/planner/index.json");
@@ -125,9 +136,14 @@ export async function fetchPlannerIndex(): Promise<PlannerInfo[]> {
 
 /** Per-planner manifest with link hotspots; falls back to the index entry. */
 export async function fetchPlannerManifest(info: PlannerInfo): Promise<PlannerManifest> {
+  // Imported PDFs carry their links in the index entry itself, and a duplicate
+  // reads the manifest of the planner it copied.
+  if (info.pdfKey) return info;
   try {
-    const res = await fetch(`/planner/${info.id}/manifest.json`);
-    if (res.ok) return { ...info, ...(await res.json()) };
+    const res = await fetch(`/planner/${info.sourceId ?? info.id}/manifest.json`);
+    // The manifest repeats the source's identity, so the caller's id, name and
+    // ink namespace have to win.
+    if (res.ok) return { ...info, ...(await res.json()), ...info };
   } catch {}
   return info;
 }

@@ -10,7 +10,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:push": "npx prisma db push",
-    "db:studio": "npx prisma studio"
+    "db:studio": "npx prisma studio",
+    "predev": "node scripts/copy-pdf-worker.mjs",
+    "prebuild": "node scripts/copy-pdf-worker.mjs"
   },
   "dependencies": {
     "@aikidosec/firewall": "1.8.35",
@@ -54,6 +56,7 @@
     "next": "15.5.23",
     "next-auth": "^4.24.15",
     "next-themes": "^0.4.6",
+    "pdfjs-dist": "^5.6.205",
     "re-resizable": "^6.11.2",
     "react": "^19.0.0",
     "react-day-picker": "^10.0.1",
@@ -75,7 +78,6 @@
     "@types/react-dom": "^19.0.0",
     "eslint": "^8.57.1",
     "eslint-config-next": "^15.5.23",
-    "pdfjs-dist": "^5.6.205",
     "postcss": "^8.5.26",
     "prettier": "^3.9.6",
     "prisma": "^5.22.0",
