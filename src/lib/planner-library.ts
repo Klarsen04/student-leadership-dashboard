@@ -28,9 +28,15 @@ import { clearLocalPlanner } from "@/lib/planner-ink";
 import { DEFAULT_PAPER, DEFAULT_TINT } from "@/lib/planner-paper";
 
 const DB_NAME = "leadora-planner-library";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const META_STORE = "meta";
-const FILE_STORE = "files";
+export const FILE_STORE = "files";
+/** Per-notebook page index (src/lib/planner-pages.ts), keyed by planner id. */
+export const PAGE_STORE = "pages";
+/** Reusable elements the user saved out of a page, keyed by element id. */
+export const ELEMENT_STORE = "elements";
+/** Templates the user made, keyed by template id. */
+export const TEMPLATE_STORE = "templates";
 
 export const USER_CATEGORY = "My Notebooks";
 
@@ -64,8 +70,13 @@ function openDb(): Promise<IDBDatabase> {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
+      // Each store is created only if missing, so the same handler upgrades a v1
+      // database and builds a fresh one.
       if (!db.objectStoreNames.contains(META_STORE)) db.createObjectStore(META_STORE, { keyPath: "id" });
       if (!db.objectStoreNames.contains(FILE_STORE)) db.createObjectStore(FILE_STORE);
+      if (!db.objectStoreNames.contains(PAGE_STORE)) db.createObjectStore(PAGE_STORE, { keyPath: "plannerId" });
+      if (!db.objectStoreNames.contains(ELEMENT_STORE)) db.createObjectStore(ELEMENT_STORE, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(TEMPLATE_STORE)) db.createObjectStore(TEMPLATE_STORE, { keyPath: "id" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -85,6 +96,42 @@ function tx<T>(store: string, mode: IDBTransactionMode, run: (s: IDBObjectStore)
   );
 }
 
+// Generic record access, used by the page index, the element library and the user's
+// own templates. Every one of them is "one JSON record per key", so they share the
+// same three calls rather than each opening the database its own way. Reads
+// swallow errors (a missing store or a blocked upgrade should degrade to "nothing
+// saved yet"); writes propagate so callers can tell the user a save failed.
+
+export async function idbGet<T>(store: string, key: IDBValidKey): Promise<T | null> {
+  if (typeof indexedDB === "undefined") return null;
+  try {
+    return (await tx<T | undefined>(store, "readonly", (s) => s.get(key) as IDBRequest<T | undefined>)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function idbAll<T>(store: string): Promise<T[]> {
+  if (typeof indexedDB === "undefined") return [];
+  try {
+    return (await tx<T[]>(store, "readonly", (s) => s.getAll() as IDBRequest<T[]>)) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function idbPut(store: string, value: unknown, key?: IDBValidKey): Promise<void> {
+  await tx(store, "readwrite", (s) => (key === undefined ? s.put(value) : s.put(value, key)));
+}
+
+export async function idbDelete(store: string, key: IDBValidKey): Promise<void> {
+  try {
+    await tx(store, "readwrite", (s) => s.delete(key));
+  } catch {
+    // Deleting something that isn't there is not a failure worth reporting.
+  }
+}
+
 export async function listUserPlanners(): Promise<UserPlanner[]> {
   if (typeof indexedDB === "undefined") return [];
   try {
@@ -100,9 +147,23 @@ async function putMeta(meta: UserPlanner) {
 }
 
 export async function renameUserPlanner(id: string, name: string) {
+  await updateUserPlanner(id, { name });
+}
+
+/**
+ * Patch one notebook's metadata. Returns the saved record, or null if the id is
+ * not one of the user's notebooks (shipped planners are read-only).
+ */
+export async function updateUserPlanner(
+  id: string,
+  patch: Partial<Omit<UserPlanner, "id" | "kind" | "createdAt">>,
+): Promise<UserPlanner | null> {
   const all = await listUserPlanners();
   const meta = all.find((m) => m.id === id);
-  if (meta) await putMeta({ ...meta, name });
+  if (!meta) return null;
+  const next = { ...meta, ...patch };
+  await putMeta(next);
+  return next;
 }
 
 /**
@@ -118,6 +179,7 @@ export async function deleteUserPlanner(id: string) {
   const all = await listUserPlanners();
   const meta = all.find((m) => m.id === id);
   await tx(META_STORE, "readwrite", (s) => s.delete(id));
+  await idbDelete(PAGE_STORE, id);
   if (meta?.pdfKey) {
     const stillUsed = all.some((m) => m.id !== id && m.pdfKey === meta.pdfKey);
     if (!stillUsed) await tx(FILE_STORE, "readwrite", (s) => s.delete(meta.pdfKey!));
@@ -129,7 +191,7 @@ export async function deleteUserPlanner(id: string) {
   }
 }
 
-async function putFile(key: string, blob: Blob) {
+export async function putFile(key: string, blob: Blob) {
   await tx(FILE_STORE, "readwrite", (s) => s.put(blob, key));
 }
 
@@ -352,9 +414,12 @@ export async function duplicatePlanner(
   const id = newId("c", new Set(existing.map((m) => m.id)));
   const src = source as UserPlanner;
 
-  // Copying a copy points at the original rather than building a chain.
+  // Copying a copy points at the original rather than building a chain, so the
+  // page images always resolve in one hop.
   const sourceId = src.kind === "copy" && src.sourceId ? src.sourceId : source.id;
-  const base = existing.find((m) => m.id === sourceId) ?? source;
+  // Everything else is taken from the notebook actually being duplicated, so its
+  // paper, page count and per-page arrangement come along.
+  const base = source;
   const name = opts.name?.trim().slice(0, 80) || (await suggestedCopyName(source));
   const withInk = opts.withInk !== false;
 
@@ -371,7 +436,14 @@ export async function duplicatePlanner(
     createdAt: Date.now(),
   };
   await putMeta(meta);
-  if (withInk) await copyInk(sourceId, id);
+  // The page index travels with the copy: its slots are the ink page keys, and
+  // the ink is cloned slot-for-slot, so a rearranged notebook duplicates as it
+  // looks rather than as its source was ordered.
+  const index = await idbGet<{ plannerId: string }>(PAGE_STORE, source.id);
+  if (index) await idbPut(PAGE_STORE, { ...index, plannerId: id, updatedAt: Date.now() });
+  // Ink comes from the notebook being duplicated, not from the image source: a
+  // copy of your marked-up copy has to carry your handwriting, not the original's.
+  if (withInk) await copyInk(source.id, id);
   return meta;
 }
 
@@ -427,28 +499,9 @@ export async function createBlankNotebook(opts: NewNotebook): Promise<UserPlanne
   return meta;
 }
 
-/**
- * Append pages to a notebook whose pages are drawn from a paper template — a
- * blank notebook, or a copy of one. Nothing else can grow: an import and a
- * duplicate have exactly as many pages as their source file.
- *
- * Only appending is offered: inserting in the middle would renumber every page
- * after it, and ink is stored per page number, so it would silently shuffle
- * handwriting onto the wrong pages.
- */
-export async function addPages(id: string, count = 1): Promise<number | null> {
-  const all = await listUserPlanners();
-  const meta = all.find((m) => m.id === id);
-  if (!meta?.paper) return null;
-  const pages = Math.min(MAX_IMPORT_PAGES, meta.pages + Math.max(1, count));
-  if (pages === meta.pages) return meta.pages;
-  await putMeta({
-    ...meta,
-    pages,
-    description: `${pages} ${pages === 1 ? "page" : "pages"} · add more any time`,
-  });
-  return pages;
-}
+// Adding, inserting, duplicating, deleting and reordering pages all live in
+// src/lib/planner-pages.ts: they work on the notebook's page index, where each
+// page keeps a stable ink slot, so rearranging pages can't shuffle handwriting.
 
 /** Folder the page images come from: a copy reads its source's renders. */
 export const imageBaseId = (p: PlannerInfo) => (p as UserPlanner).sourceId ?? p.id;
@@ -513,5 +566,39 @@ export class PdfRenderer {
     this.order = [];
     this.docPromise?.then(({ close }) => close()).catch(() => {});
     this.docPromise = null;
+  }
+}
+
+/**
+ * Render one page of a PDF that's only in memory to an image.
+ *
+ * This is for "use a PDF page as page template": the document isn't becoming a
+ * notebook, so nothing is stored and the worker is shut down straight away. The
+ * page number is clamped and returned so the caller can say which page it got.
+ */
+export async function renderPdfPage(
+  data: ArrayBuffer,
+  pageNumber = 1,
+  targetWidth = 1400,
+): Promise<{ blob: Blob; page: number; pages: number }> {
+  const { doc, close } = await openPdf(data);
+  try {
+    const pages: number = doc.numPages;
+    if (!pages) throw new Error("That PDF has no pages.");
+    const n = Math.max(1, Math.min(pages, Math.round(pageNumber) || 1));
+    const page = await doc.getPage(n);
+    const base = page.getViewport({ scale: 1 });
+    const viewport = page.getViewport({ scale: Math.min(4, targetWidth / base.width) });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(viewport.width);
+    canvas.height = Math.round(viewport.height);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("This browser wouldn't give us a canvas to draw on.");
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/webp", 0.9));
+    if (!blob) throw new Error("Couldn't turn that page into an image.");
+    return { blob, page: n, pages };
+  } finally {
+    await close().catch(() => {});
   }
 }
