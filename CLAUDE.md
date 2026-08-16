@@ -234,8 +234,31 @@ Toolbar controls carry stable hooks for tests — `data-tool` on each tool butto
 `data-swatch` on each colour, `data-picker`/`data-picker-panel` on a colour picker,
 `data-recolor` on the selection swatches, `data-zoom` on the zoom readout, `aria-pressed`
 for what's armed. The page rail adds `data-page-row`, `data-page-open` (the jump button —
-*not* the first button in the row, which is the insert-a-page hairline) and `data-page-ink`.
+*not* the first button in the row, which is the insert-a-page hairline), `data-page-ink` and
+`data-page-menu`; the Shapes options row adds `data-shape` (each kind, plus `auto`).
 Tooltips describe the tool and get reworded; select on these instead.
+
+### Page shape (the fit invariant)
+**The rendered page must be exactly the shape of its paper.** Normalised ink coordinates are
+fractions of the page box, while everything that has to be round or square — circles, the
+eraser tip, rotation, stickers, the export — corrects with the *paper's* aspect
+(`pageGeometry`). If the box is a different shape from the paper, the two disagree and
+nothing is quite right: circles come out oval, and the export doesn't match the screen.
+
+The page is `aspect-ratio` + `width: 100%` under a max-width, and that **cap is what keeps
+its shape**: too generous a cap and `max-h-full` clamps the height while the width stays put,
+which stretches the page. The cap used to guess the chrome ("viewport minus 150px"), was 56px
+out, and every page rendered ~7% too wide. It now comes from `frameH` — the frame's own
+`contentRect` height via a `ResizeObserver` — so it's exact on any screen. Observe the
+*frame*, not the page: the frame is `flex-1` in a fixed-height column, so its size never
+depends on the page's and there's no feedback loop. `/tmp/fit-ui.mjs` asserts box aspect ==
+paper aspect == the paper image's own aspect, and that the page fits, across desktop / rail
+open / landscape paper / narrow window / phone.
+
+Orientation is stored **separately from size**, and a page with no `size` of its own still
+has one (the notebook's). `pageGeometry` turns that fallback via `turnPaper`, which the setup
+dialog's preview uses too — otherwise "make this page landscape" turned the preview and left
+the page portrait.
 
 ### Page-rail thumbnails (`src/lib/planner-thumbs.ts`)
 The rail already draws each page's real paper, so a thumbnail is just that page's
@@ -348,10 +371,23 @@ screen is computed in **"square space"** (x·aspect), since normalised coords
 squash one axis. A whole gesture is one undo step (`beginBurst`/`endBurst` +
 `setElements(next, {history:false})`).
 
-The **Shapes tool** (`src/lib/planner-shapes.ts`) snaps a rough drawing to a
+The **Shapes tool** (`src/lib/planner-shapes.ts`) has two modes, and the reliable one is
+the default: pick a shape (`shapeKind`, one of `DRAG_SHAPES` — line/arrow/rectangle/
+ellipse/triangle) and **drag it out**. `dragShape()` rebuilds the whole stroke from the two
+ends of the drag on every move, so what's on the live layer while dragging is exactly what
+`endStroke` commits — no recognition, nothing that can decline. Shift constrains (45° for
+line and arrow, equal extents otherwise, towards the corner being dragged to), and a drag
+under `MIN_DRAG` commits nothing rather than leaving a dot. **Sketch** (`shapeKind: "auto"`)
+is the older path: draw roughly and `snapStroke` decides. Recognition is secondary because
+it can always decline, and a tool that sometimes refuses is a poor way to draw a box you
+definitely want. The picker is keyed off `DRAG_SHAPES` through `SHAPE_PICKER`, a `Record`,
+so a new shape in the library won't compile until it has an icon in the toolbar.
+
+Sketch mode snaps a rough drawing to a
 circle/ellipse/rectangle/square/triangle/polygon/line/arrow — but a recognised
 shape stays an ordinary `Stroke` with ideal points and constant pressure, so
-selection/undo/save/export all treat it like handwriting. Recognition is
+selection/undo/save/export all treat it like handwriting (this is equally true of a
+dragged-out shape). Recognition is
 propose-and-score: reduce the path to corners, propose candidates in preference
 order, take the first that fits the gate, otherwise **decline** and keep the
 drawing. Corners are found by the turn the *drawn* path makes over a short window

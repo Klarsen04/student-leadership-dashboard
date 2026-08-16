@@ -180,11 +180,20 @@ export const isRearranged = (index: PageIndex) =>
 
 // ---- geometry and backgrounds -------------------------------------------------------
 
+/** The same paper the other way up, if that's the way round it's wanted. */
+export const turnPaper = (g: PageGeometry, orientation: Orientation | undefined): PageGeometry =>
+  (orientation === "landscape" && g.h > g.w) || (orientation === "portrait" && g.w > g.h)
+    ? { w: g.h, h: g.w }
+    : g;
+
 /** A page's size in points, falling back to the notebook's own page shape. */
 export function pageGeometry(page: PageMeta | undefined, planner: PlannerInfo): PageGeometry {
   if (page?.size) return pageDimensions(page.size, page.orientation ?? "portrait", page.custom);
+  // Orientation is stored separately from size, and a page that never named a paper size
+  // still has one — the notebook's. Turning it has to work there too, or "make this page
+  // landscape" turns the dialog's preview and leaves the page portrait.
   const aspect = planner.aspect || 595 / 842;
-  return { w: 612, h: Math.round(612 / aspect) };
+  return turnPaper({ w: 612, h: Math.round(612 / aspect) }, page?.orientation);
 }
 
 export const pageAspect = (page: PageMeta | undefined, planner: PlannerInfo) =>

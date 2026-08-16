@@ -43,6 +43,7 @@ import {
 } from "@/lib/planner-paper";
 import {
   pageGeometry,
+  turnPaper,
   type NewPageSpec,
   type PageMeta,
   type PatternOverrides,
@@ -112,8 +113,9 @@ export function PageSetupDialog({
   // starting page (or the notebook) uses, so "apply" doesn't silently resize.
   const geometry = useMemo(() => {
     if (size) return pageDimensions(size, orientation, custom);
-    const base = pageGeometry(initial, planner);
-    return orientation === "landscape" && base.h > base.w ? { w: base.h, h: base.w } : base;
+    // Turned by the same helper the viewer uses, so the preview can't disagree with the
+    // page it's previewing.
+    return turnPaper(pageGeometry(initial, planner), orientation);
   }, [size, orientation, custom, initial, planner]);
 
   const paper = color || template.background || initial?.color || DEFAULT_PAGE_COLOR;

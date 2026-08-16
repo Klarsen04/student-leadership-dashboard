@@ -51,6 +51,12 @@ import {
   SendToBack,
   RotateCw,
   Shapes,
+  Slash,
+  ArrowUpRight,
+  Square,
+  Circle,
+  Triangle,
+  Wand2,
   Stamp,
   Download,
   FileText,
@@ -97,7 +103,14 @@ import {
   writeLocal,
 } from "@/lib/planner-ink";
 import { isInkTool, marksPaper, routePointer, type InkTool, type InputMode, type Tool } from "@/lib/planner-input";
-import { SHAPE_LABEL, snapStroke } from "@/lib/planner-shapes";
+import {
+  DRAG_SHAPE_LABEL,
+  DRAG_SHAPES,
+  dragShape,
+  SHAPE_LABEL,
+  snapStroke,
+  type DragShape,
+} from "@/lib/planner-shapes";
 import {
   type UserPlanner,
   PdfRenderer,
@@ -283,6 +296,19 @@ const TOOL_NAME: Record<InkPrefKey, string> = {
   highlighter: "Highlighter",
   shape: "Shape",
   text: "Text",
+};
+
+/**
+ * The Shapes tool's palette. Keyed by shape rather than listed, so adding one to
+ * `DRAG_SHAPES` won't compile until it has an icon and a tooltip here — the picker can't
+ * quietly go one shape short of the library.
+ */
+const SHAPE_PICKER: Record<DragShape, { icon: typeof Slash; title: string }> = {
+  line: { icon: Slash, title: "Line — drag from end to end · hold Shift for 45°" },
+  arrow: { icon: ArrowUpRight, title: "Arrow — drag from tail to tip · hold Shift for 45°" },
+  rectangle: { icon: Square, title: "Rectangle — drag corner to corner · hold Shift for a square" },
+  ellipse: { icon: Circle, title: "Ellipse — drag corner to corner · hold Shift for a circle" },
+  triangle: { icon: Triangle, title: "Triangle — drag from the apex" },
 };
 
 /** Which tool's settings the ink controls are editing. Anything else falls back to the pen. */
@@ -1265,6 +1291,19 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const rerender = useCallback(() => forceRender((n) => n + 1), []);
 
   const boxRef = useRef<HTMLDivElement>(null);
+  /**
+   * The room the page has to fit into, measured rather than guessed.
+   *
+   * The paper is `aspect-ratio` + `width: 100%` capped by a max-width, and the cap is what
+   * keeps its shape: too generous a cap and `max-h-full` clamps the height while the width
+   * stays where it was, which stretches the page. A guess at the chrome's height ("viewport
+   * minus 150px") was 56px out, so every page rendered ~7% wide — circles weren't round,
+   * the eraser tip wasn't circular, and on-screen ink disagreed with the export, which
+   * measures against the paper. This is the frame's own content height, so the cap is
+   * exact on any screen and after any toolbar reflow.
+   */
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [frameH, setFrameH] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   /**
    * Committed strokes are painted once to this offscreen canvas and blitted each frame;
@@ -1354,6 +1393,17 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
   const snapping = useRef(false);
   const [snapped, setSnapped] = useState<string | null>(null);
   const snapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Which shape the Shapes tool makes: one you name and drag out, or "auto", where you
+   * sketch it and recognition decides. Named is the reliable one and the default —
+   * recognition can always decline, and a tool that sometimes refuses is a poor way to
+   * draw a box you definitely want.
+   */
+  const [shapeKind, setShapeKind] = useState<DragShape | "auto">("rectangle");
+  const shapeKindRef = useRef(shapeKind);
+  shapeKindRef.current = shapeKind;
+  /** A named shape being dragged out: where it started, and how hard. */
+  const shapeDrag = useRef<{ from: [number, number]; pressure: number } | null>(null);
   /**
    * A transform in progress. `from` is the page as it was when the gesture started
    * and every frame is computed from it, so a long drag can't accumulate rounding
@@ -1780,6 +1830,18 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     ro.observe(box);
     return () => ro.disconnect();
   }, [redraw]);
+
+  // How tall the page may be. Watching the frame rather than the page avoids the loop the
+  // other way round: the frame is `flex-1` inside a fixed-height column, so its size never
+  // depends on the page's. `contentRect` is inside the padding, which is what the page's
+  // own `max-h-full` resolves against.
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const ro = new ResizeObserver(([entry]) => setFrameH(entry.contentRect.height));
+    ro.observe(frame);
+    return () => ro.disconnect();
+  }, []);
 
   // Zoom changes the canvas's displayed size without touching its layout size, so
   // the observer above can't see it: resize the backing store here instead.
@@ -2594,11 +2656,34 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       eraseAt(x, y);
       return;
     }
-    snapping.current = toolRef.current === "shape";
+    // A named shape is dragged out from here: the stroke is rebuilt from the two ends on
+    // every move rather than accumulating the path the pointer took.
+    const named = toolRef.current === "shape" && shapeKindRef.current !== "auto";
+    shapeDrag.current = named ? { from: [x, y], pressure: e.pressure || 0.5 } : null;
+    snapping.current = toolRef.current === "shape" && !named;
     liveRef.current = {
       ...strokeStyle(toolRef.current),
       points: [[x, y, e.pressure || 0.5]],
     };
+    livePainted.current = 0;
+    paintLive();
+  };
+
+  /** Redraw the shape being dragged out, from where it started to where the pointer is. */
+  const trackShape = (to: [number, number], constrain: boolean) => {
+    const drag = shapeDrag.current;
+    const live = liveRef.current;
+    if (!drag || !live) return;
+    const kind = shapeKindRef.current;
+    if (kind === "auto") return;
+    const points = dragShape(kind, drag.from, to, aspectRef.current, {
+      constrain,
+      pressure: drag.pressure,
+    });
+    live.points = points ?? [[drag.from[0], drag.from[1], drag.pressure]];
+    // The whole shape changes shape every frame, so the live layer is repainted rather
+    // than extended. It's one shape of at most a hundred points — cheaper than the
+    // freehand path it replaces.
     livePainted.current = 0;
     paintLive();
   };
@@ -2646,6 +2731,10 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
       e.preventDefault();
       const live = liveRef.current;
       if (!live) return;
+      if (shapeDrag.current) {
+        trackShape(gestureNorm(e), e.shiftKey);
+        return;
+      }
       // Coalesced events give the full high-frequency pen path — every sample the
       // digitiser took between frames, pressure included. Some inputs and browsers hand
       // back an empty list, so fall back to the event itself.
@@ -2747,6 +2836,29 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
     if (g.mode === "draw") {
       const live = liveRef.current;
       liveRef.current = null;
+      // A named shape: what's on the live layer is already the shape, ideal points and
+      // all, so it's committed as it stands — no recognition, nothing to decline. A drag
+      // too short to be a shape commits nothing rather than leaving a dot behind.
+      const named = shapeDrag.current;
+      shapeDrag.current = null;
+      if (named && live) {
+        const kind = shapeKindRef.current;
+        const points =
+          kind === "auto"
+            ? null
+            : dragShape(kind, named.from, gestureNorm(e, g.rect), aspectRef.current, {
+                constrain: e.shiftKey,
+                pressure: named.pressure,
+              });
+        if (points) {
+          setElements([...elementsRef.current, { ...live, points }]);
+          setSnapped(kind === "auto" ? null : DRAG_SHAPE_LABEL[kind]);
+          if (snapTimer.current) clearTimeout(snapTimer.current);
+          snapTimer.current = setTimeout(() => setSnapped(null), 900);
+        }
+        paintLive();
+        return;
+      }
       if (live) {
         // The Shapes tool: if the path was meant to be a circle, a box, a line or an
         // arrow, commit the ideal one instead. It's still a stroke either way — see
@@ -3155,7 +3267,7 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
             <ToolButton t="pencil" icon={<Pencil className="w-4 h-4" />} title="Pencil — soft graphite, shades with pressure" />
             <ToolButton t="marker" icon={<Brush className="w-4 h-4" />} title="Marker — a broad felt tip, one steady width" />
             <ToolButton t="highlighter" icon={<Highlighter className="w-4 h-4" />} title="Highlighter — see-through, never covers your writing" />
-            <ToolButton t="shape" icon={<Shapes className="w-4 h-4" />} title="Shapes — draw roughly and it snaps to a circle, box, triangle, line or arrow" />
+            <ToolButton t="shape" icon={<Shapes className="w-4 h-4" />} title="Shapes — pick a line, arrow, box, ellipse or triangle and drag it out, or sketch one roughly and let it snap" />
             <ToolButton t="text" icon={<Type className="w-4 h-4" />} title="Text box (tap the paper to type)" />
             <ToolButton t="select" icon={<Lasso className="w-4 h-4" />} title="Select — move, resize, recolour or copy what you've written" />
             <ToolButton t="eraser" icon={<Eraser className="w-4 h-4" />} title="Eraser" />
@@ -3345,12 +3457,47 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
           )}
 
           {tool === "shape" && (
-            <span
-              className={`ml-1 text-[11px] font-semibold px-2 py-1 rounded-full transition-opacity ${snapped ? "bg-[#8A6DE9]/12 text-[#6F55C7] opacity-100" : "text-black/35 opacity-100"}`}
-              style={MARKER}
-            >
-              {snapped ?? "draw roughly — it'll snap"}
-            </span>
+            <div className="flex items-center gap-1 ml-1">
+              {/* Which shape. Pick one and drag it out; "Sketch" hands the drawing to
+                  recognition instead, which is the older, cleverer, less certain way. */}
+              <div className="flex items-center gap-0.5 rounded-xl bg-black/[0.04] p-0.5">
+                {DRAG_SHAPES.map((k) => {
+                  const { icon: Icon, title } = SHAPE_PICKER[k];
+                  return (
+                    <button
+                      key={k}
+                      onClick={() => setShapeKind(k)}
+                      title={title}
+                      data-shape={k}
+                      aria-pressed={shapeKind === k}
+                      className={`p-1.5 rounded-lg transition-colors ${shapeKind === k ? "bg-white shadow-sm text-black/75" : "text-black/40 hover:bg-black/5"}`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                    </button>
+                  );
+                })}
+                <span className="w-px h-4 bg-black/10 mx-0.5" />
+                <button
+                  onClick={() => setShapeKind("auto")}
+                  title="Sketch — draw a shape roughly and let go, and it snaps to whichever one it was · anything that isn't a shape is kept as you drew it"
+                  data-shape="auto"
+                  aria-pressed={shapeKind === "auto"}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors ${shapeKind === "auto" ? "bg-white shadow-sm text-black/75" : "text-black/40 hover:bg-black/5"}`}
+                  style={MARKER}
+                >
+                  <Wand2 className="w-3.5 h-3.5" /> Sketch
+                </button>
+              </div>
+              <span
+                className={`text-[11px] font-semibold px-2 py-1 rounded-full ${snapped ? "bg-[#8A6DE9]/12 text-[#6F55C7]" : "text-black/35"}`}
+                style={MARKER}
+              >
+                {snapped ??
+                  (shapeKind === "auto"
+                    ? "draw roughly — it'll snap"
+                    : `drag out a ${DRAG_SHAPE_LABEL[shapeKind].toLowerCase()}`)}
+              </span>
+            </div>
           )}
 
           {tool === "select" && (
@@ -3458,16 +3605,19 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
           />
         )}
 
-        <div className="flex-1 flex items-center justify-center p-2 md:p-4 overflow-hidden">
+        <div ref={frameRef} className="flex-1 flex items-center justify-center p-2 md:p-4 overflow-hidden">
           <div
             ref={boxRef}
             className="group relative w-full max-h-full shadow-xl rounded-lg overflow-hidden select-none"
             // The width cap is what keeps the shape: with `width: 100%` a max-height
-            // alone would squash the page rather than shrink it. It's measured off the
-            // viewer's own height, so it's right on a phone too.
+            // alone would clamp the height and leave the page stretched. It comes from
+            // the frame's measured height (see `frameH`), with the old estimate standing
+            // in for the one frame before the observer has reported.
             style={{
               aspectRatio: `${aspect}`,
-              maxWidth: `min(100%, calc((var(--planner-vh) - 150px) * ${aspect}))`,
+              maxWidth: frameH
+                ? `min(100%, ${frameH * aspect}px)`
+                : `min(100%, calc((var(--planner-vh) - 150px) * ${aspect}))`,
               touchAction: "none",
               background: "#fff",
               // Zoom and pan are one composited transform on the whole page, paper,
@@ -3753,7 +3903,9 @@ function PlannerViewer({ planner, onLibrary, onOpenPlanner }: {
         {readOnly
           ? "This is a built-in planner, so it stays as printed — tap the tabs or a day to look around, and make a copy when you want to write in it · tap the side edges, swipe or scroll to turn one page · pinch to zoom in"
           : tool === "shape"
-            ? "Draw a shape roughly and let go — a rough circle, box, triangle, line or one-stroke arrow snaps to a clean one · it stays ink, so the lasso can still move, resize and recolour it · anything that isn't a shape is kept exactly as you drew it"
+            ? shapeKind === "auto"
+              ? "Draw a shape roughly and let go — a rough circle, box, triangle, line or one-stroke arrow snaps to a clean one · anything that isn't a shape is kept exactly as you drew it"
+              : `Drag out a ${DRAG_SHAPE_LABEL[shapeKind].toLowerCase()} — it follows the pointer until you let go, hold Shift to keep it regular · it stays ink, so the lasso can still move, resize, rotate and recolour it`
             : tool === "select"
             ? "Draw a loop round some writing (or drag a box) to pick it up · drag it to move, the handles to resize, the knob to rotate · ⌘C, ⌘X and ⌘V move it between pages · ⌫ deletes it · Esc lets it go"
             : paperBacked
