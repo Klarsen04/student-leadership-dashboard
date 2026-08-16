@@ -158,12 +158,11 @@ function loadPdfjs(): Promise<Pdfjs> {
 
 async function openPdf(data: ArrayBuffer) {
   const pdfjs = await loadPdfjs();
-  return pdfjs.getDocument({
-    data,
-    // The production CSP has no 'unsafe-eval'; pdf.js falls back to a slower
-    // but allowed path for scaled fonts when told eval is unavailable.
-    isEvalSupported: false,
-  }).promise;
+  // No isEvalSupported here: pdf.js 6 dropped that option along with the
+  // eval-based path it guarded — the fix for GHSA-hq66-cqwq-w95j. The bundle and
+  // worker carry no eval at all now, so this runs under the production CSP,
+  // which grants no 'unsafe-eval'.
+  return pdfjs.getDocument({ data }).promise;
 }
 
 /** Pull the PDF's own hyperlinks out as normalised hotspots, keyed by page. */
