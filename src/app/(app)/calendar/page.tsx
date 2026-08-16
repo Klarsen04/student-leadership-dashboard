@@ -29,26 +29,22 @@ import { CalendarEngineHost } from "@/components/calendar/engines";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { BlurFade } from "@/components/ui/blur-fade";
 import { NumberTicker } from "@/components/ui/number-ticker";
-import { ShineBorder } from "@/components/ui/shine-border";
 import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import { ActivityRing } from "@/components/ui/activity-ring";
 import { AnimatedGradientText } from "@/components/ui/gradient-text";
 import { ClickSpark } from "@/components/ui/click-spark";
 import { ParticlesBg } from "@/components/ui/particles-bg";
-import { Marquee } from "@/components/ui/marquee";
 import { NoiseOverlay } from "@/components/ui/noise-overlay";
 import { GlowCard } from "@/components/ui/glow-card";
 import { AuroraGlow } from "@/components/ui/aurora-glow";
 import { MiniCalendar } from "@/components/ui/mini-calendar";
 import { UnscheduledPanel } from "@/components/ui/unscheduled-panel";
 import { KeyboardShortcuts } from "@/components/ui/keyboard-shortcuts";
-import { TimeTracker } from "@/components/ui/time-tracker";
 import { WeekStats } from "@/components/ui/week-stats";
 import { FocusSuggestion } from "@/components/ui/focus-suggestion";
 import { CommandPalette } from "@/components/ui/command-palette";
 import { ScheduleHeatmap } from "@/components/ui/schedule-heatmap";
 import { ExportButton } from "@/components/ui/export-button";
-import { QuickNote } from "@/components/ui/quick-note";
 import { FocusModeToggle } from "@/components/ui/focus-mode";
 import { motion, useReducedMotion } from "framer-motion";
 import { useIntroCalEntrance } from "@/components/home/intro-cal-entrance";
@@ -105,50 +101,6 @@ function getMinutesFromTime(time: string): number {
 }
 
 
-
-function getNextClass(classes: ClassBlock[]): { cls: ClassBlock; minutesUntil: number } | null {
-  if (classes.length === 0) return null;
-  const now = new Date();
-  const dow = now.getDay();
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  const CLASS_DAY_MAP: Record<string, number[]> = {
-    MWF: [1, 3, 5], TuTh: [2, 4], MW: [1, 3], TuThF: [2, 4, 5],
-    Mon: [1], Tue: [2], Wed: [3], Thu: [4], Fri: [5], Sat: [6], Sun: [0],
-  };
-
-  const todayClasses = classes
-    .filter(cls => cls.days.some(d => (CLASS_DAY_MAP[d] || []).includes(dow)))
-    .filter(cls => getMinutesFromTime(cls.startTime) > nowMinutes)
-    .sort((a, b) => getMinutesFromTime(a.startTime) - getMinutesFromTime(b.startTime));
-
-  if (todayClasses.length > 0) {
-    const cls = todayClasses[0];
-    return { cls, minutesUntil: getMinutesFromTime(cls.startTime) - nowMinutes };
-  }
-
-  for (let offset = 1; offset <= 7; offset++) {
-    const targetDow = (dow + offset) % 7;
-    const nextDayClasses = classes
-      .filter(cls => cls.days.some(d => (CLASS_DAY_MAP[d] || []).includes(targetDow)))
-      .sort((a, b) => getMinutesFromTime(a.startTime) - getMinutesFromTime(b.startTime));
-    if (nextDayClasses.length > 0) {
-      const cls = nextDayClasses[0];
-      const minutesUntil = (offset * 24 * 60) - nowMinutes + getMinutesFromTime(cls.startTime);
-      return { cls, minutesUntil };
-    }
-  }
-  return null;
-}
-
-function formatCountdown(minutes: number): string {
-  if (minutes < 60) return `${minutes}min`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h < 24) return m > 0 ? `${h}h ${m}m` : `${h}h`;
-  const d = Math.floor(h / 24);
-  const rh = h % 24;
-  return rh > 0 ? `${d}d ${rh}h` : `${d}d`;
-}
 
 function findGaps(classes: ClassBlock[], day: Date): { start: number; end: number }[] {
   const dow = day.getDay();
@@ -359,7 +311,6 @@ export default function CalendarPage() {
 
   useEffect(() => { setClasses(getStoredClasses()); }, []);
 
-  const nextUp = useMemo(() => getNextClass(classes), [classes]);
   const totalCredits = useMemo(() => classes.reduce((sum, c) => sum + c.creditHours, 0), [classes]);
   const weeklyHours = useMemo(() => {
     const CLASS_DAY_MAP: Record<string, number[]> = {
@@ -598,7 +549,6 @@ export default function CalendarPage() {
               </Button>
             </motion.div>
             <ExportButton onExport={(format) => toast.success(`Exporting as ${format}...`)} />
-            <QuickNote onSave={(note) => toast.success(`Note saved: "${note.slice(0, 30)}${note.length > 30 ? "..." : ""}"`)} />
           </div>
         </div>
 
@@ -738,69 +688,6 @@ export default function CalendarPage() {
           </div>
         )}
       </motion.header>
-
-      {/* Infinite marquee ticker */}
-      {classes.length > 0 && (
-        <div className="max-w-7xl mx-auto mb-3 overflow-hidden rounded-xl bg-black/[0.02] border border-black/5">
-          <Marquee speed={25} pauseOnHover className="py-2">
-            {classes.map((cls) => (
-              <span key={cls.id} className="flex items-center gap-2 px-4 text-xs text-black/50">
-                <span className="w-2 h-2 rounded-full" style={{ background: cls.color }} />
-                <span className="font-medium text-black/70">{cls.title}</span>
-                <span>·</span>
-                <span>{cls.days.join("/")}</span>
-                <span>·</span>
-                <span>{cls.startTime}–{cls.endTime}</span>
-              </span>
-            ))}
-          </Marquee>
-        </div>
-      )}
-
-      {/* Next Up Banner + Conflicts */}
-      <div className="max-w-7xl mx-auto mb-4 space-y-2">
-        {nextUp && (
-          <BlurFade delay={0.1} duration={0.5}>
-            <div className="flex items-center gap-4 px-4 py-3 rounded-2xl border border-black/5 shadow-sm relative overflow-hidden" style={{ background: "linear-gradient(135deg, #FFFAF5 0%, #FFF3D6 100%)" }}>
-              <ShineBorder shineColor={[nextUp.cls.color, "#FFB400", nextUp.cls.color]} duration={8} borderWidth={1} />
-              <div className="absolute inset-0 opacity-[0.04]" style={{ background: `linear-gradient(90deg, ${nextUp.cls.color} 0%, transparent 60%)` }} />
-              <motion.div
-                className="relative w-10 h-10 rounded-xl flex items-center justify-center shadow-sm"
-                style={{ background: nextUp.cls.color }}
-                animate={{ scale: [1, 1.05, 1] }}
-                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-              >
-                <GraduationCap className="w-5 h-5 text-white" />
-              </motion.div>
-              <div className="relative flex-1 min-w-0">
-                <p className="text-[10px] uppercase tracking-wider text-black/40 font-semibold">Next Up</p>
-                <p className="text-sm font-bold text-black truncate">{nextUp.cls.title}</p>
-                {nextUp.cls.professor && (
-                  <p className="text-[11px] text-black/40 truncate">{nextUp.cls.professor}</p>
-                )}
-              </div>
-              <div className="relative flex items-center gap-3 text-xs text-black/60 shrink-0">
-                {nextUp.cls.location && (
-                  <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-black/[0.03]">
-                    <MapPin className="w-3 h-3 text-black/40" />{nextUp.cls.location}
-                  </span>
-                )}
-                <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-black/[0.03]">
-                  <Clock className="w-3 h-3 text-black/40" />{nextUp.cls.startTime}
-                </span>
-                <motion.span
-                  className="px-2.5 py-1 rounded-full font-bold text-xs text-white shadow-sm"
-                  style={{ background: nextUp.cls.color }}
-                  animate={{ opacity: [1, 0.7, 1] }}
-                  transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                >
-                  {formatCountdown(nextUp.minutesUntil)}
-                </motion.span>
-              </div>
-            </div>
-          </BlurFade>
-        )}
-      </div>
 
       {/* Focus Suggestion */}
       {(view === "week" || view === "5day") && (
@@ -1142,9 +1029,6 @@ export default function CalendarPage() {
         }
       }} />
 
-      {/* Time Tracker Widget (ClickUp-style floating timer) */}
-      <TimeTracker isVisible={true} taskName={nextUp?.cls.title} />
-
       {/* Command Palette (Cmd+K) */}
       <CommandPalette commands={[
         { id: "new-event", label: "Create new event", icon: <Plus className="w-4 h-4" />, action: () => setShowAdd(true), category: "Actions" },
@@ -1271,6 +1155,63 @@ function EditCalendarDialog({ cal, calendars, colorOptions, updateCalendar, addT
   );
 }
 
+function timeLabel(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+}
+
+/** Every quarter hour of the day, labelled the way a timetable reads. */
+const TIME_OPTIONS = Array.from({ length: 96 }, (_, i) => {
+  const value = `${String(Math.floor(i / 4)).padStart(2, "0")}:${String((i % 4) * 15).padStart(2, "0")}`;
+  return { value, label: timeLabel(value) };
+});
+
+/**
+ * A date field plus a *time dropdown*.
+ *
+ * `datetime-local` pops a calendar for the date half but makes you type the time
+ * digit by digit, which is the fiddly bit — so the two halves are split and the
+ * time becomes a list of quarter hours. The value stays one
+ * `yyyy-MM-dd'T'HH:mm` string, which is what the form and the API already speak.
+ */
+function DateTimeField({ label, value, required, onChange }: { label: string; value: string; required?: boolean; onChange: (value: string) => void }) {
+  const [date, time] = value ? value.split("T") : ["", ""];
+
+  const update = (nextDate: string, nextTime: string) => {
+    // Half a value can't be saved, so picking one side fills the other with
+    // something sensible rather than leaving the field invalid.
+    if (!nextDate && !nextTime) return onChange("");
+    onChange(`${nextDate || format(new Date(), "yyyy-MM-dd")}T${nextTime || "09:00"}`);
+  };
+
+  // An event created by dragging on the grid can land off the quarter hour; keep
+  // its exact time in the list instead of silently rounding it away.
+  const options = time && !TIME_OPTIONS.some((o) => o.value === time)
+    ? [...TIME_OPTIONS, { value: time, label: timeLabel(time) }].sort((a, b) => a.value.localeCompare(b.value))
+    : TIME_OPTIONS;
+
+  return (
+    <div>
+      <label className="text-sm font-medium text-black/80">{label}</label>
+      <div className="flex gap-2">
+        <Input type="date" required={required} value={date} onChange={(e) => update(e.target.value, time)} className="flex-1 min-w-0" />
+        <select
+          required={required}
+          value={time}
+          onChange={(e) => update(date, e.target.value)}
+          className="h-10 shrink-0 border rounded-md px-2 text-sm bg-white text-black"
+        >
+          <option value="" disabled>Time</option>
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
 function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defaultEndTime, defaultCalendar, defaultTag }: { calendars: SubCalendar[]; event?: CalendarEvent; onSaved: () => void; onCancel: () => void; defaultStartTime?: string; defaultEndTime?: string; defaultCalendar?: string; defaultTag?: string }) {
   const [form, setForm] = useState({
     title: event?.title || "",
@@ -1310,8 +1251,8 @@ function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defa
         <Input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <div><label className="text-sm font-medium text-black/80">Start *</label><Input type="datetime-local" required value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></div>
-        <div><label className="text-sm font-medium text-black/80">End *</label><Input type="datetime-local" required value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></div>
+        <DateTimeField label="Start *" required value={form.startTime} onChange={(startTime) => setForm({ ...form, startTime })} />
+        <DateTimeField label="End *" required value={form.endTime} onChange={(endTime) => setForm({ ...form, endTime })} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
