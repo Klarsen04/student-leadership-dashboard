@@ -1,6 +1,7 @@
 "use client";
 
 import { signIn } from "next-auth/react";
+import Link from "next/link";
 import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
@@ -141,9 +142,21 @@ function LoginForm() {
             />
           </div>
           <div>
-            <label htmlFor="password" className="block text-sm font-semibold text-black/60 mb-1.5">
-              Password
-            </label>
+            <div className="flex items-baseline justify-between mb-1.5">
+              <label htmlFor="password" className="block text-sm font-semibold text-black/60">
+                Password
+              </label>
+              {/* Only offered when signing in: on the create-account tab there's
+                  nothing to recover yet. */}
+              {!isRegister && (
+                <Link
+                  href="/forgot-password"
+                  className="text-xs font-semibold text-black/45 hover:text-black transition-colors"
+                >
+                  Forgot password?
+                </Link>
+              )}
+            </div>
             <div className="relative">
               <input
                 id="password"
