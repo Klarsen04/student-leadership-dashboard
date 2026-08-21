@@ -38,7 +38,6 @@ function dayIndices(day: string): number[] {
 function rangeDays(view: EngineView): number {
   switch (view) {
     case "day":
-    case "3day":
     case "5day":
     case "week":
       return 14; // current + neighbouring week
@@ -72,6 +71,11 @@ export function classesToEvents(
     for (const cls of classes) {
       const matches = cls.days.some((d) => dayIndices(d).includes(wd));
       if (!matches) continue;
+
+      // Respect the optional term window: skip days outside [startDate, endDate].
+      const dayKey = day.toISOString().slice(0, 10);
+      if (cls.startDate && dayKey < cls.startDate) continue;
+      if (cls.endDate && dayKey > cls.endDate) continue;
 
       const [sh, sm] = cls.startTime.split(":").map(Number);
       const [eh, em] = cls.endTime.split(":").map(Number);

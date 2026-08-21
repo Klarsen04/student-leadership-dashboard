@@ -1,16 +1,19 @@
 import "./globals.css";
 import { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
-import { Inter, Instrument_Serif, Fredoka } from "next/font/google";
+import { Inter, Instrument_Serif, Fredoka, Caveat, Patrick_Hand } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
 import { SessionProvider } from "@/components/SessionProvider";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Toaster } from "sonner";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const instrumentSerif = Instrument_Serif({ weight: "400", subsets: ["latin"], variable: "--font-instrument-serif" });
 const fredoka = Fredoka({ weight: ["400", "500", "600", "700"], subsets: ["latin"], variable: "--font-fredoka" });
+// Text-box fonts for the planner notebooks (src/lib/planner-ink.ts).
+const caveat = Caveat({ weight: ["400", "600"], subsets: ["latin"], variable: "--font-caveat" });
+const patrickHand = Patrick_Hand({ weight: "400", subsets: ["latin"], variable: "--font-patrick-hand" });
 
 export const metadata: Metadata = {
   title: "Student Leadership OS",
@@ -50,7 +53,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <head>
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
       </head>
-      <body className={`${inter.className} ${instrumentSerif.variable} ${fredoka.variable}`}>
+      <body className={`${inter.className} ${inter.variable} ${instrumentSerif.variable} ${fredoka.variable} ${caveat.variable} ${patrickHand.variable}`}>
         <ThemeProvider attribute="class" defaultTheme="light" forcedTheme="light" enableSystem={false} nonce={nonce}>
           <SessionProvider>{children}</SessionProvider>
           <Toaster richColors position="bottom-right" />

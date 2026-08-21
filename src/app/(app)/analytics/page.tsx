@@ -49,8 +49,8 @@ export default function AnalyticsPage() {
   useEffect(() => {
     setLoading(true);
     Promise.all([
-      fetch("/api/analytics?period=week").then((r) => r.ok ? r.json() : null),
-      fetch("/api/analytics?period=month").then((r) => r.ok ? r.json() : null),
+      fetch(`/api/analytics?period=week&tz=${new Date().getTimezoneOffset()}`).then((r) => r.ok ? r.json() : null),
+      fetch(`/api/analytics?period=month&tz=${new Date().getTimezoneOffset()}`).then((r) => r.ok ? r.json() : null),
     ]).then(([weekData, monthData]) => {
       if (weekData) {
         setData({ ...weekData, daily: monthData?.daily || [] });
@@ -318,7 +318,7 @@ export default function AnalyticsPage() {
 
         {data.daily && data.daily.length > 0 && (
           <Reveal>
-            <ProductivityChart daily={data.daily} />
+            <ProductivityChart daily={data.daily} completed={data.tasksCompleted} pending={data.tasksPending} />
           </Reveal>
         )}
       </div>
@@ -375,10 +375,13 @@ function WellnessBar({ label, value, gradient }: { label: string; value: number;
   );
 }
 
-function ProductivityChart({ daily }: { daily: DailyEntry[] }) {
+function ProductivityChart({ daily, completed, pending }: { daily: DailyEntry[]; completed: number; pending: number }) {
+  // Completion rate of your current tasks — naturally 0–100 (finish everything
+  // and it reads 100%). The arrow still shows the week-over-week trend.
+  const totalTasks = completed + pending;
+  const productivityScore = totalTasks > 0 ? Math.round((completed / totalTasks) * 100) : 0;
   const thisWeek = daily.slice(-7).reduce((sum, d) => sum + d.tasksCompleted, 0);
   const lastWeek = daily.slice(-14, -7).reduce((sum, d) => sum + d.tasksCompleted, 0);
-  const productivityScore = lastWeek > 0 ? Math.round((thisWeek / lastWeek) * 100) : thisWeek > 0 ? 100 : 0;
   const trending = thisWeek >= lastWeek;
 
   const chartData = daily.map((d) => ({

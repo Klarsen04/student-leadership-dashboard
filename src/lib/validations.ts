@@ -9,6 +9,7 @@ export const createTaskSchema = z.object({
   hours: z.number().min(0).max(24).nullable().optional(),
   recurrence: z.enum(["daily", "weekdays", "weekly", "biweekly", "monthly"]).nullable().optional(),
   recurrenceEnd: z.string().nullable().optional(),
+  parentTaskId: z.string().nullable().optional(),
 });
 
 export const updateTaskSchema = z.object({
@@ -22,6 +23,7 @@ export const updateTaskSchema = z.object({
   hours: z.number().min(0).max(24).nullable().optional(),
   recurrence: z.enum(["daily", "weekdays", "weekly", "biweekly", "monthly"]).nullable().optional(),
   recurrenceEnd: z.string().nullable().optional(),
+  parentTaskId: z.string().nullable().optional(),
 });
 
 export const createPersonSchema = z.object({
@@ -57,7 +59,9 @@ export const createEventSchema = z.object({
   startTime: z.string().min(1),
   endTime: z.string().min(1),
   category: z.string().max(50).default("Personal"),
-  role: z.string().max(50).default("Personal"),
+  // Empty = no filter tag. A non-empty default would make untagged events
+  // phantom-match a filter chip of the same name.
+  role: z.string().max(50).default(""),
   location: z.string().max(200).optional(),
   isLed: z.boolean().default(false),
   actualMinutes: z.number().min(0).max(1440).nullable().optional(),
@@ -66,6 +70,9 @@ export const createEventSchema = z.object({
 export const createReflectionSchema = z.object({
   type: z.string().min(1).max(50),
   date: z.string().optional(),
+  // Client's Date#getTimezoneOffset() so the one-per-period guard uses the
+  // user's local day/week/month, not the server's (UTC on Vercel).
+  tzOffset: z.number().int().min(-900).max(900).optional(),
   content: z.string().min(1).max(10000),
   mood: z.number().min(1).max(10).optional(),
   energy: z.number().min(1).max(10).optional(),

@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Eye, EyeOff } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -48,34 +47,32 @@ export function FocusOverlay({ isActive, currentHour, startHour, hourHeight }: F
 
   return (
     <AnimatePresence>
-      {isActive && (
-        <>
-          <motion.div
-            className="absolute left-0 right-0 top-0 bg-black/10 pointer-events-none z-20 rounded-t-lg"
-            style={{ height: topDimHeight }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-          />
-          <motion.div
-            className="absolute left-0 right-0 bottom-0 bg-black/10 pointer-events-none z-20 rounded-b-lg"
-            style={{ top: bottomStart }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-          />
-          <motion.div
-            className="absolute left-0 right-0 pointer-events-none z-20 border-y-2 border-purple-300/50"
-            style={{ top: topDimHeight, height: windowHeight }}
-            initial={{ opacity: 0, scaleY: 0.8 }}
-            animate={{ opacity: 1, scaleY: 1 }}
-            exit={{ opacity: 0, scaleY: 0.8 }}
-            transition={{ duration: 0.3 }}
-          />
-        </>
-      )}
+      <>
+        <motion.div
+          className="absolute left-0 right-0 top-0 bg-black/10 pointer-events-none z-20 rounded-t-lg"
+          style={{ height: topDimHeight }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.3 }}
+        />
+        <motion.div
+          className="absolute left-0 right-0 bottom-0 bg-black/10 pointer-events-none z-20 rounded-b-lg"
+          style={{ top: bottomStart }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.3 }}
+        />
+        <motion.div
+          className="absolute left-0 right-0 pointer-events-none z-20 border-y-2 border-purple-300/50"
+          style={{ top: topDimHeight, height: windowHeight }}
+          initial={{ opacity: 0, scaleY: 0.8 }}
+          animate={{ opacity: 1, scaleY: 1 }}
+          exit={{ opacity: 0, scaleY: 0.8 }}
+          transition={{ duration: 0.3 }}
+        />
+      </>
     </AnimatePresence>
   );
 }

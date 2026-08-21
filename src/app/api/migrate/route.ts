@@ -58,6 +58,59 @@ export async function POST() {
       await prisma.$executeRawUnsafe(`ALTER TABLE "Reflection" ADD COLUMN "questions" TEXT`);
     }
 
+    // PlannerInk: handwritten strokes for the /planner notebook pages,
+    // keyed per planner so multiple notebooks keep separate ink.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "PlannerInk" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "plannerId" TEXT NOT NULL DEFAULT 'collanote-2026',
+        "page" INTEGER NOT NULL,
+        "strokes" TEXT NOT NULL,
+        "userId" TEXT NOT NULL,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL,
+        CONSTRAINT "PlannerInk_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+      )
+    `);
+    // If the table predates multi-planner support, add the column and swap the
+    // unique index to include plannerId.
+    const inkCols = await prisma.$queryRawUnsafe<any[]>(`PRAGMA table_info(PlannerInk)`);
+    if (!inkCols.map((c: any) => c.name).includes("plannerId")) {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "PlannerInk" ADD COLUMN "plannerId" TEXT NOT NULL DEFAULT 'collanote-2026'`);
+    }
+    await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "PlannerInk_userId_page_key"`);
+    await prisma.$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "PlannerInk_userId_plannerId_page_key" ON "PlannerInk"("userId", "plannerId", "page")
+    `);
+
+    // UserData: per-account JSON documents that used to live only in the browser
+    // (sub-calendars, classes, roles, the user's notebooks, page indexes,
+    // stickers, custom templates). Without this table a second device signs in
+    // to an empty calendar and an empty notebook shelf.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "UserData" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "scope" TEXT NOT NULL,
+        "key" TEXT NOT NULL,
+        "value" TEXT NOT NULL,
+        "deletedAt" DATETIME,
+        "userId" TEXT NOT NULL,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL,
+        CONSTRAINT "UserData_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+      )
+    `);
+    const dataCols = await prisma.$queryRawUnsafe<any[]>(`PRAGMA table_info(UserData)`);
+    if (!dataCols.map((c: any) => c.name).includes("deletedAt")) {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "UserData" ADD COLUMN "deletedAt" DATETIME`);
+    }
+    await prisma.$executeRawUnsafe(
+      `CREATE UNIQUE INDEX IF NOT EXISTS "UserData_userId_scope_key_key" ON "UserData"("userId", "scope", "key")`
+    );
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS "UserData_userId_scope_idx" ON "UserData"("userId", "scope")`
+    );
+
     return NextResponse.json({ success: true, message: "Migration complete" });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

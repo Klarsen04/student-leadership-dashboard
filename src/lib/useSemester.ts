@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useSyncedSetting, type SettingSpec } from "@/lib/synced-setting";
 
 interface SemesterInfo {
   name: string;
@@ -8,6 +8,9 @@ interface SemesterInfo {
   totalWeeks: number;
   isExamPeriod: boolean;
   daysUntilEnd: number;
+  /** Where "now" sits relative to the term: before it starts / during / after. */
+  phase: "before" | "active" | "after";
+  daysUntilStart: number;
 }
 
 const STORAGE_KEY = "leadership-os-semester";
@@ -42,22 +45,22 @@ function getDefaultSemester(): SemesterConfig {
   }
 }
 
-function getInitialConfig(): SemesterConfig {
-  if (typeof window === "undefined") return getDefaultSemester();
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) return JSON.parse(stored);
-  } catch {}
-  return getDefaultSemester();
-}
+// Term dates follow the account (src/lib/synced-setting.ts). The fallback is
+// computed rather than constant — it guesses the current term from today's date —
+// so it's resolved once here instead of on every read.
+const SEMESTER: SettingSpec<SemesterConfig> = {
+  key: STORAGE_KEY,
+  fallback: getDefaultSemester(),
+  revive: (raw) => {
+    const c = raw as Partial<SemesterConfig> | null;
+    return c && typeof c.startDate === "string" && typeof c.endDate === "string"
+      ? { ...getDefaultSemester(), ...c }
+      : null;
+  },
+};
 
 export function useSemester() {
-  const [config, setConfig] = useState<SemesterConfig>(getInitialConfig);
-
-  const updateSemester = (newConfig: SemesterConfig) => {
-    setConfig(newConfig);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newConfig));
-  };
+  const { value: config, setValue: updateSemester } = useSyncedSetting(SEMESTER);
 
   const getInfo = (): SemesterInfo => {
     const now = new Date();
@@ -65,13 +68,26 @@ export function useSemester() {
     const end = new Date(config.endDate);
     const examStart = new Date(config.examStart);
 
-    const totalMs = end.getTime() - start.getTime();
-    const elapsedMs = now.getTime() - start.getTime();
-    const totalWeeks = Math.ceil(totalMs / (7 * 24 * 60 * 60 * 1000));
-    const weekNumber = Math.max(1, Math.min(totalWeeks, Math.ceil(elapsedMs / (7 * 24 * 60 * 60 * 1000))));
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const totalWeeks = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / WEEK_MS));
 
-    const daysUntilEnd = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
-    const isExamPeriod = now >= examStart && now <= end;
+    // Phase: before the term begins, during it, or after it ends. Week counting
+    // is only meaningful while active — before the start we show a countdown, not
+    // "Week 1", so a dashboard opened over the break isn't misleading.
+    const phase: "before" | "active" | "after" =
+      now < start ? "before" : now > end ? "after" : "active";
+
+    const weekNumber =
+      phase === "active"
+        ? Math.max(1, Math.min(totalWeeks, Math.ceil((now.getTime() - start.getTime()) / WEEK_MS)))
+        : phase === "after"
+        ? totalWeeks
+        : 0;
+
+    const daysUntilStart = Math.max(0, Math.ceil((start.getTime() - now.getTime()) / DAY_MS));
+    const daysUntilEnd = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / DAY_MS));
+    const isExamPeriod = phase === "active" && now >= examStart;
 
     return {
       name: config.name,
@@ -79,6 +95,8 @@ export function useSemester() {
       totalWeeks,
       isExamPeriod,
       daysUntilEnd,
+      phase,
+      daysUntilStart,
     };
   };
 

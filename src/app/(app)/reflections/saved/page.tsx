@@ -63,11 +63,11 @@ export default function ReflectionSavedPage() {
 
         <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
           <Link
-            href="/"
+            href="/reflections"
             className="inline-flex items-center justify-center gap-2 min-h-[44px] px-8 py-3 rounded-full text-black font-semibold shadow-md hover:brightness-105 hover:-translate-y-0.5 active:translate-y-0 transition-all"
             style={{ background: GRASS, ...MARKER }}
           >
-            <ArrowLeft className="w-5 h-5" /> Return to Home Page
+            <ArrowLeft className="w-5 h-5" /> Back to Reflections
           </Link>
           <Link
             href="/reflections/history"

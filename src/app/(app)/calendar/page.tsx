@@ -8,13 +8,11 @@ import {
   isSameDay,
   startOfMonth,
   endOfMonth,
-  eachDayOfInterval,
-  getDay,
   isToday as isDateToday,
   isTomorrow,
   isThisWeek,
 } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, Trash2, Pencil, X, BookOpen, Flame, AlertTriangle, Clock, MapPin, User, GraduationCap, Calendar as CalendarIcon } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Trash2, Pencil, X, BookOpen, Flame, Clock, MapPin, User, GraduationCap, Calendar as CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,34 +24,30 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { useCalendars, SubCalendar } from "@/lib/useCalendars";
+import { useCalendars, SubCalendar, CalendarTag, calHex } from "@/lib/useCalendars";
+import { useSyncedSetting, type SettingSpec } from "@/lib/synced-setting";
 import { CalendarEngineHost } from "@/components/calendar/engines";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { BlurFade } from "@/components/ui/blur-fade";
 import { NumberTicker } from "@/components/ui/number-ticker";
-import { ShineBorder } from "@/components/ui/shine-border";
 import { AnimatedTabs } from "@/components/ui/animated-tabs";
 import { ActivityRing } from "@/components/ui/activity-ring";
 import { AnimatedGradientText } from "@/components/ui/gradient-text";
 import { ClickSpark } from "@/components/ui/click-spark";
 import { ParticlesBg } from "@/components/ui/particles-bg";
-import { Marquee } from "@/components/ui/marquee";
 import { NoiseOverlay } from "@/components/ui/noise-overlay";
 import { GlowCard } from "@/components/ui/glow-card";
 import { AuroraGlow } from "@/components/ui/aurora-glow";
 import { MiniCalendar } from "@/components/ui/mini-calendar";
 import { UnscheduledPanel } from "@/components/ui/unscheduled-panel";
 import { KeyboardShortcuts } from "@/components/ui/keyboard-shortcuts";
-import { TimeTracker } from "@/components/ui/time-tracker";
 import { WeekStats } from "@/components/ui/week-stats";
 import { FocusSuggestion } from "@/components/ui/focus-suggestion";
 import { CommandPalette } from "@/components/ui/command-palette";
-import { TaskDetailPanel } from "@/components/ui/task-detail-panel";
 import { ScheduleHeatmap } from "@/components/ui/schedule-heatmap";
 import { ExportButton } from "@/components/ui/export-button";
-import { QuickNote } from "@/components/ui/quick-note";
 import { FocusModeToggle } from "@/components/ui/focus-mode";
-import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { useIntroCalEntrance } from "@/components/home/intro-cal-entrance";
 
 interface CalendarEvent {
@@ -81,6 +75,10 @@ interface ClassBlock {
   /** Sub-calendar this class belongs to (matches SubCalendar.name). Optional for
    *  legacy stored classes; backfilled to "Personal" on load. */
   calendar?: string;
+  /** Optional term window: the class only repeats on/after startDate and on/before
+   *  endDate (yyyy-MM-dd). Empty = repeats indefinitely (legacy behaviour). */
+  startDate?: string;
+  endDate?: string;
 }
 
 interface Task {
@@ -91,126 +89,19 @@ interface Task {
   priority: string;
 }
 
-type View = "day" | "3day" | "5day" | "week" | "month";
+type View = "day" | "5day" | "week" | "month";
 
 const CLASS_COLORS = [
   "#f9a8d4", "#a5b4fc", "#86efac", "#fcd34d", "#fdba74",
   "#c4b5fd", "#67e8f9", "#fca5a5", "#bef264", "#d8b4fe",
 ];
 
-const MONTH_THEMES: Record<number, { bg: string; accent: string; name: string }> = {
-  0: { bg: "#e8f4fd", accent: "#93c5fd", name: "January" },
-  1: { bg: "#fce7f3", accent: "#f9a8d4", name: "February" },
-  2: { bg: "#ecfdf5", accent: "#6ee7b7", name: "March" },
-  3: { bg: "#eff6ff", accent: "#93c5fd", name: "April" },
-  4: { bg: "#fdf2f8", accent: "#fbcfe8", name: "May" },
-  5: { bg: "#fefce8", accent: "#fde047", name: "June" },
-  6: { bg: "#fef2f2", accent: "#fca5a5", name: "July" },
-  7: { bg: "#fffbeb", accent: "#fbbf24", name: "August" },
-  8: { bg: "#fff7ed", accent: "#fdba74", name: "September" },
-  9: { bg: "#fef3c7", accent: "#f59e0b", name: "October" },
-  10: { bg: "#fef9c3", accent: "#a3e635", name: "November" },
-  11: { bg: "#f0fdf4", accent: "#4ade80", name: "December" },
-};
-
-interface ScheduleConflict {
-  class1: ClassBlock;
-  class2: ClassBlock;
-  day: string;
-  overlapStart: string;
-  overlapEnd: string;
-}
-
 function getMinutesFromTime(time: string): number {
   const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
 }
 
-function minutesToTimeStr(mins: number): string {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  const period = h >= 12 ? "PM" : "AM";
-  const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
-  return m > 0 ? `${h12}:${m.toString().padStart(2, "0")} ${period}` : `${h12} ${period}`;
-}
 
-function findConflicts(classes: ClassBlock[]): ScheduleConflict[] {
-  const conflicts: ScheduleConflict[] = [];
-  const CLASS_DAY_MAP: Record<string, number[]> = {
-    MWF: [1, 3, 5], TuTh: [2, 4], MW: [1, 3], TuThF: [2, 4, 5],
-    Mon: [1], Tue: [2], Wed: [3], Thu: [4], Fri: [5], Sat: [6], Sun: [0],
-  };
-  const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-  for (let i = 0; i < classes.length; i++) {
-    for (let j = i + 1; j < classes.length; j++) {
-      const a = classes[i], b = classes[j];
-      const aDays = a.days.flatMap(d => CLASS_DAY_MAP[d] || []);
-      const bDays = b.days.flatMap(d => CLASS_DAY_MAP[d] || []);
-      const sharedDays = aDays.filter(d => bDays.includes(d));
-      if (sharedDays.length > 0) {
-        const aStart = getMinutesFromTime(a.startTime), aEnd = getMinutesFromTime(a.endTime);
-        const bStart = getMinutesFromTime(b.startTime), bEnd = getMinutesFromTime(b.endTime);
-        if (aStart < bEnd && bStart < aEnd) {
-          const overlapStartMins = Math.max(aStart, bStart);
-          const overlapEndMins = Math.min(aEnd, bEnd);
-          sharedDays.forEach(d => conflicts.push({
-            class1: a,
-            class2: b,
-            day: DAY_LABELS[d],
-            overlapStart: minutesToTimeStr(overlapStartMins),
-            overlapEnd: minutesToTimeStr(overlapEndMins),
-          }));
-        }
-      }
-    }
-  }
-  return conflicts;
-}
-
-function getNextClass(classes: ClassBlock[]): { cls: ClassBlock; minutesUntil: number } | null {
-  if (classes.length === 0) return null;
-  const now = new Date();
-  const dow = now.getDay();
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  const CLASS_DAY_MAP: Record<string, number[]> = {
-    MWF: [1, 3, 5], TuTh: [2, 4], MW: [1, 3], TuThF: [2, 4, 5],
-    Mon: [1], Tue: [2], Wed: [3], Thu: [4], Fri: [5], Sat: [6], Sun: [0],
-  };
-
-  const todayClasses = classes
-    .filter(cls => cls.days.some(d => (CLASS_DAY_MAP[d] || []).includes(dow)))
-    .filter(cls => getMinutesFromTime(cls.startTime) > nowMinutes)
-    .sort((a, b) => getMinutesFromTime(a.startTime) - getMinutesFromTime(b.startTime));
-
-  if (todayClasses.length > 0) {
-    const cls = todayClasses[0];
-    return { cls, minutesUntil: getMinutesFromTime(cls.startTime) - nowMinutes };
-  }
-
-  for (let offset = 1; offset <= 7; offset++) {
-    const targetDow = (dow + offset) % 7;
-    const nextDayClasses = classes
-      .filter(cls => cls.days.some(d => (CLASS_DAY_MAP[d] || []).includes(targetDow)))
-      .sort((a, b) => getMinutesFromTime(a.startTime) - getMinutesFromTime(b.startTime));
-    if (nextDayClasses.length > 0) {
-      const cls = nextDayClasses[0];
-      const minutesUntil = (offset * 24 * 60) - nowMinutes + getMinutesFromTime(cls.startTime);
-      return { cls, minutesUntil };
-    }
-  }
-  return null;
-}
-
-function formatCountdown(minutes: number): string {
-  if (minutes < 60) return `${minutes}min`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h < 24) return m > 0 ? `${h}h ${m}m` : `${h}h`;
-  const d = Math.floor(h / 24);
-  const rh = h % 24;
-  return rh > 0 ? `${d}d ${rh}h` : `${d}d`;
-}
 
 function findGaps(classes: ClassBlock[], day: Date): { start: number; end: number }[] {
   const dow = day.getDay();
@@ -234,24 +125,19 @@ function findGaps(classes: ClassBlock[], day: Date): { start: number; end: numbe
   return gaps;
 }
 
-const CLASSES_STORAGE_KEY = "leadership-os-classes";
+// The class schedule follows the account, so a timetable entered on a laptop
+// shows up on a tablet too (src/lib/synced-setting.ts).
+const CLASSES: SettingSpec<ClassBlock[]> = {
+  key: "leadership-os-classes",
+  fallback: [],
+  revive: (raw) =>
+    Array.isArray(raw)
+      // Backfill `calendar` for classes saved before classes could be assigned to
+      // a sub-calendar; default them to the built-in "Personal" calendar.
+      ? raw.map((c: any) => ({ ...c, calendar: c.calendar || "Personal" }))
+      : null,
+};
 
-function getStoredClasses(): ClassBlock[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = localStorage.getItem(CLASSES_STORAGE_KEY);
-    if (!stored) return [];
-    const parsed = JSON.parse(stored);
-    if (!Array.isArray(parsed)) return [];
-    // Backfill `calendar` for classes saved before classes could be assigned to
-    // a sub-calendar; default them to the built-in "Personal" calendar.
-    return parsed.map((c: any) => ({ ...c, calendar: c.calendar || "Personal" }));
-  } catch { return []; }
-}
-
-function saveClasses(classes: ClassBlock[]) {
-  localStorage.setItem(CLASSES_STORAGE_KEY, JSON.stringify(classes));
-}
 
 /* ---------- Seasonal SVG Illustrations ---------- */
 function SeasonalIcon({ month, size = 32 }: { month: number; size?: number }) {
@@ -362,12 +248,13 @@ export default function CalendarPage() {
   const [defaultEventTime, setDefaultEventTime] = useState<{ start: string; end: string } | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [editingEvent, setEditingEvent] = useState(false);
-  const [classes, setClasses] = useState<ClassBlock[]>([]);
+  const { value: classes, setValue: saveClasses } = useSyncedSetting(CLASSES);
   const [showAddClass, setShowAddClass] = useState(false);
   const [selectedCalendar, setSelectedCalendar] = useState<string | null>(null);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [showAddTag, setShowAddTag] = useState(false);
   const [newTagName, setNewTagName] = useState("");
+  const [newTagColor, setNewTagColor] = useState<string | null>(null);
   const [tagToDelete, setTagToDelete] = useState<string | null>(null);
   const [showAddCalendar, setShowAddCalendar] = useState(false);
   const [newCalName, setNewCalName] = useState("");
@@ -376,7 +263,8 @@ export default function CalendarPage() {
   const [selectedClass, setSelectedClass] = useState<ClassBlock | null>(null);
   const [editingClass, setEditingClass] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
-  const { calendars, addCalendar, deleteCalendar, addTag, deleteTag, getCalendarColor, getTagsForCalendar, COLOR_OPTIONS } = useCalendars();
+  const { calendars, addCalendar, deleteCalendar, updateCalendar, addTag, setTagColor, deleteTag, getCalendarColor, getTagsForCalendar, COLOR_OPTIONS } = useCalendars();
+  const [editCal, setEditCal] = useState<SubCalendar | null>(null);
 
   const handleTimeSlotClick = (date: Date, hour: number) => {
     const startDate = new Date(date);
@@ -417,10 +305,6 @@ export default function CalendarPage() {
     }
   };
 
-  useEffect(() => { setClasses(getStoredClasses()); }, []);
-
-  const nextUp = useMemo(() => getNextClass(classes), [classes]);
-  const conflicts = useMemo(() => findConflicts(classes), [classes]);
   const totalCredits = useMemo(() => classes.reduce((sum, c) => sum + c.creditHours, 0), [classes]);
   const weeklyHours = useMemo(() => {
     const CLASS_DAY_MAP: Record<string, number[]> = {
@@ -451,9 +335,6 @@ export default function CalendarPage() {
     if (view === "day") {
       start = new Date(currentDate); start.setHours(0, 0, 0, 0);
       end = new Date(currentDate); end.setHours(23, 59, 59, 999);
-    } else if (view === "3day") {
-      start = new Date(currentDate); start.setHours(0, 0, 0, 0);
-      end = addDays(start, 3);
     } else if (view === "5day") {
       start = startOfWeek(currentDate, { weekStartsOn: 1 });
       end = addDays(start, 5);
@@ -502,7 +383,6 @@ export default function CalendarPage() {
 
   const navigate = (dir: number) => {
     if (view === "day") setCurrentDate(addDays(currentDate, dir));
-    else if (view === "3day") setCurrentDate(addDays(currentDate, dir * 3));
     else if (view === "5day") setCurrentDate(addDays(currentDate, dir * 5));
     else if (view === "week") setCurrentDate(addDays(currentDate, dir * 7));
     else setCurrentDate(addDays(currentDate, dir * 30));
@@ -514,8 +394,8 @@ export default function CalendarPage() {
     if (!newTagName.trim()) return;
     const cal = selectedCalendar ? calendars.find((c) => c.name === selectedCalendar) : calendars[0];
     if (!cal) return;
-    const success = addTag(cal.id, newTagName.trim());
-    if (success) { toast.success(`Added "${newTagName.trim()}" tag`); setNewTagName(""); setShowAddTag(false); }
+    const success = addTag(cal.id, newTagName.trim(), newTagColor || cal.color);
+    if (success) { toast.success(`Added "${newTagName.trim()}" tag`); setNewTagName(""); setNewTagColor(null); setShowAddTag(false); }
     else { toast.error("Tag already exists"); }
   };
 
@@ -527,7 +407,7 @@ export default function CalendarPage() {
       for (const ev of matchingEvents) {
         try { await fetch("/api/calendar", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: ev.id, role: "" }) }); } catch {}
       }
-      const cal = selectedCalendar ? calendars.find((c) => c.name === selectedCalendar) : calendars.find((c) => c.tags.includes(tagToDelete!));
+      const cal = selectedCalendar ? calendars.find((c) => c.name === selectedCalendar) : calendars.find((c) => c.tags.some((t) => t.name === tagToDelete));
       if (cal) deleteTag(cal.id, tagToDelete);
       if (activeTag === tagToDelete) setActiveTag(null);
       setEvents((prev) => prev.map((e) => e.role === tagToDelete ? { ...e, role: "" } : e));
@@ -592,26 +472,20 @@ export default function CalendarPage() {
   }, [tasks]);
 
   const addClass = (cls: ClassBlock) => {
-    const updated = [...classes, cls];
-    setClasses(updated);
-    saveClasses(updated);
+    saveClasses([...classes, cls]);
     toast.success("Class added!");
     setShowAddClass(false);
   };
 
   const updateClass = (cls: ClassBlock) => {
-    const updated = classes.map((c) => (c.id === cls.id ? cls : c));
-    setClasses(updated);
-    saveClasses(updated);
+    saveClasses(classes.map((c) => (c.id === cls.id ? cls : c)));
     toast.success("Class updated!");
     setEditingClass(false);
     setSelectedClass(null);
   };
 
   const deleteClass = (id: string) => {
-    const updated = classes.filter((c) => c.id !== id);
-    setClasses(updated);
-    saveClasses(updated);
+    saveClasses(classes.filter((c) => c.id !== id));
     toast.success("Class removed");
   };
 
@@ -645,7 +519,6 @@ export default function CalendarPage() {
               </h1>
               <p className="text-black/50 text-sm">
                 {view === "day" ? format(currentDate, "EEEE, MMMM d")
-                  : view === "3day" ? `${format(currentDate, "MMM d")} - ${format(addDays(currentDate, 2), "MMM d")}`
                   : view === "5day" ? "Class Schedule View"
                   : view === "week" ? `Week of ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), "MMM d")}`
                   : format(currentDate, "MMMM yyyy")}
@@ -664,7 +537,6 @@ export default function CalendarPage() {
               </Button>
             </motion.div>
             <ExportButton onExport={(format) => toast.success(`Exporting as ${format}...`)} />
-            <QuickNote onSave={(note) => toast.success(`Note saved: "${note.slice(0, 30)}${note.length > 30 ? "..." : ""}"`)} />
           </div>
         </div>
 
@@ -674,7 +546,6 @@ export default function CalendarPage() {
             className="intro-cal-tabs"
             tabs={[
               { id: "day", label: "Day" },
-              { id: "3day", label: "3-Day" },
               { id: "5day", label: "5-Day" },
               { id: "week", label: "Week" },
               { id: "month", label: "Month" },
@@ -726,19 +597,26 @@ export default function CalendarPage() {
           <button onClick={() => setSelectedCalendar(null)} className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${selectedCalendar === null ? "bg-black text-white" : "bg-black/5 text-black/60 hover:bg-black/10"}`}>
             All
           </button>
-          {calendars.map((cal) => (
-            <div key={cal.id} className="group relative flex items-center">
-              <button onClick={() => setSelectedCalendar(selectedCalendar === cal.name ? null : cal.name)} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${selectedCalendar === cal.name ? "ring-2 ring-offset-1 ring-black/20 bg-white text-black shadow-sm" : "bg-black/5 text-black/60 hover:bg-black/10"}`}>
-                <div className={`w-2 h-2 rounded-full ${cal.color}`} />
-                {cal.name}
-              </button>
-              {cal.id !== "default" && (
-                <button onClick={(e) => { e.stopPropagation(); setCalendarToDelete(cal.id); }} className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-400 text-white items-center justify-center text-[8px] hidden group-hover:flex hover:bg-red-500 transition-colors">
-                  <X className="w-2.5 h-2.5" />
+          {calendars.map((cal) => {
+            const active = selectedCalendar === cal.name;
+            const hex = calHex(cal.color);
+            return (
+              <div key={cal.id} className="group relative flex items-center">
+                <button
+                  onClick={() => setSelectedCalendar(active ? null : cal.name)}
+                  className="px-2.5 py-1 rounded-full text-xs font-semibold transition-all hover:-translate-y-px"
+                  style={active
+                    ? { background: hex, color: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.18)" }
+                    : { background: `${hex}22`, color: "#1a1a1a" }}
+                >
+                  {cal.name}
                 </button>
-              )}
-            </div>
-          ))}
+                <button onClick={(e) => { e.stopPropagation(); setEditCal(cal); }} className="ml-0.5 w-4 h-4 rounded-full text-black/40 hover:text-black items-center justify-center hidden group-hover:flex transition-colors" title="Edit calendar">
+                  <Pencil className="w-2.5 h-2.5" />
+                </button>
+              </div>
+            );
+          })}
           {showAddCalendar ? (
             <div className="flex items-center gap-1">
               <input autoFocus value={newCalName} onChange={(e) => setNewCalName(e.target.value)} placeholder="Name..." className="h-6 w-24 px-2 text-xs border border-black/20 rounded-full bg-white text-black focus:outline-none focus:ring-1 focus:ring-black/30" onKeyDown={(e) => { if (e.key === "Enter" && newCalName.trim()) { addCalendar(newCalName.trim(), newCalColor); setNewCalName(""); setShowAddCalendar(false); } }} onBlur={() => { if (!newCalName) setShowAddCalendar(false); }} />
@@ -759,22 +637,36 @@ export default function CalendarPage() {
         {(selectedCalendar || currentTags.length > 0) && (
           <div className="flex gap-2 flex-wrap items-center mt-2">
             <span className="text-[11px] font-medium text-black/40">Filters:</span>
-            {currentTags.map((tag) => (
-              <div key={tag} className="group relative">
-                <button onClick={() => setActiveTag(activeTag === tag ? null : tag)} className={`px-2 py-0.5 rounded-full text-[11px] font-medium transition-all ${activeTag === tag ? "bg-black/10 text-black" : "bg-black/5 text-black/50 hover:bg-black/10"}`}>
-                  {tag}
-                </button>
-                <button onClick={() => handleDeleteTag(tag)} className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-400 text-white items-center justify-center text-[7px] hidden group-hover:flex">
-                  <X className="w-2 h-2" />
-                </button>
-              </div>
-            ))}
+            {currentTags.map((tag) => {
+              // Each filter chip carries its own colour (Outlook-style tags).
+              const hex = calHex(tag.color);
+              const on = activeTag === tag.name;
+              return (
+                <div key={tag.name} className="group relative">
+                  <button
+                    onClick={() => setActiveTag(on ? null : tag.name)}
+                    className="px-2 py-0.5 rounded-full text-[11px] font-semibold transition-all"
+                    style={on ? { background: hex, color: "#fff" } : { background: `${hex}22`, color: "#1a1a1a" }}
+                  >
+                    {tag.name}
+                  </button>
+                  <button onClick={() => handleDeleteTag(tag.name)} className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-400 text-white items-center justify-center text-[7px] hidden group-hover:flex">
+                    <X className="w-2 h-2" />
+                  </button>
+                </div>
+              );
+            })}
             {currentTags.length === 0 && !showAddTag && (
               <span className="text-[11px] text-black/30">No filters yet</span>
             )}
             {selectedCalendar && (showAddTag ? (
               <form onSubmit={(e) => { e.preventDefault(); handleAddTag(); }} className="flex items-center gap-1">
-                <input autoFocus value={newTagName} onChange={(e) => setNewTagName(e.target.value)} placeholder="Filter..." className="h-5 w-20 px-2 text-[11px] border border-black/20 rounded-full bg-white text-black focus:outline-none" onBlur={() => { if (!newTagName) setShowAddTag(false); }} />
+                <input autoFocus value={newTagName} onChange={(e) => setNewTagName(e.target.value)} placeholder="Filter..." className="h-5 w-20 px-2 text-[11px] border border-black/20 rounded-full bg-white text-black focus:outline-none" onBlur={() => { if (!newTagName) { setShowAddTag(false); setNewTagColor(null); } }} />
+                <div className="flex gap-0.5">
+                  {COLOR_OPTIONS.slice(0, 6).map((c) => (
+                    <button key={c} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setNewTagColor(c)} className={`w-3.5 h-3.5 rounded-full ${c} ${newTagColor === c ? "ring-2 ring-offset-1 ring-black/30" : ""}`} />
+                  ))}
+                </div>
               </form>
             ) : (
               <button onClick={() => setShowAddTag(true)} className="w-5 h-5 rounded-full border border-dashed border-black/20 flex items-center justify-center text-black/40 hover:border-black/40 hover:text-black transition-colors">
@@ -784,69 +676,6 @@ export default function CalendarPage() {
           </div>
         )}
       </motion.header>
-
-      {/* Infinite marquee ticker */}
-      {classes.length > 0 && (
-        <div className="max-w-7xl mx-auto mb-3 overflow-hidden rounded-xl bg-black/[0.02] border border-black/5">
-          <Marquee speed={25} pauseOnHover className="py-2">
-            {classes.map((cls) => (
-              <span key={cls.id} className="flex items-center gap-2 px-4 text-xs text-black/50">
-                <span className="w-2 h-2 rounded-full" style={{ background: cls.color }} />
-                <span className="font-medium text-black/70">{cls.title}</span>
-                <span>·</span>
-                <span>{cls.days.join("/")}</span>
-                <span>·</span>
-                <span>{cls.startTime}–{cls.endTime}</span>
-              </span>
-            ))}
-          </Marquee>
-        </div>
-      )}
-
-      {/* Next Up Banner + Conflicts */}
-      <div className="max-w-7xl mx-auto mb-4 space-y-2">
-        {nextUp && (
-          <BlurFade delay={0.1} duration={0.5}>
-            <div className="flex items-center gap-4 px-4 py-3 rounded-2xl border border-black/5 shadow-sm relative overflow-hidden" style={{ background: "linear-gradient(135deg, #FFFAF5 0%, #FFF3D6 100%)" }}>
-              <ShineBorder shineColor={[nextUp.cls.color, "#FFB400", nextUp.cls.color]} duration={8} borderWidth={1} />
-              <div className="absolute inset-0 opacity-[0.04]" style={{ background: `linear-gradient(90deg, ${nextUp.cls.color} 0%, transparent 60%)` }} />
-              <motion.div
-                className="relative w-10 h-10 rounded-xl flex items-center justify-center shadow-sm"
-                style={{ background: nextUp.cls.color }}
-                animate={{ scale: [1, 1.05, 1] }}
-                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-              >
-                <GraduationCap className="w-5 h-5 text-white" />
-              </motion.div>
-              <div className="relative flex-1 min-w-0">
-                <p className="text-[10px] uppercase tracking-wider text-black/40 font-semibold">Next Up</p>
-                <p className="text-sm font-bold text-black truncate">{nextUp.cls.title}</p>
-                {nextUp.cls.professor && (
-                  <p className="text-[11px] text-black/40 truncate">{nextUp.cls.professor}</p>
-                )}
-              </div>
-              <div className="relative flex items-center gap-3 text-xs text-black/60 shrink-0">
-                {nextUp.cls.location && (
-                  <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-black/[0.03]">
-                    <MapPin className="w-3 h-3 text-black/40" />{nextUp.cls.location}
-                  </span>
-                )}
-                <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-black/[0.03]">
-                  <Clock className="w-3 h-3 text-black/40" />{nextUp.cls.startTime}
-                </span>
-                <motion.span
-                  className="px-2.5 py-1 rounded-full font-bold text-xs text-white shadow-sm"
-                  style={{ background: nextUp.cls.color }}
-                  animate={{ opacity: [1, 0.7, 1] }}
-                  transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                >
-                  {formatCountdown(nextUp.minutesUntil)}
-                </motion.span>
-              </div>
-            </div>
-          </BlurFade>
-        )}
-      </div>
 
       {/* Focus Suggestion */}
       {(view === "week" || view === "5day") && (
@@ -890,6 +719,9 @@ export default function CalendarPage() {
                         startTime: ev.startTime,
                         endTime: ev.endTime,
                         category: selectedCalendar || "Personal",
+                        // File the event under the active filter tag, so it shows
+                        // up in the view it was created from (Outlook-style tags).
+                        role: activeTag || "",
                       }),
                     });
                     fetchEvents();
@@ -1019,7 +851,7 @@ export default function CalendarPage() {
             <DialogTitle>Add Event</DialogTitle>
             <DialogDescription>Create a new calendar event</DialogDescription>
           </DialogHeader>
-          <EventForm calendars={calendars} defaultStartTime={defaultEventTime?.start} defaultEndTime={defaultEventTime?.end} onSaved={() => { setShowAdd(false); setDefaultEventTime(null); fetchEvents(); }} onCancel={() => { setShowAdd(false); setDefaultEventTime(null); }} />
+          <EventForm calendars={calendars} defaultCalendar={selectedCalendar || undefined} defaultTag={activeTag || undefined} defaultStartTime={defaultEventTime?.start} defaultEndTime={defaultEventTime?.end} onSaved={() => { setShowAdd(false); setDefaultEventTime(null); fetchEvents(); }} onCancel={() => { setShowAdd(false); setDefaultEventTime(null); }} />
         </DialogContent>
       </Dialog>
 
@@ -1139,6 +971,21 @@ export default function CalendarPage() {
         </DialogContent>
       </Dialog>
 
+      {editCal && (
+        <EditCalendarDialog
+          key={editCal.id}
+          cal={editCal}
+          calendars={calendars}
+          colorOptions={COLOR_OPTIONS}
+          updateCalendar={updateCalendar}
+          addTag={addTag}
+          setTagColor={setTagColor}
+          deleteTag={deleteTag}
+          onRequestDelete={() => { const id = editCal.id; setEditCal(null); setCalendarToDelete(id); }}
+          onClose={() => setEditCal(null)}
+        />
+      )}
+
       <ConfirmDialog open={!!tagToDelete} onOpenChange={(open) => !open && setTagToDelete(null)} title={`Delete "${tagToDelete}" tag?`} description="Events with this tag will have it removed." onConfirm={confirmDeleteTag} />
       <ConfirmDialog open={!!calendarToDelete} onOpenChange={(open) => !open && setCalendarToDelete(null)} title="Delete this calendar?" description="This will delete the calendar and its events." onConfirm={async () => {
         if (calendarToDelete) {
@@ -1162,7 +1009,6 @@ export default function CalendarPage() {
           case "new-class": setShowAddClass(true); break;
           case "today": setCurrentDate(new Date()); break;
           case "day": setView("day"); break;
-          case "3day": setView("3day"); break;
           case "5day": setView("5day"); break;
           case "week": setView("week"); break;
           case "month": setView("month"); break;
@@ -1170,9 +1016,6 @@ export default function CalendarPage() {
           case "next": navigate(1); break;
         }
       }} />
-
-      {/* Time Tracker Widget (ClickUp-style floating timer) */}
-      <TimeTracker isVisible={true} taskName={nextUp?.cls.title} />
 
       {/* Command Palette (Cmd+K) */}
       <CommandPalette commands={[
@@ -1192,23 +1035,188 @@ export default function CalendarPage() {
 }
 
 /* ---------- Event Form ---------- */
-function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defaultEndTime }: { calendars: SubCalendar[]; event?: CalendarEvent; onSaved: () => void; onCancel: () => void; defaultStartTime?: string; defaultEndTime?: string }) {
+/* ---------- Edit Calendar (rename / recolor / manage filters) ---------- */
+function EditCalendarDialog({ cal, calendars, colorOptions, updateCalendar, addTag, setTagColor, deleteTag, onRequestDelete, onClose }: {
+  cal: SubCalendar;
+  calendars: SubCalendar[];
+  colorOptions: string[];
+  updateCalendar: (id: string, updates: Partial<Pick<SubCalendar, "name" | "color">>) => void;
+  addTag: (calendarId: string, tag: string, color?: string) => boolean;
+  setTagColor: (calendarId: string, tag: string, color: string) => void;
+  deleteTag: (calendarId: string, tag: string) => void;
+  onRequestDelete: () => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(cal.name);
+  const [color, setColor] = useState(cal.color);
+  const [newTag, setNewTag] = useState("");
+  const [newTagColor, setNewTagColor] = useState(cal.color);
+  // Tag currently being recoloured (click a tag chip to select it).
+  const [recolorTag, setRecolorTag] = useState<string | null>(null);
+  // Live tags for this calendar (reflects add/delete immediately).
+  const current = calendars.find((c) => c.id === cal.id) ?? cal;
+
+  const save = () => {
+    if (!name.trim()) return;
+    updateCalendar(cal.id, { name: name.trim(), color });
+    onClose();
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit calendar</DialogTitle>
+          <DialogDescription>Rename it, change its colour, and manage its filters.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium text-black/80">Name</label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-black/80 block mb-1.5">Colour</label>
+            <div className="flex gap-2 flex-wrap">
+              {colorOptions.map((c) => (
+                <button key={c} type="button" onClick={() => setColor(c)} className={`w-7 h-7 rounded-full ${c} transition-all ${color === c ? "ring-2 ring-offset-2 ring-black/30 scale-110" : "hover:scale-105"}`} />
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-sm font-medium text-black/80 block mb-1.5">Filters (tags)</label>
+            <div className="flex gap-1.5 flex-wrap mb-2">
+              {current.tags.length === 0 && <span className="text-xs text-black/35">No filters yet</span>}
+              {current.tags.map((t) => {
+                const hex = calHex(t.color);
+                const selected = recolorTag === t.name;
+                return (
+                  <span
+                    key={t.name}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs cursor-pointer transition-shadow ${selected ? "ring-2 ring-black/25" : ""}`}
+                    style={{ background: `${hex}22`, color: "#1a1a1a" }}
+                    onClick={() => setRecolorTag(selected ? null : t.name)}
+                    title="Click to change this filter's colour"
+                  >
+                    <span className="w-2 h-2 rounded-full" style={{ background: hex }} />
+                    {t.name}
+                    <button type="button" onClick={(e) => { e.stopPropagation(); if (recolorTag === t.name) setRecolorTag(null); deleteTag(cal.id, t.name); }} className="text-black/30 hover:text-red-500"><X className="w-3 h-3" /></button>
+                  </span>
+                );
+              })}
+            </div>
+            {recolorTag && (
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs text-black/50">Colour for &quot;{recolorTag}&quot;:</span>
+                <div className="flex gap-1.5 flex-wrap">
+                  {colorOptions.map((c) => (
+                    <button key={c} type="button" onClick={() => setTagColor(cal.id, recolorTag, c)} className={`w-5 h-5 rounded-full ${c} transition-all ${current.tags.find((t) => t.name === recolorTag)?.color === c ? "ring-2 ring-offset-1 ring-black/30 scale-110" : "hover:scale-105"}`} />
+                  ))}
+                </div>
+              </div>
+            )}
+            <form onSubmit={(e) => { e.preventDefault(); if (newTag.trim()) { addTag(cal.id, newTag.trim(), newTagColor); setNewTag(""); } }} className="space-y-2">
+              <div className="flex gap-2">
+                <Input value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="Add a filter..." className="h-9" />
+                <Button type="submit" variant="outline" disabled={!newTag.trim()}>Add</Button>
+              </div>
+              {newTag.trim() && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-black/50">Colour:</span>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {colorOptions.map((c) => (
+                      <button key={c} type="button" onClick={() => setNewTagColor(c)} className={`w-5 h-5 rounded-full ${c} transition-all ${newTagColor === c ? "ring-2 ring-offset-1 ring-black/30 scale-110" : "hover:scale-105"}`} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </form>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button onClick={save} className="flex-1" disabled={!name.trim()}>Save</Button>
+            {cal.id !== "default" && (
+              <Button type="button" variant="outline" onClick={onRequestDelete} className="text-red-500 hover:text-red-600">Delete</Button>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function timeLabel(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+}
+
+/** Every quarter hour of the day, labelled the way a timetable reads. */
+const TIME_OPTIONS = Array.from({ length: 96 }, (_, i) => {
+  const value = `${String(Math.floor(i / 4)).padStart(2, "0")}:${String((i % 4) * 15).padStart(2, "0")}`;
+  return { value, label: timeLabel(value) };
+});
+
+/**
+ * A date field plus a *time dropdown*.
+ *
+ * `datetime-local` pops a calendar for the date half but makes you type the time
+ * digit by digit, which is the fiddly bit — so the two halves are split and the
+ * time becomes a list of quarter hours. The value stays one
+ * `yyyy-MM-dd'T'HH:mm` string, which is what the form and the API already speak.
+ */
+function DateTimeField({ label, value, required, onChange }: { label: string; value: string; required?: boolean; onChange: (value: string) => void }) {
+  const [date, time] = value ? value.split("T") : ["", ""];
+
+  const update = (nextDate: string, nextTime: string) => {
+    // Half a value can't be saved, so picking one side fills the other with
+    // something sensible rather than leaving the field invalid.
+    if (!nextDate && !nextTime) return onChange("");
+    onChange(`${nextDate || format(new Date(), "yyyy-MM-dd")}T${nextTime || "09:00"}`);
+  };
+
+  // An event created by dragging on the grid can land off the quarter hour; keep
+  // its exact time in the list instead of silently rounding it away.
+  const options = time && !TIME_OPTIONS.some((o) => o.value === time)
+    ? [...TIME_OPTIONS, { value: time, label: timeLabel(time) }].sort((a, b) => a.value.localeCompare(b.value))
+    : TIME_OPTIONS;
+
+  return (
+    <div>
+      <label className="text-sm font-medium text-black/80">{label}</label>
+      <div className="flex gap-2">
+        <Input type="date" required={required} value={date} onChange={(e) => update(e.target.value, time)} className="flex-1 min-w-0" />
+        <select
+          required={required}
+          value={time}
+          onChange={(e) => update(date, e.target.value)}
+          className="h-10 shrink-0 border rounded-md px-2 text-sm bg-white text-black"
+        >
+          <option value="" disabled>Time</option>
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defaultEndTime, defaultCalendar, defaultTag }: { calendars: SubCalendar[]; event?: CalendarEvent; onSaved: () => void; onCancel: () => void; defaultStartTime?: string; defaultEndTime?: string; defaultCalendar?: string; defaultTag?: string }) {
   const [form, setForm] = useState({
     title: event?.title || "",
     startTime: event ? format(new Date(event.startTime), "yyyy-MM-dd'T'HH:mm") : (defaultStartTime || ""),
     endTime: event ? format(new Date(event.endTime), "yyyy-MM-dd'T'HH:mm") : (defaultEndTime || ""),
-    role: event?.role || "",
-    category: event?.category || calendars[0]?.name || "",
+    role: event?.role || defaultTag || "",
+    category: event?.category || defaultCalendar || calendars[0]?.name || "",
     location: event?.location || "",
-    hours: "",
   });
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    const payload = { ...form, actualMinutes: form.hours ? Math.round(parseFloat(form.hours) * 60) : undefined };
-    delete (payload as any).hours;
+    // Hours per calendar are derived from each event's duration in Analytics —
+    // no manual hours field needed.
+    const payload = { ...form };
     try {
       if (event) {
         const res = await fetch("/api/calendar", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: event.id, ...payload }) });
@@ -1231,15 +1239,15 @@ function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defa
         <Input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <div><label className="text-sm font-medium text-black/80">Start *</label><Input type="datetime-local" required value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></div>
-        <div><label className="text-sm font-medium text-black/80">End *</label><Input type="datetime-local" required value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></div>
+        <DateTimeField label="Start *" required value={form.startTime} onChange={(startTime) => setForm({ ...form, startTime })} />
+        <DateTimeField label="End *" required value={form.endTime} onChange={(endTime) => setForm({ ...form, endTime })} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="text-sm font-medium text-black/80">Tag</label>
           <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full h-10 border rounded-md px-3 text-sm bg-white text-black">
             <option value="">No tag</option>
-            {Array.from(new Set([...(calendars.find((c) => c.name === form.category)?.tags || []), ...(event?.role ? [event.role] : [])])).map((t) => (
+            {Array.from(new Set([...(calendars.find((c) => c.name === form.category)?.tags.map((t) => t.name) || []), ...(event?.role ? [event.role] : [])])).map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}
           </select>
@@ -1253,9 +1261,9 @@ function EventForm({ calendars, event, onSaved, onCancel, defaultStartTime, defa
           </select>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div><label className="text-sm font-medium text-black/80">Location</label><Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Optional" /></div>
-        <div><label className="text-sm font-medium text-black/80">Hours</label><Input type="number" step="0.5" min="0" max="24" value={form.hours} onChange={(e) => setForm({ ...form, hours: e.target.value })} placeholder="e.g. 1.5" /></div>
+      <div>
+        <label className="text-sm font-medium text-black/80">Location</label>
+        <Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Optional" />
       </div>
       <div className="flex gap-2">
         <Button type="submit" className="flex-1" disabled={saving || !form.title}>{saving ? "Saving..." : event ? "Save Changes" : "Create Event"}</Button>
@@ -1277,6 +1285,8 @@ function ClassForm({ onSaved, onCancel, existing, calendars, defaultCalendar }: 
     endTime: existing?.endTime ?? "10:15",
     color: existing?.color ?? CLASS_COLORS[0],
     calendar: existing?.calendar ?? defaultCalendar ?? calendars[0]?.name ?? "Personal",
+    startDate: existing?.startDate ?? "",
+    endDate: existing?.endDate ?? "",
   });
 
   const DAY_OPTIONS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
@@ -1328,6 +1338,11 @@ function ClassForm({ onSaved, onCancel, existing, calendars, defaultCalendar }: 
           ))}
         </div>
       </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><label className="text-sm font-medium text-black/80">Repeats from</label><Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></div>
+        <div><label className="text-sm font-medium text-black/80">Until</label><Input type="date" value={form.endDate} min={form.startDate || undefined} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></div>
+      </div>
+      <p className="text-xs text-black/40 -mt-2">Leave the dates empty to repeat every week with no end.</p>
       <div className="grid grid-cols-3 gap-3">
         <div><label className="text-sm font-medium text-black/80">Start</label><Input type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></div>
         <div><label className="text-sm font-medium text-black/80">End</label><Input type="time" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} /></div>

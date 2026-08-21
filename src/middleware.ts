@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const protectedPaths = ["/dashboard", "/calendar", "/analytics", "/reflections"];
+const protectedPaths = ["/dashboard", "/calendar", "/analytics", "/reflections", "/planner"];
 
 function generateNonce() {
   const array = new Uint8Array(16);
@@ -27,6 +27,8 @@ function setSecurityHeaders(response: NextResponse, nonce: string) {
     // dropped from style-src.
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
+    // pdf.js renders imported planner PDFs in a same-origin worker.
+    "worker-src 'self' blob:",
     "font-src 'self'",
     "connect-src 'self' https://vitals.vercel-insights.com https://va.vercel-scripts.com",
     "frame-ancestors 'none'",

@@ -1,0 +1,67 @@
+{
+  "planners": [
+    {
+      "id": "collanote-2026",
+      "name": "2026 New Year Planner",
+      "description": "Floral CollaNote planner — monthly, weekly & daily pages with habit, mood and budget trackers.",
+      "category": "365-Day Planners",
+      "pages": 513,
+      "aspect": 1.33347,
+      "sizeMb": 39.0,
+      "template": "collanote-2026",
+      "credit": "CollaNote"
+    },
+    {
+      "id": "making-the-year-mine-2026",
+      "name": "2026 Making The Year Mine",
+      "description": "Warm cream notebook with a spiral spine — a monthly spread, five weekly pages and a daily page for every day of 2026, plus project, habit, reading, fitness and mood trackers.",
+      "category": "365-Day Planners",
+      "pages": 450,
+      "aspect": 0.74468,
+      "sizeMb": 16.0,
+      "template": "making-the-year-mine-2026",
+      "credit": "CollaNote"
+    },
+    {
+      "id": "back-to-school-2026",
+      "name": "2026–2027 Back To School",
+      "description": "Bright academic-year planner running September to June — school timetable, monthly, weekly and daily pages plus exam, homework, course, lecture and reading notes.",
+      "category": "Study Planners",
+      "pages": 371,
+      "aspect": 0.74468,
+      "sizeMb": 10.4,
+      "template": "back-to-school-2026",
+      "credit": "CollaNote"
+    },
+    {
+      "id": "remarkably-2026",
+      "name": "Minimal 2026 Planner",
+      "description": "Clean e-ink style planner (Remarkably Organized, MIT) — yearly, quarterly, monthly & weekly pages with dotted notes.",
+      "category": "Minimal Planners",
+      "pages": 488,
+      "aspect": 0.77273,
+      "sizeMb": 8.5,
+      "credit": "Remarkably Organized (MIT)"
+    },
+    {
+      "id": "focus-daily-2026",
+      "name": "2026 Daily Focus",
+      "description": "Monospace one-page-per-day planner — a single top priority, then primary and secondary task lists, with a chronological notes section.",
+      "category": "Minimal Planners",
+      "pages": 731,
+      "aspect": 0.75238,
+      "sizeMb": 3.2,
+      "credit": "remarkable-daily-planner-generator (MIT)"
+    },
+    {
+      "id": "bujo-2026",
+      "name": "2026 Bullet Journal",
+      "description": "Earth-toned dot-grid bullet journal — future log, Cornell-style weeklies, habit wheels and eight grid styles for free-form notes.",
+      "category": "Journals & Notebooks",
+      "pages": 92,
+      "aspect": 0.77273,
+      "sizeMb": 2.1,
+      "credit": "bujo-pdf (MIT)"
+    }
+  ]
+}

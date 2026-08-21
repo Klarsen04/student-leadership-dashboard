@@ -21,7 +21,7 @@ export default function PrivacyPage() {
         </ul>
 
         <h3>Information from third-party sign-in</h3>
-        <p>If you choose to sign in with Google or Microsoft, we receive:</p>
+        <p>If you choose to sign in with Google, we receive:</p>
         <ul>
           <li>Your name, email address, and profile picture</li>
           <li>OAuth tokens to maintain your session</li>
@@ -57,7 +57,6 @@ export default function PrivacyPage() {
         <ul>
           <li><strong>Vercel</strong> — hosting and deployment</li>
           <li><strong>Google OAuth</strong> — authentication (if you choose Google sign-in)</li>
-          <li><strong>Microsoft OAuth</strong> — authentication (if you choose Microsoft sign-in)</li>
         </ul>
 
         <h2>Data Storage and Security</h2>
@@ -85,8 +84,8 @@ export default function PrivacyPage() {
           <li><strong>Access</strong> — Export all your data at any time via Settings</li>
           <li><strong>Correction</strong> — Update your information through the app</li>
           <li><strong>Deletion</strong> — Request complete deletion of your account and data</li>
-          <li><strong>Revoke access</strong> — Disconnect Google or Microsoft access at any time
-            through your Google/Microsoft account settings</li>
+          <li><strong>Revoke access</strong> — Disconnect Google access at any time
+            through your Google account settings</li>
         </ul>
 
         <h2>Third-Party Services</h2>
@@ -95,11 +94,6 @@ export default function PrivacyPage() {
           <li>
             <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">
               Google Privacy Policy
-            </a>
-          </li>
-          <li>
-            <a href="https://privacy.microsoft.com/privacystatement" target="_blank" rel="noopener noreferrer">
-              Microsoft Privacy Statement
             </a>
           </li>
           <li>

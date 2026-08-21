@@ -23,17 +23,21 @@ export interface EngineClass {
   startTime: string; // "HH:mm"
   endTime: string;   // "HH:mm"
   color: string;
+  /** Optional term window (yyyy-MM-dd); empty = repeats indefinitely. */
+  startDate?: string;
+  endDate?: string;
 }
 
-export type EngineView = "day" | "3day" | "5day" | "week" | "month";
+export type EngineView = "day" | "5day" | "week" | "month";
 
 export interface CalendarEngineProps {
   events: EngineEvent[];
   classes: EngineClass[];
   currentDate: Date;
   view: EngineView;
-  /** bg-* tailwind class for a given event category (sub-calendar color) */
-  getColor: (category: string) => string;
+  /** bg-* tailwind class for an event: its tag's colour when tagged, else its
+   *  sub-calendar's colour */
+  getColor: (category: string, role?: string) => string;
   onEventClick: (event: EngineEvent) => void;
   onClassClick?: (cls: EngineClass) => void;
   /** Click an empty slot to create — (date, hour) */

@@ -3,14 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { format, startOfWeek, endOfWeek } from "date-fns";
+import { startOfWeek, endOfWeek } from "date-fns";
 import {
   ArrowLeft,
   ArrowRight,
-  Pencil,
-  Trash2,
-  ChevronDown,
-  ChevronRight,
   Check,
   Sparkles,
   BookOpen,
@@ -19,10 +15,9 @@ import {
 import { toast } from "sonner";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import confetti from "canvas-confetti";
-import { PODS, getPod, type Pod } from "@/lib/pods";
+import { PODS, pickQuestions, type Pod } from "@/lib/pods";
 import { INSPIRE_STORIES, type InspireStory } from "@/lib/inspireStories";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { RainbowArc, HeartFlower, SeedMascot } from "@/components/reflections/PeaceDecor";
+import { RainbowArc, HeartFlower } from "@/components/reflections/PeaceDecor";
 import { Stagger, StaggerItem, Bounce, Pop } from "@/components/home/motion-kit";
 import { useIntroReflect, playIntroReflect } from "@/components/reflections/intro-reflect";
 import { useGSAP } from "@/lib/gsap";
@@ -54,27 +49,6 @@ interface Reflection {
 type Screen = "welcome" | "flow" | "done";
 type Tab = "reflect" | "inspire";
 
-function formatReflectionDate(type: string, dateStr: string): string {
-  const date = new Date(dateStr);
-  if (type === "daily") return format(date, "EEEE, MMM d");
-  if (type === "weekly") {
-    const ws = startOfWeek(date, { weekStartsOn: 0 });
-    const we = endOfWeek(date, { weekStartsOn: 0 });
-    return `Week of ${format(ws, "MMM d")} – ${format(we, "MMM d")}`;
-  }
-  return format(date, "MMMM yyyy");
-}
-
-function parseQA(raw: string | null): QA[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
 // Is a date within the current period for a given reflection type?
 function inCurrentPeriod(type: string, d: Date, now: Date): boolean {
   if (type === "weekly") {
@@ -102,12 +76,9 @@ function usedPodIds(reflections: Reflection[]): Set<string> {
 export default function ReflectionsPage() {
   const router = useRouter();
   const [reflections, setReflections] = useState<Reflection[]>([]);
-  const [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState<Screen>("welcome");
   const [tab, setTab] = useState<Tab>("reflect");
   const [activePod, setActivePod] = useState<Pod | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Reflection | null>(null);
-  const [editTarget, setEditTarget] = useState<Reflection | null>(null);
   // One-time cinematic entrance: true only on first load this browser session
   // (and never under reduced motion). Marked seen on mount, so tab switches /
   // returning from the flow never replay it. Presentation only.
@@ -120,7 +91,6 @@ export default function ReflectionsPage() {
     } catch {
       toast.error("Failed to load reflections");
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -130,25 +100,16 @@ export default function ReflectionsPage() {
   const usedPods = useMemo(() => usedPodIds(reflections), [reflections]);
 
   const startPod = (pod: Pod) => {
-    setActivePod(pod);
+    // Rotate through the pod's wider question bank based on how many times it's
+    // been done, so repeat reflections get a fresh trio (reused once cycled).
+    const priorCount = reflections.filter((r) => r.podId === pod.id).length;
+    setActivePod({ ...pod, questions: pickQuestions(pod, priorCount) });
     setScreen("flow");
   };
 
   const onSaved = () => {
     // Redirect to the dedicated confirmation page after a successful save.
     router.push("/reflections/saved");
-  };
-
-  const deleteReflection = async () => {
-    if (!deleteTarget) return;
-    try {
-      const res = await fetch(`/api/reflections?id=${deleteTarget.id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error();
-      setReflections((prev) => prev.filter((r) => r.id !== deleteTarget.id));
-      toast.success("Reflection deleted");
-    } catch {
-      toast.error("Failed to delete reflection");
-    }
   };
 
   return (
@@ -179,12 +140,8 @@ export default function ReflectionsPage() {
 
           {tab === "reflect" ? (
             <WelcomeScreen
-              reflections={reflections}
-              loading={loading}
               usedPods={usedPods}
               onStartPod={startPod}
-              onEdit={setEditTarget}
-              onDelete={setDeleteTarget}
               intro={intro && tab === "reflect"}
             />
           ) : (
@@ -205,25 +162,6 @@ export default function ReflectionsPage() {
       {screen === "done" && activePod && (
         <DoneScreen pod={activePod} onHome={() => setScreen("welcome")} />
       )}
-
-      <ConfirmDialog
-        open={!!deleteTarget}
-        onOpenChange={(open) => !open && setDeleteTarget(null)}
-        title="Delete reflection?"
-        description="This reflection will be permanently deleted."
-        onConfirm={deleteReflection}
-      />
-
-      {editTarget && (
-        <EditDialog
-          reflection={editTarget}
-          onClose={() => setEditTarget(null)}
-          onSaved={() => {
-            setEditTarget(null);
-            fetchReflections();
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -232,20 +170,12 @@ export default function ReflectionsPage() {
 // Welcome screen: hero + pod picker + history
 // ---------------------------------------------------------------------------
 function WelcomeScreen({
-  reflections,
-  loading,
   usedPods,
   onStartPod,
-  onEdit,
-  onDelete,
   intro = false,
 }: {
-  reflections: Reflection[];
-  loading: boolean;
   usedPods: Set<string>;
   onStartPod: (pod: Pod) => void;
-  onEdit: (r: Reflection) => void;
-  onDelete: (r: Reflection) => void;
   intro?: boolean;
 }) {
   const root = useRef<HTMLDivElement>(null);
@@ -344,34 +274,12 @@ function WelcomeScreen({
         </PodGridWrap>
       </section>
 
-      {/* Flower row */}
-      <div className="flex items-end justify-center gap-6 md:gap-10 mt-10 opacity-90 pointer-events-none">
+      {/* Flower row — past reflections live under "My reflections" (history page) */}
+      <div className="flex items-end justify-center gap-6 md:gap-10 mt-10 mb-8 opacity-90 pointer-events-none">
         {[0, 0.4, 0.8, 1.2, 1.6].map((d, i) => (
           <HeartFlower key={i} delay={d} className="w-8 h-16 md:w-10 md:h-20" />
         ))}
       </div>
-
-      {/* History */}
-      <section className="w-full mt-10 mb-8">
-        <h2 className="text-xl font-bold mb-3" style={MARKER}>
-          Your reflections
-        </h2>
-        {loading ? (
-          <div className="text-center text-black/40 py-10">Loading…</div>
-        ) : reflections.length === 0 ? (
-          <div className="rounded-3xl bg-white border border-black/5 p-8 text-center">
-            <SeedMascot className="w-14 h-14 mx-auto mb-3" />
-            <p className="font-semibold" style={MARKER}>
-              No reflections yet
-            </p>
-            <p className="text-sm text-black/50 mt-1">
-              Pick a pod above and answer three questions to plant your first one.
-            </p>
-          </div>
-        ) : (
-          <HistoryList reflections={reflections} onEdit={onEdit} onDelete={onDelete} />
-        )}
-      </section>
     </div>
   );
 }
@@ -398,127 +306,6 @@ function PodGridWrap({
 function PodItemWrap({ intro, children }: { intro: boolean; children: React.ReactNode }) {
   if (intro) return <div>{children}</div>;
   return <StaggerItem>{children}</StaggerItem>;
-}
-
-// ---------------------------------------------------------------------------
-// History list, grouped by month
-// ---------------------------------------------------------------------------
-function HistoryList({
-  reflections,
-  onEdit,
-  onDelete,
-}: {
-  reflections: Reflection[];
-  onEdit: (r: Reflection) => void;
-  onDelete: (r: Reflection) => void;
-}) {
-  const groups = useMemo(() => {
-    const map: Record<string, Reflection[]> = {};
-    for (const ref of reflections) {
-      const key = ref.date.slice(0, 7);
-      (map[key] ||= []).push(ref);
-    }
-    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    return Object.entries(map)
-      .sort(([a], [b]) => b.localeCompare(a))
-      .map(([key, items]) => {
-        const [year, month] = key.split("-");
-        return { month: `${monthNames[parseInt(month) - 1]} ${year}`, items };
-      });
-  }, [reflections]);
-
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(groups[0] ? [groups[0].month] : []));
-
-  const toggle = (m: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      next.has(m) ? next.delete(m) : next.add(m);
-      return next;
-    });
-
-  return (
-    <div className="space-y-3">
-      {groups.map(({ month, items }) => {
-        const open = expanded.has(month);
-        return (
-          <div key={month}>
-            <button
-              onClick={() => toggle(month)}
-              className="flex items-center gap-2 w-full text-left px-2 py-2 rounded-lg hover:bg-black/[0.03] transition-colors"
-            >
-              {open ? <ChevronDown className="w-4 h-4 text-black/40" /> : <ChevronRight className="w-4 h-4 text-black/40" />}
-              <span className="font-semibold text-sm">{month}</span>
-              <span className="text-xs text-black/40">({items.length})</span>
-            </button>
-            {open && (
-              <div className="space-y-3 mt-2 ml-6">
-                {items.map((ref) => (
-                  <ReflectionCard key={ref.id} ref={ref} onEdit={onEdit} onDelete={onDelete} />
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function ReflectionCard({
-  ref,
-  onEdit,
-  onDelete,
-}: {
-  ref: Reflection;
-  onEdit: (r: Reflection) => void;
-  onDelete: (r: Reflection) => void;
-}) {
-  const pod = getPod(ref.podId);
-  const qa = parseQA(ref.questions);
-  return (
-    <div className="rounded-3xl bg-white border border-black/5 p-4 shadow-sm">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1 text-xs font-semibold rounded-full px-2.5 py-1 bg-amber-100 text-amber-800">
-            {pod ? (
-              <>
-                <span>{pod.emoji}</span> {pod.title}
-              </>
-            ) : (
-              ref.type
-            )}
-          </span>
-          <span className="text-xs text-black/40">{formatReflectionDate(ref.type, ref.date)}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          {ref.mood != null && <span className="text-[10px] text-black/40 mr-1">Mood {ref.mood}/10</span>}
-          <button onClick={() => onEdit(ref)} className="p-1 text-black/40 hover:text-black transition-colors" aria-label="Edit reflection">
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
-          <button onClick={() => onDelete(ref)} className="p-1 text-black/40 hover:text-red-500 transition-colors" aria-label="Delete reflection">
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {qa.length > 0 ? (
-        <div className="space-y-2">
-          {qa.map((item, i) => (
-            <div key={i}>
-              <p className="text-xs font-semibold text-black/60">{item.question}</p>
-              <p className="text-sm text-black/80 whitespace-pre-wrap">{item.answer || "—"}</p>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-sm text-black/80 whitespace-pre-wrap line-clamp-4">{ref.content}</p>
-      )}
-
-      {ref.gratitude && (
-        <p className="mt-2 text-xs text-black/50 italic">💛 Grateful for: {ref.gratitude}</p>
-      )}
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -570,6 +357,12 @@ function GuidedFlow({
   };
 
   const save = async () => {
+    // Every question needs a real answer (the Next button enforces this, but
+    // guard here too so an empty reflection can never be submitted).
+    if (answers.some((a) => !a.trim())) {
+      toast.error("Please answer every question before finishing.");
+      return;
+    }
     setSaving(true);
     const qa: QA[] = pod.questions.map((q, i) => ({ question: q, answer: answers[i].trim() }));
     const content = qa.map((x) => `${x.question}\n${x.answer}`).join("\n\n");
@@ -585,6 +378,8 @@ function GuidedFlow({
           gratitude: gratitude.trim() || undefined,
           podId: pod.id,
           questions: JSON.stringify(qa),
+          // Let the server compute the one-per-period window in OUR timezone.
+          tzOffset: new Date().getTimezoneOffset(),
         }),
       });
       if (res.ok) {
@@ -712,14 +507,22 @@ function GuidedFlow({
       {/* Footer action */}
       <div className="pb-10">
         {!isWellness ? (
-          <button
-            onClick={next}
-            className="w-full inline-flex items-center justify-center gap-2 py-3.5 rounded-full text-black font-semibold shadow-md hover:brightness-105 transition-all disabled:opacity-40"
-            style={{ background: MARIGOLD, ...MARKER }}
-          >
-            {step === pod.questions.length - 1 ? "Almost there" : "Next"}
-            <ArrowRight className="w-5 h-5" />
-          </button>
+          <>
+            <button
+              onClick={next}
+              disabled={!currentAnswer.trim()}
+              className="w-full inline-flex items-center justify-center gap-2 py-3.5 rounded-full text-black font-semibold shadow-md hover:brightness-105 transition-all disabled:opacity-40 disabled:hover:brightness-100"
+              style={{ background: MARIGOLD, ...MARKER }}
+            >
+              {step === pod.questions.length - 1 ? "Almost there" : "Next"}
+              <ArrowRight className="w-5 h-5" />
+            </button>
+            {!currentAnswer.trim() && (
+              <p className="mt-2 text-center text-xs text-black/40">
+                Write a little something to continue — even one sentence counts.
+              </p>
+            )}
+          </>
         ) : (
           <button
             onClick={save}
@@ -866,113 +669,6 @@ function DoneScreen({ pod, onHome }: { pod: Pod; onHome: () => void }) {
           <ArrowLeft className="w-5 h-5" /> Back to reflections
         </button>
       </Bounce>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Edit dialog (simple textarea edit of an existing reflection)
-// ---------------------------------------------------------------------------
-function EditDialog({
-  reflection,
-  onClose,
-  onSaved,
-}: {
-  reflection: Reflection;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const qa = parseQA(reflection.questions);
-  const [answers, setAnswers] = useState<string[]>(
-    qa.length > 0 ? qa.map((x) => x.answer) : [reflection.content]
-  );
-  const [gratitude, setGratitude] = useState(reflection.gratitude || "");
-  const [saving, setSaving] = useState(false);
-
-  const save = async () => {
-    setSaving(true);
-    let content: string;
-    let questions: string | undefined;
-    if (qa.length > 0) {
-      const merged: QA[] = qa.map((x, i) => ({ question: x.question, answer: answers[i]?.trim() ?? "" }));
-      content = merged.map((x) => `${x.question}\n${x.answer}`).join("\n\n");
-      questions = JSON.stringify(merged);
-    } else {
-      content = answers[0]?.trim() ?? "";
-    }
-    try {
-      const res = await fetch("/api/reflections", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: reflection.id, content, gratitude, questions }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("Reflection updated");
-      onSaved();
-    } catch {
-      toast.error("Failed to update reflection");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-    >
-      <div
-        className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white p-6 shadow-xl"
-        style={{ color: "#1a1a1a" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="text-xl font-bold" style={MARKER}>
-          Edit reflection
-        </h2>
-        <div className="mt-4 space-y-4">
-          {qa.length > 0 ? (
-            qa.map((item, i) => (
-              <div key={i}>
-                <label className="text-xs font-semibold text-black/60">{item.question}</label>
-                <textarea
-                  value={answers[i] ?? ""}
-                  onChange={(e) => setAnswers((prev) => prev.map((a, j) => (j === i ? e.target.value : a)))}
-                  className="mt-1 w-full min-h-[80px] rounded-2xl bg-[#FFFAF5] border border-black/10 p-3 text-sm focus:outline-none focus:ring-2 resize-none"
-                />
-              </div>
-            ))
-          ) : (
-            <textarea
-              value={answers[0] ?? ""}
-              onChange={(e) => setAnswers([e.target.value])}
-              className="w-full min-h-[140px] rounded-2xl bg-[#FFFAF5] border border-black/10 p-3 text-sm focus:outline-none focus:ring-2 resize-none"
-            />
-          )}
-          <div>
-            <label className="text-xs font-semibold text-black/60">Grateful for</label>
-            <input
-              value={gratitude}
-              onChange={(e) => setGratitude(e.target.value)}
-              className="mt-1 w-full rounded-2xl bg-[#FFFAF5] border border-black/10 px-3 py-2 text-sm focus:outline-none focus:ring-2"
-            />
-          </div>
-        </div>
-        <div className="mt-6 flex gap-2 justify-end">
-          <button onClick={onClose} className="px-4 py-2 rounded-full text-sm font-medium text-black/60 hover:bg-black/5 transition-colors">
-            Cancel
-          </button>
-          <button
-            onClick={save}
-            disabled={saving}
-            className="px-5 py-2 rounded-full text-sm font-semibold text-black shadow-md hover:brightness-105 transition-all disabled:opacity-50"
-            style={{ background: GRASS }}
-          >
-            {saving ? "Saving…" : "Save changes"}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
