@@ -339,7 +339,9 @@ without making them retype what they just chose.
 `fetch` — no SDK dependency. It's optional infrastructure: with no
 `RESEND_API_KEY`, dev logs the link to the console and production simply can't
 deliver. Nothing user-facing branches on delivery, or the reply would leak which
-addresses exist.
+addresses exist. `EMAIL_REPLY_TO` sets a `reply_to` so an answer to the
+`noreply@` sender reaches a real inbox instead of bouncing; unset, the field is
+**omitted** rather than sent empty, which Resend would reject.
 
 Throttling (`src/lib/throttle.ts`) is **in-process**: per instance, reset by a
 cold start. It's a speed bump, not a quota, and the seam for Redis/Upstash later.
@@ -709,6 +711,7 @@ locked to light (`forcedTheme="light"`).
 | `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | prod | switches Prisma to the libSQL/Turso adapter |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | optional | Google sign-in **and** calendar sync |
 | `RESEND_API_KEY`, `EMAIL_FROM` | optional | password-reset email (dev logs the link without it) |
+| `EMAIL_REPLY_TO` | optional | an address a reply reaches; the header is omitted when unset |
 
 **CI** (`.github/workflows/`) — `ci.yml` runs Lint, Typecheck (`tsc --noEmit`),
 Build, Format (advisory) and `npm audit` (advisory) as separate jobs so each can
