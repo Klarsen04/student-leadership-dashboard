@@ -20,6 +20,17 @@ function from() {
   return process.env.EMAIL_FROM || "Leadora <onboarding@resend.dev>";
 }
 
+/**
+ * Where a reply should go. Mail is sent from a `noreply@` address that has no
+ * mailbox behind it, so without this a reply bounces — and someone answering a
+ * password-reset email is usually someone who needs help. Optional: unset, the
+ * field is omitted entirely rather than sent empty, which Resend would reject.
+ */
+function replyTo() {
+  const value = process.env.EMAIL_REPLY_TO?.trim();
+  return value ? value : undefined;
+}
+
 export function mailerConfigured() {
   return Boolean(process.env.RESEND_API_KEY);
 }
@@ -35,6 +46,7 @@ export async function sendMail(mail: Mail): Promise<MailResult> {
     return { ok: false, skipped: true, reason: "RESEND_API_KEY is not set" };
   }
 
+  const reply = replyTo();
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -45,6 +57,7 @@ export async function sendMail(mail: Mail): Promise<MailResult> {
         subject: mail.subject,
         text: mail.text,
         html: mail.html,
+        ...(reply ? { reply_to: reply } : {}),
       }),
     });
     if (!res.ok) {
