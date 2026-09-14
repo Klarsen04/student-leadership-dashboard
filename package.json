@@ -14,7 +14,7 @@
     "predev": "node scripts/copy-pdf-worker.mjs"
   },
   "dependencies": {
-    "@aikidosec/firewall": "1.8.35",
+    "@aikidosec/firewall": "1.8.40",
     "@gsap/react": "^2.1.2",
     "@hookform/resolvers": "^5.7.1",
     "@ilamy/calendar": "^2.0.3",
